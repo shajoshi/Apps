@@ -1,0 +1,304 @@
+package com.example.smsmanager
+
+import android.Manifest
+import android.content.ContentResolver
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Bundle
+import android.provider.Telephony
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+//import android.Manifest // <-- CORRECTED: Added this import for permission constants (READ_SMS, WRITE_SMS)
+//import android.content.pm.PackageManager
+//import android.net.Uri
+//import android.os.Bundle
+//import android.provider.Telephony
+//import android.view.LayoutInflater
+//import android.view.ViewGroup
+//import android.widget.Button
+//import android.widget.CheckBox
+//import android.widget.EditText
+//import android.widget.TextView
+//import android.widget.Toast
+//import androidx.appcompat.app.AlertDialog
+//import androidx.appcompat.app.AppCompatActivity
+//import androidx.core.app.ActivityCompat // <-- Ensure this is present for requesting permissions
+//import androidx.core.content.ContextCompat // <-- CORRECTED: Ensure this is present for checkSelfPermission
+//import androidx.recyclerview.widget.LinearLayoutManager
+//import androidx.recyclerview.widget.RecyclerView
+// Constants
+private const val REQUEST_SMS_PERMISSIONS = 101
+
+// Data Class to hold SMS details
+data class SmsMessage(
+    val id: String,
+    val address: String,
+    val body: String,
+    val date: Long,
+    var isSelected: Boolean = false
+)
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var searchEditText: EditText
+    private lateinit var searchButton: Button
+    private lateinit var selectAllCheckBox: CheckBox
+    private lateinit var deleteButton: Button
+    private lateinit var recyclerView: RecyclerView
+    private lateinit var adapter: SmsAdapter
+
+    private val smsList = mutableListOf<SmsMessage>()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        // Initialize UI components
+        searchEditText = findViewById(R.id.searchEditText)
+        searchButton = findViewById(R.id.searchButton)
+        selectAllCheckBox = findViewById(R.id.selectAllCheckBox)
+        deleteButton = findViewById(R.id.deleteButton)
+        recyclerView = findViewById(R.id.recyclerView)
+
+        // Setup RecyclerView
+        adapter = SmsAdapter(smsList) {
+            // Callback for item selection change
+            updateSelectionState()
+        }
+        recyclerView.layoutManager = LinearLayoutManager(this)
+        recyclerView.adapter = adapter
+
+        // Setup button listeners
+        searchButton.setOnClickListener {
+            checkAndRequestPermissions()
+        }
+
+        deleteButton.setOnClickListener {
+            confirmAndDeleteMessages()
+        }
+
+        selectAllCheckBox.setOnCheckedChangeListener { _, isChecked ->
+            smsList.forEach { it.isSelected = isChecked }
+            adapter.notifyDataSetChanged()
+            updateDeleteButtonState()
+        }
+
+        // Initial check for permissions
+        checkAndRequestPermissions()
+    }
+
+    // --- Permission Handling ---
+
+    /**
+     * Checks if the necessary SMS permissions (READ_SMS and WRITE_SMS) have been granted.
+     * If permissions are not granted, it will request them from the user.
+     * If permissions are already granted, it proceeds to call the [searchSms] function.
+     *
+     * - `Manifest.permission.READ_SMS` is required to query the SMS content provider.
+     * - `Manifest.permission.WRITE_SMS` is required to delete SMS messages.
+     */
+    private fun checkAndRequestPermissions() {
+        val readSmsPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS)
+        val writeSmsPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_SMS)
+
+        val permissionsToRequest = mutableListOf<String>()
+        if (readSmsPermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.READ_SMS)
+        }
+        // WRITE_SMS is needed for deletion
+        if (writeSmsPermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.WRITE_SMS)
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                permissionsToRequest.toTypedArray(),
+                REQUEST_SMS_PERMISSIONS
+            )
+        } else {
+            // Permissions granted, proceed with search
+            searchSms()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_SMS_PERMISSIONS) {
+            if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                searchSms()
+            } else {
+                Toast.makeText(this, "SMS permissions are required to use this feature.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // --- SMS Search Logic ---
+
+    private fun searchSms() {
+        val pattern = searchEditText.text.toString().trim()
+        if (pattern.isBlank()) {
+            Toast.makeText(this, "Please enter a search pattern.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        smsList.clear()
+        val contentResolver: ContentResolver = contentResolver
+        val cursor = contentResolver.query(
+            Telephony.Sms.CONTENT_URI, // Uri for all SMS messages
+            arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            null, // Selection, we will filter in memory for simplicity
+            null,
+            Telephony.Sms.DATE + " DESC" // Sort by date descending
+        )
+
+        cursor?.use {
+            val idIndex = it.getColumnIndex(Telephony.Sms._ID)
+            val addressIndex = it.getColumnIndex(Telephony.Sms.ADDRESS)
+            val bodyIndex = it.getColumnIndex(Telephony.Sms.BODY)
+            val dateIndex = it.getColumnIndex(Telephony.Sms.DATE)
+
+            while (it.moveToNext()) {
+                val body = it.getString(bodyIndex) ?: ""
+                // Case-insensitive search
+                if (body.contains(pattern, ignoreCase = true)) {
+                    val id = it.getString(idIndex)
+                    val address = it.getString(addressIndex) ?: "Unknown"
+                    val date = it.getLong(dateIndex)
+
+                    smsList.add(SmsMessage(id, address, body, date))
+                }
+            }
+        }
+
+        adapter.notifyDataSetChanged()
+        Toast.makeText(this, "Found ${smsList.size} messages matching '$pattern'.", Toast.LENGTH_SHORT).show()
+        updateSelectionState()
+    }
+
+    // --- SMS Deletion Logic ---
+
+    private fun confirmAndDeleteMessages() {
+        val selectedMessages = smsList.filter { it.isSelected }
+        if (selectedMessages.isEmpty()) {
+            Toast.makeText(this, "No messages selected for deletion.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Confirm Deletion")
+            .setMessage("Are you sure you want to permanently delete ${selectedMessages.size} selected message(s)?")
+            .setPositiveButton("Delete") { dialog, _ ->
+                deleteSelectedMessages(selectedMessages)
+                dialog.dismiss()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deleteSelectedMessages(messagesToDelete: List<SmsMessage>) {
+        var deletedCount = 0
+        messagesToDelete.forEach { sms ->
+            try {
+                // Deletes a specific message by its _ID using the ContentResolver
+                val uri = Uri.withAppendedPath(Telephony.Sms.CONTENT_URI, sms.id)
+                val rowsDeleted = contentResolver.delete(uri, null, null)
+
+                if (rowsDeleted > 0) {
+                    deletedCount++
+                } else {
+                    Log.e("SMSManager", "Failed to delete SMS ID: ${sms.id}")
+                }
+            } catch (e: Exception) {
+                Log.e("SMSManager", "Error deleting SMS ID: ${sms.id}", e)
+            }
+        }
+
+        // Update UI state
+        smsList.removeAll(messagesToDelete)
+        adapter.notifyDataSetChanged()
+        updateSelectionState() // Re-check select all checkbox and delete button state
+
+        Toast.makeText(this, "Successfully deleted $deletedCount message(s).", Toast.LENGTH_LONG).show()
+        searchEditText.setText("") // Clear pattern after deletion
+    }
+
+    // --- UI State Management ---
+
+    private fun updateSelectionState() {
+        val selectedCount = smsList.count { it.isSelected }
+        val allSelected = smsList.isNotEmpty() && selectedCount == smsList.size
+        selectAllCheckBox.isChecked = allSelected
+        updateDeleteButtonState()
+    }
+
+    private fun updateDeleteButtonState() {
+        val selectedCount = smsList.count { it.isSelected }
+        deleteButton.isEnabled = selectedCount > 0
+        deleteButton.text = if (selectedCount > 0) "Delete Selected ($selectedCount)" else "Delete Selected"
+    }
+
+    // --- RecyclerView Adapter ---
+
+    inner class SmsAdapter(
+        private val messages: List<SmsMessage>,
+        private val selectionChangeListener: () -> Unit
+    ) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
+
+        inner class SmsViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            val senderTextView: TextView = itemView.findViewById(R.id.senderTextView)
+            val bodyTextView: TextView = itemView.findViewById(R.id.bodyTextView)
+            val dateTextView: TextView = itemView.findViewById(R.id.dateTextView)
+            val selectCheckBox: CheckBox = itemView.findViewById(R.id.selectCheckBox)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SmsViewHolder {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_sms_message, parent, false)
+            return SmsViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: SmsViewHolder, position: Int) {
+            val message = messages[position]
+
+            holder.senderTextView.text = "From: ${message.address}"
+            holder.bodyTextView.text = message.body
+            holder.dateTextView.text = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(message.date))
+            holder.selectCheckBox.isChecked = message.isSelected
+
+            holder.selectCheckBox.setOnClickListener {
+                message.isSelected = holder.selectCheckBox.isChecked
+                selectionChangeListener()
+            }
+
+            // Clicking the item body also toggles selection
+            holder.itemView.setOnClickListener {
+                message.isSelected = !message.isSelected
+                holder.selectCheckBox.isChecked = message.isSelected
+                selectionChangeListener()
+            }
+        }
+
+        override fun getItemCount() = messages.size
+    }
+}
