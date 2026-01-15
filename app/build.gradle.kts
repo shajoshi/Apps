@@ -7,6 +7,15 @@ plugins {
 android {
     namespace = "com.example.smsmanager"
     compileSdk = 34
+    
+    // Set the output APK name
+    applicationVariants.all {
+        outputs.all {
+            if (this is com.android.build.gradle.internal.api.BaseVariantOutputImpl) {
+                outputFileName = "SMSManager-${name}.apk"
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.example.smsmanager"

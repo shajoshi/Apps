@@ -106,8 +106,8 @@ class MainActivity : AppCompatActivity() {
         deleteButton.setOnClickListener {
             confirmAndDeleteMessages()
         }
-
-        // Initially request runtime permissions when the app starts
+        
+        // Load all messages when the activity starts (this will also check for permissions)
         checkAndRequestPermissions()
     }
 
@@ -167,10 +167,9 @@ class MainActivity : AppCompatActivity() {
         selectAllCheckBox.isChecked = false
         adapter.notifyDataSetChanged()
         
-        // If search box is empty, just clear the list and return
+        // If search box is empty, show all messages
         if (pattern.isBlank()) {
-            updateDeleteButtonState()
-            return
+            // We'll continue to load all messages
         }
 
         try {
@@ -198,15 +197,20 @@ class MainActivity : AppCompatActivity() {
                 val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
 
                 while (cursor.moveToNext() && count < 1000) { // Limit to 1000 messages for performance
+                    val id = cursor.getString(idIndex)
+                    val address = cursor.getString(addressIndex) ?: "Unknown"
                     val body = cursor.getString(bodyIndex) ?: ""
-                    if (body.contains(pattern, ignoreCase = true)) {
-                        val id = cursor.getString(idIndex)
-                        val address = cursor.getString(addressIndex) ?: "Unknown"
-                        val date = cursor.getLong(dateIndex)
-
-                        smsList.add(SmsMessage(id, address, body, date))
-                        count++
+                    val date = cursor.getLong(dateIndex)
+                    
+                    // If there's a search pattern, check if it matches address or body
+                    if (pattern.isNotBlank() && 
+                        !address.contains(pattern, ignoreCase = true) && 
+                        !body.contains(pattern, ignoreCase = true)) {
+                        continue
                     }
+                    
+                    smsList.add(SmsMessage(id, address, body, date))
+                    count++
                 }
             }
 
