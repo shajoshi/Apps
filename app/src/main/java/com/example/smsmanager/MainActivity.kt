@@ -19,6 +19,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -26,6 +27,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,6 +61,27 @@ class MainActivity : AppCompatActivity() {
 
     private var smsList = mutableListOf<SmsMessage>()
     private lateinit var adapter: SmsAdapter
+    private var isFirstLoad = true
+    
+    private val defaultSmsLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result: ActivityResult ->
+        if (isDefaultSmsApp()) {
+            Toast.makeText(this, "Now set as default SMS app. You can now delete messages.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Please set this app as the default SMS app to delete messages.", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    private val maxMessageLimit: Int by lazy {
+        try {
+            val appInfo = packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+            appInfo.metaData?.getInt("com.example.smsmanager.max_message_limit", 1000) ?: 1000
+        } catch (e: Exception) {
+            Log.w("SMSManager", "Could not read max_message_limit from manifest, using default 1000", e)
+            1000
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,13 +95,43 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerView)
 
         // Setup RecyclerView
-        adapter = SmsAdapter(smsList) { position ->
-            // Toggle selection state when an item is clicked
-            smsList[position].isSelected = !smsList[position].isSelected
-            adapter.notifyItemChanged(position)
-            // Update the delete button state after selection changes
-            updateDeleteButtonState()
-        }
+        adapter = SmsAdapter(
+            smsList,
+            // Checkbox click handler
+            object : (Int) -> Unit {
+                override fun invoke(position: Int) {
+                    // Toggle selection state
+                    smsList[position].isSelected = !smsList[position].isSelected
+                    adapter.notifyItemChanged(position)
+                    updateDeleteButtonState()
+                    
+                    // Update select all checkbox state without triggering listener
+                    val allSelected = smsList.all { it.isSelected }
+                    val noneSelected = smsList.none { it.isSelected }
+                    if (selectAllCheckBox.isChecked != (allSelected && !noneSelected)) {
+                        selectAllCheckBox.setOnCheckedChangeListener(null)
+                        selectAllCheckBox.isChecked = allSelected && !noneSelected
+                        selectAllCheckBox.jumpDrawablesToCurrentState()
+                        selectAllCheckBox.setOnCheckedChangeListener { _, isChecked ->
+                            smsList.forEach { it.isSelected = isChecked }
+                            adapter.notifyDataSetChanged()
+                            updateDeleteButtonState()
+                        }
+                    }
+                }
+            },
+            // Message area click handler
+            object : (Int) -> Unit {
+                override fun invoke(position: Int) {
+                    // Open conversation without changing selection state
+                    val message = smsList[position]
+                    val intent = Intent(this@MainActivity, ConversationActivity::class.java).apply {
+                        putExtra("SENDER_ADDRESS", message.address)
+                    }
+                    startActivity(intent)
+                }
+            }
+        )
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = adapter
 
@@ -147,18 +203,111 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private var isShowingConversation = false
+    private var currentSender: String? = null
+
+    private fun loadMessagesBySender(sender: String) {
+        currentSender = sender
+        isShowingConversation = true
+        
+        // Update UI for conversation view
+        searchEditText.hint = "Search in conversation with $sender"
+        selectAllCheckBox.visibility = View.GONE
+        deleteButton.visibility = View.GONE
+        
+        // Clear and reload messages from this sender
+        smsList.clear()
+        loadSmsMessages(sender)
+    }
     
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CODE_DEFAULT_SMS) {
-            if (isDefaultSmsApp()) {
-                Toast.makeText(this, "Now set as default SMS app. You can now delete messages.", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(this, "Please set this app as the default SMS app to delete messages.", Toast.LENGTH_LONG).show()
+    private fun showAllMessages() {
+        isShowingConversation = false
+        currentSender = null
+        
+        // Reset UI to normal view
+        searchEditText.hint = "Search messages..."
+        selectAllCheckBox.visibility = View.VISIBLE
+        deleteButton.visibility = View.VISIBLE
+        
+        // Reload all messages
+        searchSms()
+    }
+    
+    private fun loadSmsMessages(filterSender: String? = null) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val contentResolver: ContentResolver = contentResolver
+                val cursor = contentResolver.query(
+                    Telephony.Sms.CONTENT_URI,
+                    arrayOf(
+                        Telephony.Sms._ID,
+                        Telephony.Sms.ADDRESS,
+                        Telephony.Sms.BODY,
+                        Telephony.Sms.DATE,
+                        Telephony.Sms.READ,
+                        Telephony.Sms.TYPE
+                    ),
+                    if (filterSender != null) "${Telephony.Sms.ADDRESS} = ?" else null,
+                    if (filterSender != null) arrayOf(filterSender) else null,
+                    "${Telephony.Sms.DATE} DESC"
+                )
+
+                val messages = mutableListOf<SmsMessage>()
+                var count = 0
+                var totalCount = 0
+                cursor?.use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+                    val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                    val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                    val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
+
+                    // Count total messages first
+                    if (filterSender == null && isFirstLoad) {
+                        cursor.moveToPosition(-1)
+                        while (cursor.moveToNext()) {
+                            totalCount++
+                        }
+                        cursor.moveToPosition(-1)
+                    }
+
+                    while (cursor.moveToNext() && count < maxMessageLimit) {
+                        val id = cursor.getString(idIndex)
+                        val address = cursor.getString(addressIndex) ?: "Unknown"
+                        val body = cursor.getString(bodyIndex) ?: ""
+                        val date = cursor.getLong(dateIndex)
+                        
+                        messages.add(SmsMessage(id, address, body, date, isDefaultSmsApp = isDefaultSmsApp()))
+                        count++
+                    }
+                }
+                
+                // Update UI on main thread
+                withContext(Dispatchers.Main) {
+                    smsList.clear()
+                    smsList.addAll(messages)
+                    adapter.notifyDataSetChanged()
+                    
+                    // Show total message count on first load
+                    if (isFirstLoad && filterSender == null) {
+                        val message = if (totalCount > maxMessageLimit) {
+                            "Found $totalCount total messages (showing latest $maxMessageLimit)"
+                        } else {
+                            "Found $totalCount total messages"
+                        }
+                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                        isFirstLoad = false
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Log.e("SMSManager", "Error loading messages", e)
+                    Toast.makeText(this@MainActivity, "Error loading messages: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
-
+    
     private fun searchSms() {
         val pattern = searchEditText.text.toString().trim()
         
@@ -169,64 +318,65 @@ class MainActivity : AppCompatActivity() {
         
         // If search box is empty, show all messages
         if (pattern.isBlank()) {
-            // We'll continue to load all messages
+            loadSmsMessages()
+            return
         }
+        
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val contentResolver: ContentResolver = contentResolver
+                val cursor = contentResolver.query(
+                    Telephony.Sms.CONTENT_URI,
+                    arrayOf(
+                        Telephony.Sms._ID,
+                        Telephony.Sms.ADDRESS,
+                        Telephony.Sms.BODY,
+                        Telephony.Sms.DATE,
+                        Telephony.Sms.READ,
+                        Telephony.Sms.TYPE
+                    ),
+                    "${Telephony.Sms.BODY} LIKE ? OR ${Telephony.Sms.ADDRESS} LIKE ?",
+                    arrayOf("%$pattern%", "%$pattern%"),
+                    "${Telephony.Sms.DATE} DESC"
+                )
 
-        try {
-            val contentResolver: ContentResolver = contentResolver
-            val cursor = contentResolver.query(
-                Telephony.Sms.CONTENT_URI,
-                arrayOf(
-                    Telephony.Sms._ID,
-                    Telephony.Sms.ADDRESS,
-                    Telephony.Sms.BODY,
-                    Telephony.Sms.DATE,
-                    Telephony.Sms.READ,
-                    Telephony.Sms.TYPE
-                ),
-                null,
-                null,
-                "${Telephony.Sms.DATE} DESC"
-            )
+                val messages = mutableListOf<SmsMessage>()
+                var count = 0
+                cursor?.use { cursor ->
+                    val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
+                    val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                    val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                    val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
 
-            var count = 0
-            cursor?.use { cursor ->
-                val idIndex = cursor.getColumnIndexOrThrow(Telephony.Sms._ID)
-                val addressIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
-                val bodyIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
-                val dateIndex = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
-
-                while (cursor.moveToNext() && count < 1000) { // Limit to 1000 messages for performance
-                    val id = cursor.getString(idIndex)
-                    val address = cursor.getString(addressIndex) ?: "Unknown"
-                    val body = cursor.getString(bodyIndex) ?: ""
-                    val date = cursor.getLong(dateIndex)
+                    while (cursor.moveToNext() && count < maxMessageLimit) {
+                        val id = cursor.getString(idIndex)
+                        val address = cursor.getString(addressIndex) ?: "Unknown"
+                        val body = cursor.getString(bodyIndex) ?: ""
+                        val date = cursor.getLong(dateIndex)
+                        
+                        messages.add(SmsMessage(id, address, body, date, isDefaultSmsApp = isDefaultSmsApp()))
+                        count++
+                    }
+                }
+                
+                // Update UI on main thread
+                withContext(Dispatchers.Main) {
+                    smsList.addAll(messages)
+                    adapter.notifyDataSetChanged()
                     
-                    // If there's a search pattern, check if it matches address or body
-                    if (pattern.isNotBlank() && 
-                        !address.contains(pattern, ignoreCase = true) && 
-                        !body.contains(pattern, ignoreCase = true)) {
-                        continue
+                    if (count == 0) {
+                        Toast.makeText(this@MainActivity, "No messages found", Toast.LENGTH_SHORT).show()
                     }
                     
-                    smsList.add(SmsMessage(id, address, body, date))
-                    count++
+                    updateSelectionState()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Log.e("SMSManager", "Error searching messages", e)
+                    Toast.makeText(this@MainActivity, "Error searching messages: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-
-            adapter.notifyDataSetChanged()
-            val message = if (count > 0) {
-                "Found $count messages matching '$pattern'"
-            } else {
-                "No messages found matching '$pattern'"
-            }
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Log.e("SMSManager", "Error searching SMS", e)
-            Toast.makeText(this, "Error searching messages: ${e.message}", Toast.LENGTH_LONG).show()
         }
-
-        updateSelectionState()
     }
 
     private fun confirmAndDeleteMessages() {
@@ -291,7 +441,7 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
             intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-            startActivityForResult(intent, REQUEST_CODE_DEFAULT_SMS)
+            defaultSmsLauncher.launch(intent)
         } else {
             // For older versions, open settings
             val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS)
@@ -300,43 +450,64 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun deleteSelectedMessages(selectedMessages: List<SmsMessage>) {
-        try {
-            val contentResolver = contentResolver
-            val deletedCount = selectedMessages.count { message ->
-                try {
-                    val uri = Uri.parse("content://sms/${message.id}")
-                    val rowsDeleted = contentResolver.delete(uri, null, null) > 0
-                    if (rowsDeleted) {
-                        // Remove the message from our list if deletion was successful
-                        smsList.removeAll { it.id == message.id }
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val contentResolver = contentResolver
+                var deletedCount = 0
+                
+                selectedMessages.forEach { message ->
+                    try {
+                        val deleteCount = contentResolver.delete(
+                            Telephony.Sms.CONTENT_URI,
+                            "${Telephony.Sms._ID} = ?",
+                            arrayOf(message.id)
+                        )
+                        deletedCount += deleteCount
+                    } catch (e: Exception) {
+                        Log.e("SMSManager", "Error deleting message with ID: ${message.id}", e)
                     }
-                    rowsDeleted
-                } catch (e: Exception) {
-                    Log.e("SMSManager", "Error deleting message ${message.id}", e)
-                    false
+                }
+                
+                // Update UI on main thread
+                withContext(Dispatchers.Main) {
+                    // Check if select all was used before deletion
+                    val wasSelectAllUsed = selectAllCheckBox.isChecked
+                    
+                    // Update the UI
+                    adapter.notifyDataSetChanged()
+                    updateDeleteButtonState()
+                    
+                    // Clear any remaining selections
+                    smsList.forEach { it.isSelected = false }
+                    selectAllCheckBox.isChecked = false
+                    adapter.notifyDataSetChanged()
+                    updateDeleteButtonState()
+                    
+                    // Clear search text if select all was used
+                    if (wasSelectAllUsed) {
+                        searchEditText.text.clear()
+                    }
+                    
+                    // Show result
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (deletedCount > 0) {
+                            "Successfully deleted $deletedCount message(s)"
+                        } else {
+                            "No messages were deleted"
+                        },
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    
+                    // Reload messages to update the list
+                    searchSms()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Log.e("SMSManager", "Error deleting messages", e)
+                    Toast.makeText(this@MainActivity, "Error deleting messages: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
-
-            // Update the UI
-            adapter.notifyDataSetChanged()
-            updateDeleteButtonState()
-            
-            // Clear any remaining selections
-            smsList.forEach { it.isSelected = false }
-            selectAllCheckBox.isChecked = false
-            
-            val message = if (deletedCount > 0) {
-                "Successfully deleted $deletedCount message(s)"
-            } else {
-                "Failed to delete messages. Please try again."
-            }
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-        } catch (e: SecurityException) {
-            Log.e("SMSManager", "Security exception while deleting messages", e)
-            Toast.makeText(this, "Permission denied. Please make sure this app is the default SMS app.", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Log.e("SMSManager", "Error deleting messages", e)
-            Toast.makeText(this, "Error deleting messages: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -353,16 +524,6 @@ class MainActivity : AppCompatActivity() {
             }
             Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         }
-        
-        // Update the select all checkbox state
-        selectAllCheckBox.setOnCheckedChangeListener(null) // Remove listener to prevent infinite loop
-        selectAllCheckBox.isChecked = selectedCount > 0 && smsList.all { it.isSelected }
-        selectAllCheckBox.jumpDrawablesToCurrentState() // Update the visual state without animation
-        selectAllCheckBox.setOnCheckedChangeListener { _, isChecked ->
-            smsList.forEach { it.isSelected = isChecked }
-            adapter.notifyDataSetChanged()
-            updateDeleteButtonState()
-        }
     }
     
     private fun updateSelectionState() {
@@ -372,12 +533,24 @@ class MainActivity : AppCompatActivity() {
         adapter.notifyDataSetChanged()
         updateDeleteButtonState()
     }
+    
+    private fun showMessageDetails(message: SmsMessage) {
+        AlertDialog.Builder(this)
+            .setTitle(message.address.ifEmpty { "Unknown Sender" })
+            .setMessage(message.body)
+            .setPositiveButton("OK", null)
+            .setNeutralButton("View All Messages") { _, _ ->
+                loadMessagesBySender(message.address)
+            }
+            .show()
+    }
 
     // --- RecyclerView Adapter ---
 
-    private inner class SmsAdapter(
-        private val messages: List<SmsMessage>,
-        private val onItemClick: (Int) -> Unit
+    private class SmsAdapter(
+        private val messages: MutableList<SmsMessage>,
+        private val onItemClick: (Int) -> Unit,
+        private val onMessageClick: (Int) -> Unit
     ) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
 
         inner class SmsViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -387,12 +560,14 @@ class MainActivity : AppCompatActivity() {
             val selectCheckBox: CheckBox = itemView.findViewById(R.id.selectCheckBox)
 
             init {
+                // Message area click (sender, body, date)
                 itemView.setOnClickListener {
                     val position = bindingAdapterPosition
                     if (position != RecyclerView.NO_POSITION) {
-                        onItemClick(position)
+                        onMessageClick(position)
                     }
                 }
+                // Checkbox click
                 selectCheckBox.setOnClickListener {
                     val position = bindingAdapterPosition
                     if (position != RecyclerView.NO_POSITION) {

@@ -13,7 +13,7 @@ tools:context=".MainActivity">
 <TextView
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:text="SMS Bulk Manager"
+    android:text="SMS Manager"
     android:textSize="24sp"
     android:textStyle="bold"
     android:textColor="#1F2937"
@@ -91,6 +91,8 @@ tools:context=".MainActivity">
     android:id="@+id/recyclerView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:scrollbars="vertical"
+    android:fadeScrollbars="false"
     tools:listitem="@layout/item_sms_message"/>
 
 </LinearLayout>
