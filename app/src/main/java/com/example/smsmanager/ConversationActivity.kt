@@ -29,15 +29,21 @@ class ConversationActivity : AppCompatActivity() {
         // Initialize views
         conversationRecyclerView = findViewById(R.id.conversationRecyclerView)
 
-        // Get the sender's address from the intent
+        // Get the sender's address and contact name from the intent
         senderAddress = intent.getStringExtra("SENDER_ADDRESS") ?: run {
             finish()
             return
         }
+        
+        val contactName = intent.getStringExtra("CONTACT_NAME")
 
-        // Set up the action bar
+        // Set up the action bar with contact name if available
         supportActionBar?.apply {
-            title = senderAddress
+            title = if (contactName != null && contactName != senderAddress) {
+                "$contactName ($senderAddress)"
+            } else {
+                senderAddress
+            }
             setDisplayHomeAsUpEnabled(true)
         }
 
@@ -132,8 +138,8 @@ class ConversationActivity : AppCompatActivity() {
             val message = messages[position]
             holder.messageText.text = message.body
             
-            val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-            holder.messageTime.text = timeFormat.format(Date(message.date))
+            val dateTimeFormat = SimpleDateFormat("dd-MMM-yyyy hh:mm a", Locale.getDefault())
+            holder.messageTime.text = dateTimeFormat.format(Date(message.date))
             
             // Style based on message type (incoming/outgoing)
             val isOutgoing = message.address != senderAddress

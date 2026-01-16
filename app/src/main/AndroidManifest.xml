@@ -26,6 +26,9 @@
     <!-- Required for Android 10+ to read phone numbers -->
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    
+    <!-- Permissions for reading contacts to resolve contact names -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <!-- Required for Android 11+ to be a default SMS app -->
     <queries>
