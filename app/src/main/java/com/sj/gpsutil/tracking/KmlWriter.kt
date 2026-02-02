@@ -11,6 +11,11 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
     private var closed = false
     private val trackEntries = StringBuilder()
     private val lineStringCoordinates = StringBuilder()
+    private var recordingSettings: RecordingSettingsSnapshot? = null
+
+    override fun setRecordingSettings(settings: RecordingSettingsSnapshot) {
+        recordingSettings = settings
+    }
 
     override fun writeHeader() {
         writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
@@ -21,6 +26,31 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
         writer.newLine()
         writer.write("<name>SJGpsUtil Track</name>")
         writer.newLine()
+        recordingSettings?.let { settings ->
+            writer.write("<ExtendedData>\n")
+            writer.write("<Data name=\"intervalSeconds\"><value>${settings.intervalSeconds}</value></Data>\n")
+            writer.write("<Data name=\"disablePointFiltering\"><value>${settings.disablePointFiltering}</value></Data>\n")
+            writer.write("<Data name=\"enableAccelerometer\"><value>${settings.enableAccelerometer}</value></Data>\n")
+            writer.write("<Data name=\"roadCalibrationMode\"><value>${settings.roadCalibrationMode}</value></Data>\n")
+            writer.write("<Data name=\"outputFormat\"><value>${settings.outputFormat}</value></Data>\n")
+            writer.write("<Data name=\"profileName\"><value>${settings.profileName ?: ""}</value></Data>\n")
+            val cal = settings.calibration
+            writer.write("<Data name=\"calibration.rmsSmoothMax\"><value>${"%.3f".format(cal.rmsSmoothMax)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.rmsAverageMax\"><value>${"%.3f".format(cal.rmsAverageMax)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.peakThresholdZ\"><value>${"%.3f".format(cal.peakThresholdZ)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.symmetricBumpThreshold\"><value>${"%.3f".format(cal.symmetricBumpThreshold)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.potholeDipThreshold\"><value>${"%.3f".format(cal.potholeDipThreshold)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.bumpSpikeThreshold\"><value>${"%.3f".format(cal.bumpSpikeThreshold)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.peakCountSmoothMax\"><value>${cal.peakCountSmoothMax}</value></Data>\n")
+            writer.write("<Data name=\"calibration.peakCountAverageMax\"><value>${cal.peakCountAverageMax}</value></Data>\n")
+            writer.write("<Data name=\"calibration.movingAverageWindow\"><value>${cal.movingAverageWindow}</value></Data>\n")
+            cal.baseGravityVector?.let { g ->
+                writer.write("<Data name=\"calibration.baseGravityVectorX\"><value>${"%.3f".format(g[0])}</value></Data>\n")
+                writer.write("<Data name=\"calibration.baseGravityVectorY\"><value>${"%.3f".format(g[1])}</value></Data>\n")
+                writer.write("<Data name=\"calibration.baseGravityVectorZ\"><value>${"%.3f".format(g[2])}</value></Data>\n")
+            }
+            writer.write("</ExtendedData>\n")
+        }
         // Styles for point coloring by road quality
         writer.write("<Style id=\"smoothStyle\"><IconStyle><color>ff00ff00</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>")
         writer.newLine()
@@ -42,6 +72,7 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
         val accelXMean = sample.accelXMean?.let { "%.3f".format(it) } ?: ""
         val accelYMean = sample.accelYMean?.let { "%.3f".format(it) } ?: ""
         val accelZMean = sample.accelZMean?.let { "%.3f".format(it) } ?: ""
+        val accelVertMean = sample.accelVertMean?.let { "%.3f".format(it) } ?: ""
         val accelMagMax = sample.accelMagnitudeMax?.let { "%.3f".format(it) } ?: ""
         val accelRMS = sample.accelRMS?.let { "%.3f".format(it) } ?: ""
 
@@ -85,6 +116,10 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             writer.newLine()
             writer.write("<Data name=\"accelZMean\"><value>$accelZMean</value></Data>")
             writer.newLine()
+            if (sample.accelVertMean != null) {
+                writer.write("<Data name=\"accelVertMean\"><value>$accelVertMean</value></Data>")
+                writer.newLine()
+            }
             writer.write("<Data name=\"accelMagnitudeMax\"><value>$accelMagMax</value></Data>")
             writer.newLine()
             writer.write("<Data name=\"accelRMS\"><value>$accelRMS</value></Data>")

@@ -23,12 +23,17 @@ data class TrackingSample(
     val accelXMean: Float? = null,
     val accelYMean: Float? = null,
     val accelZMean: Float? = null,
+    val accelVertMean: Float? = null,
     val accelMagnitudeMax: Float? = null,
     val accelRMS: Float? = null,
     val roadQuality: String? = null,
     val featureDetected: String? = null,
     val peakCount: Int? = null,
-    val stdDev: Float? = null
+    val stdDev: Float? = null,
+    val rawAccelData: List<FloatArray>? = null,
+    val gravityVector: FloatArray? = null,
+    val manualLabel: String? = null,
+    val manualFeatureLabel: String? = null
 )
 
 object TrackingState {
@@ -45,6 +50,9 @@ object TrackingState {
     private val _notMovingMillis = MutableStateFlow(0L)
     private val _lastMovementTimestampMillis = MutableStateFlow<Long?>(null)
     private val _skippedPoints = MutableStateFlow(0L)
+    private val _manualLabel = MutableStateFlow<String?>(null)
+    private val _pendingFeatureLabel = MutableStateFlow<String?>(null)
+    private val _gravityVector = MutableStateFlow<FloatArray?>(null)
 
     val status = _status.asStateFlow()
     val latestSample = _latestSample.asStateFlow()
@@ -57,6 +65,9 @@ object TrackingState {
     val minAccuracyForDistanceCalcMeters = _minAccuracyForDistanceCalcMeters.asStateFlow()
     val notMovingMillis = _notMovingMillis.asStateFlow()
     val skippedPoints = _skippedPoints.asStateFlow()
+    val manualLabel = _manualLabel.asStateFlow()
+    val pendingFeatureLabel = _pendingFeatureLabel.asStateFlow()
+    val gravityVector = _gravityVector.asStateFlow()
 
     fun updateStatus(status: TrackingStatus) {
         _status.value = status
@@ -160,5 +171,25 @@ object TrackingState {
 
     fun updateCurrentFileName(name: String?) {
         _currentFileName.value = name
+    }
+
+    fun setManualLabel(label: String?) {
+        _manualLabel.value = label
+    }
+
+    fun setPendingFeatureLabel(label: String?) {
+        _pendingFeatureLabel.value = label
+    }
+
+    fun consumePendingFeatureLabel(): String? {
+        val label = _pendingFeatureLabel.value
+        if (label != null) {
+            _pendingFeatureLabel.value = null
+        }
+        return label
+    }
+
+    fun setGravityVector(vector: FloatArray?) {
+        _gravityVector.value = vector
     }
 }

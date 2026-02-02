@@ -30,6 +30,7 @@ import com.google.android.gms.location.Priority
 import com.sj.gpsutil.MainActivity
 import com.sj.gpsutil.R
 import com.sj.gpsutil.data.OutputFormat
+import com.sj.gpsutil.tracking.RecordingSettingsSnapshot
 import com.sj.gpsutil.data.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,12 +38,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.max
+import kotlin.math.sqrt
 
 class TrackingService : Service() {
     companion object {
         const val ACTION_START = "com.sj.gpsutil.tracking.action.START"
         const val ACTION_PAUSE = "com.sj.gpsutil.tracking.action.PAUSE"
         const val ACTION_STOP = "com.sj.gpsutil.tracking.action.STOP"
+        const val ACTION_CAPTURE_BASELINE = "com.sj.gpsutil.tracking.action.CAPTURE_BASELINE"
 
         private const val NOTIFICATION_CHANNEL_ID = "tracking_channel"
         private const val NOTIFICATION_CHANNEL_NAME = "GPS Tracking"
@@ -73,6 +76,7 @@ class TrackingService : Service() {
     private var lastRejectionWarningAtMillis = 0L
     private var disablePointFiltering: Boolean = false
     private var enableAccelerometer: Boolean = true
+    private var roadCalibrationMode: Boolean = false
     private var calibration = CalibrationSettings()
     private val accelBuffer = mutableListOf<FloatArray>()
     private val accelLock = Any()
@@ -86,6 +90,9 @@ class TrackingService : Service() {
             override fun onLocationResult(result: LocationResult) {
                 val location = result.lastLocation ?: return
                 val accelMetrics = if (enableAccelerometer) computeAccelMetrics() else null
+                val manualLabel = if (roadCalibrationMode) TrackingState.manualLabel.value else null
+                val manualFeature = if (roadCalibrationMode) TrackingState.consumePendingFeatureLabel() else null
+                val gravityVector = if (roadCalibrationMode) TrackingState.gravityVector.value else null
                 val sample = TrackingSample(
                     latitude = location.latitude,
                     longitude = location.longitude,
@@ -99,12 +106,17 @@ class TrackingService : Service() {
                     accelXMean = accelMetrics?.meanX,
                     accelYMean = accelMetrics?.meanY,
                     accelZMean = accelMetrics?.meanZ,
+                    accelVertMean = accelMetrics?.meanVert,
                     accelMagnitudeMax = accelMetrics?.maxMagnitude,
                     accelRMS = accelMetrics?.rms,
                     roadQuality = accelMetrics?.roadQuality,
                     featureDetected = accelMetrics?.featureDetected,
                     peakCount = accelMetrics?.peakCount,
-                    stdDev = accelMetrics?.stdDev
+                    stdDev = accelMetrics?.stdDev,
+                    rawAccelData = if (roadCalibrationMode) accelMetrics?.rawData else null,
+                    gravityVector = gravityVector,
+                    manualLabel = manualLabel,
+                    manualFeatureLabel = manualFeature
                 )
                 sample.verticalAccuracyMeters?.let {
                     Log.d("TrackingService", "Vertical accuracy: ${String.format("%.1f", it)} m")
@@ -167,10 +179,17 @@ class TrackingService : Service() {
         synchronized(accelLock) {
             if (accelBuffer.isEmpty()) return null
 
-            // Step 1: Remove gravity by subtracting mean Z
-            val meanZGravity = accelBuffer.map { it[2] }.average().toFloat()
+            // Capture raw data (copy of current buffer)
+            val rawData = accelBuffer.toList()
+
+            // Step 1: Remove gravity/static offset from ALL axes (detrend)
+            // This makes RMS/magnitude metrics less sensitive to mount angle.
+            val biasX = accelBuffer.map { it[0] }.average().toFloat()
+            val biasY = accelBuffer.map { it[1] }.average().toFloat()
+            val biasZ = accelBuffer.map { it[2] }.average().toFloat()
+
             val detrended = accelBuffer.map {
-                floatArrayOf(it[0], it[1], it[2] - meanZGravity)
+                floatArrayOf(it[0] - biasX, it[1] - biasY, it[2] - biasZ)
             }
 
             // Step 2: Apply simple moving average filter (window size from calibration)
@@ -180,30 +199,46 @@ class TrackingService : Service() {
             var sumX = 0f
             var sumY = 0f
             var sumZ = 0f
+            var sumVert = 0f
             var maxMagnitude = 0f
             var sumSquares = 0f
             var peakCount = 0
             val magnitudes = mutableListOf<Float>()
 
+            val g = calibration.baseGravityVector
+            val gUnit = if (g != null && g.size >= 3) {
+                val norm = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
+                if (norm > 1e-3f) floatArrayOf(g[0] / norm, g[1] / norm, g[2] / norm) else null
+            } else {
+                null
+            }
+
             smoothed.forEach { values ->
                 sumX += values[0]
                 sumY += values[1]
                 sumZ += values[2]
-                val magnitude = kotlin.math.sqrt(
-                    values[0] * values[0] + values[1] * values[1] + values[2] * values[2]
-                )
+
+                val aVert = if (gUnit != null) {
+                    values[0] * gUnit[0] + values[1] * gUnit[1] + values[2] * gUnit[2]
+                } else {
+                    values[2]
+                }
+                sumVert += aVert
+
+                val magnitude = sqrt(values[0] * values[0] + values[1] * values[1] + values[2] * values[2])
                 magnitudes.add(magnitude)
                 if (magnitude > maxMagnitude) maxMagnitude = magnitude
                 sumSquares += magnitude * magnitude
 
                 // Peak detection using calibration threshold
-                if (kotlin.math.abs(values[2]) > calibration.peakThresholdZ) peakCount++
+                if (kotlin.math.abs(aVert) > calibration.peakThresholdZ) peakCount++
             }
 
             val count = smoothed.size
             val meanX = sumX / count
             val meanY = sumY / count
             val meanZ = sumZ / count
+            val meanVert = sumVert / count
             val rms = kotlin.math.sqrt(sumSquares / count)
 
             // Calculate standard deviation
@@ -218,9 +253,14 @@ class TrackingService : Service() {
                 else -> "rough"
             }
 
-            // Step 5: Detect features (analyze Z-axis pattern)
-            val feature = detectFeature(
-                smoothed,
+            // Step 5: Detect features (use vertical component projected onto gravity)
+            val aVertSeries = if (gUnit != null) {
+                smoothed.map { it[0] * gUnit[0] + it[1] * gUnit[1] + it[2] * gUnit[2] }
+            } else {
+                smoothed.map { it[2] }
+            }
+            val feature = detectFeatureVert(
+                aVertSeries,
                 symmetricThreshold = calibration.symmetricBumpThreshold,
                 potholeThreshold = calibration.potholeDipThreshold,
                 bumpSpikeThreshold = calibration.bumpSpikeThreshold
@@ -229,8 +269,8 @@ class TrackingService : Service() {
             accelBuffer.clear()
 
             return AccelMetrics(
-                meanX, meanY, meanZ, maxMagnitude, rms,
-                peakCount, stdDev, roadQuality, feature
+                meanX, meanY, meanZ, meanVert, maxMagnitude, rms,
+                peakCount, stdDev, roadQuality, feature, rawData
             )
         }
     }
@@ -250,25 +290,24 @@ class TrackingService : Service() {
         return result
     }
 
-    private fun detectFeature(
-        data: List<FloatArray>,
+    private fun detectFeatureVert(
+        vertValues: List<Float>,
         symmetricThreshold: Float,
         potholeThreshold: Float,
         bumpSpikeThreshold: Float
     ): String? {
-        if (data.size < 10) return null
-        val zValues = data.map { it[2] }
+        if (vertValues.size < 10) return null
 
         // Speed bump: symmetric rise and fall pattern
-        val hasSymmetricBump = detectSymmetricPattern(zValues, symmetricThreshold)
+        val hasSymmetricBump = detectSymmetricPattern(vertValues, symmetricThreshold)
         if (hasSymmetricBump) return "speed_bump"
 
         // Pothole: sharp drop and recovery (asymmetric dip)
-        val hasAsymmetricDip = detectAsymmetricDip(zValues, potholeThreshold)
+        val hasAsymmetricDip = detectAsymmetricDip(vertValues, potholeThreshold)
         if (hasAsymmetricDip) return "pothole"
 
         // Single bump
-        if (zValues.any { kotlin.math.abs(it) > bumpSpikeThreshold }) return "bump"
+        if (vertValues.any { kotlin.math.abs(it) > bumpSpikeThreshold }) return "bump"
 
         return null
     }
@@ -327,8 +366,43 @@ class TrackingService : Service() {
             ACTION_START -> startRecording()
             ACTION_PAUSE -> pauseRecording()
             ACTION_STOP -> stopRecording()
+            ACTION_CAPTURE_BASELINE -> captureBaseline()
         }
         return START_STICKY
+    }
+
+    private fun captureBaseline() {
+        synchronized(accelLock) {
+            if (accelBuffer.isNotEmpty()) {
+                val count = accelBuffer.size
+                var sumX = 0f
+                var sumY = 0f
+                var sumZ = 0f
+                accelBuffer.forEach {
+                    sumX += it[0]
+                    sumY += it[1]
+                    sumZ += it[2]
+                }
+                val gravity = floatArrayOf(sumX / count, sumY / count, sumZ / count)
+                TrackingState.setGravityVector(gravity)
+                scope.launch {
+                    val settings = settingsRepository.settingsFlow.first()
+                    val updatedCalibration = settings.calibration.copy(baseGravityVector = gravity)
+                    settingsRepository.updateCalibration(updatedCalibration)
+                }
+                updateNotification("Baseline Captured")
+                
+                // Revert notification after short delay if we are recording
+                if (currentStatus == TrackingStatus.Recording) {
+                    scope.launch {
+                        kotlinx.coroutines.delay(2000)
+                        if (currentStatus == TrackingStatus.Recording) {
+                            updateNotification("Recording")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -352,19 +426,33 @@ class TrackingService : Service() {
                 val settings = settingsRepository.settingsFlow.first()
                 disablePointFiltering = settings.disablePointFiltering
                 enableAccelerometer = settings.enableAccelerometer
+                roadCalibrationMode = settings.roadCalibrationMode
                 currentIntervalSeconds = settings.intervalSeconds
                 calibration = settings.calibration
+                TrackingState.setGravityVector(settings.calibration.baseGravityVector)
+                val recordingSettingsSnapshot = RecordingSettingsSnapshot(
+                    intervalSeconds = settings.intervalSeconds,
+                    disablePointFiltering = settings.disablePointFiltering,
+                    enableAccelerometer = settings.enableAccelerometer,
+                    roadCalibrationMode = settings.roadCalibrationMode,
+                    outputFormat = settings.outputFormat,
+                    calibration = settings.calibration,
+                    profileName = settings.currentProfileName
+                )
                 val handle = runCatching { fileStore.createTrackOutputStream(settings) }.getOrNull()
                     ?: run {
                         updateNotification("Failed to create file")
                         stopSelf()
                         return@launch
                     }
-                trackWriter = when (settings.outputFormat) {
+                val writer = when (settings.outputFormat) {
                     OutputFormat.GPX -> GpxWriter(handle.outputStream)
                     OutputFormat.KML -> KmlWriter(handle.outputStream)
                     OutputFormat.JSON -> JsonWriter(handle.outputStream)
-                }.apply { writeHeader() }
+                }
+                writer.setRecordingSettings(recordingSettingsSnapshot)
+                writer.writeHeader()
+                trackWriter = writer
                 TrackingState.resetPointCount()
                 TrackingState.updateCurrentFileName(handle.filename)
             }

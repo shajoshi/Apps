@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -170,8 +171,8 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
                 bearingText
             }
             Text("Bearing: $bearingDisplay")
-            val accelZMeanText = latestSample?.accelZMean?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("Accel Z mean: $accelZMeanText")
+            val accelVertMeanText = latestSample?.accelVertMean?.let { "%.3f m/s²".format(it) } ?: "--"
+            Text("Accel vertical mean: $accelVertMeanText")
             
             // Road quality and feature detection
             val roadQualityText = latestSample?.roadQuality?.let { quality ->
@@ -192,6 +193,90 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
                     else -> feature
                 }
                 Text("Feature: $featureText", color = androidx.compose.ui.graphics.Color.Red)
+            }
+        }
+
+        // Calibration Mode UI
+        if (status == TrackingStatus.Recording) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Calibration Mode", style = MaterialTheme.typography.titleMedium)
+            
+            // Mount Calibration
+            OutlinedButton(
+                onClick = { sendTrackingAction(context, TrackingService.ACTION_CAPTURE_BASELINE) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Capture Mount Baseline (Stationary)")
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Ground Truth: Road Quality", style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val currentLabel by TrackingState.manualLabel.collectAsState()
+                
+                Button(
+                    onClick = { TrackingState.setManualLabel("smooth") },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = if (currentLabel == "smooth") androidx.compose.ui.graphics.Color.Green else androidx.compose.ui.graphics.Color.Gray
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Smooth")
+                }
+                
+                Button(
+                    onClick = { TrackingState.setManualLabel("average") },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = if (currentLabel == "average") androidx.compose.ui.graphics.Color.Yellow else androidx.compose.ui.graphics.Color.Gray
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Avg", color = androidx.compose.ui.graphics.Color.Black)
+                }
+                
+                Button(
+                    onClick = { TrackingState.setManualLabel("rough") },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = if (currentLabel == "rough") androidx.compose.ui.graphics.Color.Red else androidx.compose.ui.graphics.Color.Gray
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Rough")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Ground Truth: Features (Tap on event)", style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { TrackingState.setPendingFeatureLabel("speed_bump") },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFFFFA500) // Orange
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Bump ⚠️")
+                }
+                
+                Button(
+                    onClick = { TrackingState.setPendingFeatureLabel("pothole") },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color.DarkGray
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Hole 🕳️")
+                }
+                
+                Button(
+                    onClick = { TrackingState.setPendingFeatureLabel("bump") },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color.Blue
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Jolt ⚡")
+                }
             }
         }
 

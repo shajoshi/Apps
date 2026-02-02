@@ -13,10 +13,15 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
     private var closed = false
     private var firstDataItem = true
     private var startMillis: Long? = null
+    private var recordingSettings: RecordingSettingsSnapshot? = null
 
     private val uuid = UUID.randomUUID().toString()
     private val localZone = ZoneId.systemDefault()
     private val timezoneOffsetMillis: Int = java.util.TimeZone.getDefault().rawOffset
+
+    override fun setRecordingSettings(settings: RecordingSettingsSnapshot) {
+        recordingSettings = settings
+    }
 
     override fun writeHeader() {
         // Header is deferred until first sample so we can set times based on first point.
@@ -47,7 +52,38 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("      \"utctime\": \"$utcTime\",\n")
             writer.write("      \"localtime\": \"$localTime\",\n")
             writer.write("      \"timezoneoffset\": $timezoneOffsetMillis,\n")
-            writer.write("      \"ts\": ${sample.timestampMillis}\n")
+            writer.write("      \"ts\": ${sample.timestampMillis}")
+            val settingsSnapshot = recordingSettings
+            if (settingsSnapshot != null) {
+                val cal = settingsSnapshot.calibration
+                writer.write(",\n")
+                writer.write("      \"recordingSettings\": {\n")
+                writer.write("        \"intervalSeconds\": ${settingsSnapshot.intervalSeconds},\n")
+                writer.write("        \"disablePointFiltering\": ${settingsSnapshot.disablePointFiltering},\n")
+                writer.write("        \"enableAccelerometer\": ${settingsSnapshot.enableAccelerometer},\n")
+                writer.write("        \"roadCalibrationMode\": ${settingsSnapshot.roadCalibrationMode},\n")
+                writer.write("        \"outputFormat\": \"${settingsSnapshot.outputFormat}\",\n")
+                writer.write("        \"profileName\": ${settingsSnapshot.profileName?.let { "\"$it\"" } ?: "null"},\n")
+                writer.write("        \"calibration\": {\n")
+                writer.write("          \"rmsSmoothMax\": ${"%.3f".format(cal.rmsSmoothMax)},\n")
+                writer.write("          \"rmsAverageMax\": ${"%.3f".format(cal.rmsAverageMax)},\n")
+                writer.write("          \"peakThresholdZ\": ${"%.3f".format(cal.peakThresholdZ)},\n")
+                writer.write("          \"symmetricBumpThreshold\": ${"%.3f".format(cal.symmetricBumpThreshold)},\n")
+                writer.write("          \"potholeDipThreshold\": ${"%.3f".format(cal.potholeDipThreshold)},\n")
+                writer.write("          \"bumpSpikeThreshold\": ${"%.3f".format(cal.bumpSpikeThreshold)},\n")
+                writer.write("          \"peakCountSmoothMax\": ${cal.peakCountSmoothMax},\n")
+                writer.write("          \"peakCountAverageMax\": ${cal.peakCountAverageMax},\n")
+                writer.write("          \"movingAverageWindow\": ${cal.movingAverageWindow}")
+                cal.baseGravityVector?.let { g ->
+                    writer.write(",\n")
+                    writer.write("          \"baseGravityVector\": { \"x\": ${"%.3f".format(g[0])}, \"y\": ${"%.3f".format(g[1])}, \"z\": ${"%.3f".format(g[2])} }")
+                }
+                writer.write("\n")
+                writer.write("        }\n")
+                writer.write("      }\n")
+            } else {
+                writer.write("\n")
+            }
             writer.write("    },\n")
             writer.write("    \"data\": [\n")
             firstDataItem = true
@@ -87,6 +123,9 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("          \"xMean\": ${"%.3f".format(sample.accelXMean)},\n")
             writer.write("          \"yMean\": ${"%.3f".format(sample.accelYMean)},\n")
             writer.write("          \"zMean\": ${"%.3f".format(sample.accelZMean)},\n")
+            sample.accelVertMean?.let { v ->
+                writer.write("          \"vertMean\": ${"%.3f".format(v)},\n")
+            }
             writer.write("          \"magMax\": ${"%.3f".format(sample.accelMagnitudeMax)},\n")
             writer.write("          \"rms\": ${"%.3f".format(sample.accelRMS)}")
             sample.roadQuality?.let {
@@ -96,6 +135,28 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
             sample.featureDetected?.let {
                 writer.write(",\n")
                 writer.write("          \"featureDetected\": \"$it\"")
+            }
+            sample.manualLabel?.let {
+                writer.write(",\n")
+                writer.write("          \"manualLabel\": \"$it\"")
+            }
+            sample.manualFeatureLabel?.let {
+                writer.write(",\n")
+                writer.write("          \"manualFeatureLabel\": \"$it\"")
+            }
+            sample.gravityVector?.let { g ->
+                writer.write(",\n")
+                writer.write("          \"gravityVector\": { \"x\": ${"%.3f".format(g[0])}, \"y\": ${"%.3f".format(g[1])}, \"z\": ${"%.3f".format(g[2])} }")
+            }
+            sample.rawAccelData?.let { raw ->
+                writer.write(",\n")
+                writer.write("          \"raw\": [\n")
+                raw.forEachIndexed { index, values ->
+                    writer.write("            [${"%.3f".format(values[0])}, ${"%.3f".format(values[1])}, ${"%.3f".format(values[2])}]")
+                    if (index < raw.size - 1) writer.write(",")
+                    writer.write("\n")
+                }
+                writer.write("          ]")
             }
             // Simple color mapping for downstream styling
             when (sample.roadQuality) {

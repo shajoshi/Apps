@@ -9,12 +9,48 @@ import java.time.format.DateTimeFormatter
 class GpxWriter(outputStream: OutputStream) : TrackWriter {
     private val writer = BufferedWriter(OutputStreamWriter(outputStream))
     private var closed = false
+    private var recordingSettings: RecordingSettingsSnapshot? = null
+
+    override fun setRecordingSettings(settings: RecordingSettingsSnapshot) {
+        recordingSettings = settings
+    }
 
     override fun writeHeader() {
         writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
         writer.newLine()
         writer.write("<gpx version=\"1.1\" creator=\"Tracker\" xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:sj=\"http://sj.gpsutil\">")
         writer.newLine()
+        recordingSettings?.let { settings ->
+            writer.write("<metadata>\n")
+            writer.write("<extensions>\n")
+            writer.write("<sj:recordingSettings>\n")
+            writer.write("<sj:intervalSeconds>${settings.intervalSeconds}</sj:intervalSeconds>\n")
+            writer.write("<sj:disablePointFiltering>${settings.disablePointFiltering}</sj:disablePointFiltering>\n")
+            writer.write("<sj:enableAccelerometer>${settings.enableAccelerometer}</sj:enableAccelerometer>\n")
+            writer.write("<sj:roadCalibrationMode>${settings.roadCalibrationMode}</sj:roadCalibrationMode>\n")
+            writer.write("<sj:outputFormat>${settings.outputFormat}</sj:outputFormat>\n")
+            writer.write("<sj:profileName>${settings.profileName ?: ""}</sj:profileName>\n")
+            val cal = settings.calibration
+            writer.write("<sj:calibration>\n")
+            writer.write("<sj:rmsSmoothMax>${"%.3f".format(cal.rmsSmoothMax)}</sj:rmsSmoothMax>\n")
+            writer.write("<sj:rmsAverageMax>${"%.3f".format(cal.rmsAverageMax)}</sj:rmsAverageMax>\n")
+            writer.write("<sj:peakThresholdZ>${"%.3f".format(cal.peakThresholdZ)}</sj:peakThresholdZ>\n")
+            writer.write("<sj:symmetricBumpThreshold>${"%.3f".format(cal.symmetricBumpThreshold)}</sj:symmetricBumpThreshold>\n")
+            writer.write("<sj:potholeDipThreshold>${"%.3f".format(cal.potholeDipThreshold)}</sj:potholeDipThreshold>\n")
+            writer.write("<sj:bumpSpikeThreshold>${"%.3f".format(cal.bumpSpikeThreshold)}</sj:bumpSpikeThreshold>\n")
+            writer.write("<sj:peakCountSmoothMax>${cal.peakCountSmoothMax}</sj:peakCountSmoothMax>\n")
+            writer.write("<sj:peakCountAverageMax>${cal.peakCountAverageMax}</sj:peakCountAverageMax>\n")
+            writer.write("<sj:movingAverageWindow>${cal.movingAverageWindow}</sj:movingAverageWindow>\n")
+            cal.baseGravityVector?.let { g ->
+                writer.write("<sj:baseGravityVectorX>${"%.3f".format(g[0])}</sj:baseGravityVectorX>\n")
+                writer.write("<sj:baseGravityVectorY>${"%.3f".format(g[1])}</sj:baseGravityVectorY>\n")
+                writer.write("<sj:baseGravityVectorZ>${"%.3f".format(g[2])}</sj:baseGravityVectorZ>\n")
+            }
+            writer.write("</sj:calibration>\n")
+            writer.write("</sj:recordingSettings>\n")
+            writer.write("</extensions>\n")
+            writer.write("</metadata>\n")
+        }
         writer.write("<trk>")
         writer.newLine()
         writer.write("<name>Track</name>")
@@ -44,6 +80,9 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<sj:xMean>${"%.3f".format(sample.accelXMean)}</sj:xMean>\n")
             writer.write("<sj:yMean>${"%.3f".format(sample.accelYMean)}</sj:yMean>\n")
             writer.write("<sj:zMean>${"%.3f".format(sample.accelZMean)}</sj:zMean>\n")
+            sample.accelVertMean?.let { v ->
+                writer.write("<sj:vertMean>${"%.3f".format(v)}</sj:vertMean>\n")
+            }
             writer.write("<sj:magMax>${"%.3f".format(sample.accelMagnitudeMax)}</sj:magMax>\n")
             writer.write("<sj:rms>${"%.3f".format(sample.accelRMS)}</sj:rms>\n")
             val styleId = when (sample.roadQuality) {

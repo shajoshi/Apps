@@ -28,6 +28,7 @@ data class TrackingSettings(
     val outputFormat: OutputFormat = OutputFormat.KML,
     val disablePointFiltering: Boolean = false,
     val enableAccelerometer: Boolean = true,
+    val roadCalibrationMode: Boolean = false,
     val calibration: CalibrationSettings = CalibrationSettings(),
     val currentProfileName: String? = null
 )
@@ -41,7 +42,8 @@ data class CalibrationSettings(
     val bumpSpikeThreshold: Float = 2.5f,
     val peakCountSmoothMax: Int = 5,
     val peakCountAverageMax: Int = 15,
-    val movingAverageWindow: Int = 5
+    val movingAverageWindow: Int = 5,
+    val baseGravityVector: FloatArray? = null
 )
 
 class SettingsRepository(private val context: Context) {
@@ -50,6 +52,7 @@ class SettingsRepository(private val context: Context) {
     private val outputFormatKey = stringPreferencesKey("output_format")
     private val disableFilteringKey = booleanPreferencesKey("disable_point_filtering")
     private val enableAccelerometerKey = booleanPreferencesKey("enable_accelerometer")
+    private val roadCalibrationModeKey = booleanPreferencesKey("road_calibration_mode")
     private val rmsSmoothMaxKey = floatPreferencesKey("cal_rms_smooth_max")
     private val rmsAverageMaxKey = floatPreferencesKey("cal_rms_average_max")
     private val peakThresholdKey = floatPreferencesKey("cal_peak_threshold_z")
@@ -59,7 +62,23 @@ class SettingsRepository(private val context: Context) {
     private val peakCountSmoothMaxKey = longPreferencesKey("cal_peakcount_smooth_max")
     private val peakCountAverageMaxKey = longPreferencesKey("cal_peakcount_average_max")
     private val movingAverageWindowKey = longPreferencesKey("cal_moving_average_window")
+    private val baseGravityVectorKey = stringPreferencesKey("cal_base_gravity_vector")
     private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
+
+    private fun parseGravityVector(encoded: String?): FloatArray? {
+        if (encoded.isNullOrBlank()) return null
+        val parts = encoded.split(',')
+        if (parts.size != 3) return null
+        val x = parts[0].toFloatOrNull() ?: return null
+        val y = parts[1].toFloatOrNull() ?: return null
+        val z = parts[2].toFloatOrNull() ?: return null
+        return floatArrayOf(x, y, z)
+    }
+
+    private fun formatGravityVector(vector: FloatArray?): String? {
+        if (vector == null || vector.size < 3) return null
+        return "${vector[0]},${vector[1]},${vector[2]}"
+    }
 
     val settingsFlow: Flow<TrackingSettings> = context.settingsDataStore.data.map { prefs ->
         TrackingSettings(
@@ -70,6 +89,7 @@ class SettingsRepository(private val context: Context) {
             }.getOrNull() ?: OutputFormat.KML,
             disablePointFiltering = prefs[disableFilteringKey] ?: false,
             enableAccelerometer = prefs[enableAccelerometerKey] ?: true,
+            roadCalibrationMode = prefs[roadCalibrationModeKey] ?: false,
             calibration = CalibrationSettings(
                 rmsSmoothMax = prefs[rmsSmoothMaxKey] ?: 1.0f,
                 rmsAverageMax = prefs[rmsAverageMaxKey] ?: 2.0f,
@@ -79,7 +99,8 @@ class SettingsRepository(private val context: Context) {
                 bumpSpikeThreshold = prefs[bumpSpikeThresholdKey] ?: 2.5f,
                 peakCountSmoothMax = (prefs[peakCountSmoothMaxKey] ?: 5L).toInt(),
                 peakCountAverageMax = (prefs[peakCountAverageMaxKey] ?: 15L).toInt(),
-                movingAverageWindow = (prefs[movingAverageWindowKey] ?: 5L).toInt()
+                movingAverageWindow = (prefs[movingAverageWindowKey] ?: 5L).toInt(),
+                baseGravityVector = parseGravityVector(prefs[baseGravityVectorKey])
             ),
             currentProfileName = prefs[currentProfileNameKey]
         )
@@ -119,6 +140,12 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun updateRoadCalibrationMode(enabled: Boolean) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[roadCalibrationModeKey] = enabled
+        }
+    }
+
     suspend fun updateCalibration(calibration: CalibrationSettings) {
         context.settingsDataStore.edit { prefs ->
             prefs[rmsSmoothMaxKey] = calibration.rmsSmoothMax
@@ -130,6 +157,12 @@ class SettingsRepository(private val context: Context) {
             prefs[peakCountSmoothMaxKey] = calibration.peakCountSmoothMax.toLong()
             prefs[peakCountAverageMaxKey] = calibration.peakCountAverageMax.toLong()
             prefs[movingAverageWindowKey] = calibration.movingAverageWindow.toLong()
+            val gravityEncoded = formatGravityVector(calibration.baseGravityVector)
+            if (gravityEncoded == null) {
+                prefs.remove(baseGravityVectorKey)
+            } else {
+                prefs[baseGravityVectorKey] = gravityEncoded
+            }
         }
     }
 

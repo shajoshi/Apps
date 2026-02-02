@@ -210,6 +210,30 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Road calibration run")
+            val calibrationModeState = rememberUpdatedState(settings.roadCalibrationMode)
+            Switch(
+                checked = calibrationModeState.value,
+                onCheckedChange = { checked ->
+                    scope.launch(Dispatchers.IO) {
+                        repository.updateRoadCalibrationMode(checked)
+                    }
+                    Toast.makeText(
+                        context,
+                        if (checked) "Calibration mode enabled" else "Calibration mode disabled",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         // Calibration entry point
         val profileName = settings.currentProfileName ?: "Default"
         Button(onClick = { showCalibration = true }) {
@@ -381,6 +405,7 @@ private fun CalibrationDialog(
                 TextButton(
                     onClick = {
                         val parsed = parseCalibration(
+                            initialValues,
                             rmsSmoothMaxText, rmsAverageMaxText, peakThresholdZText,
                             symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
                             peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText
@@ -423,6 +448,7 @@ private fun CalibrationDialog(
             repository = repository,
             profileRepository = profileRepository,
             folderUri = folderUri,
+            initialValues = initialValues,
             rmsSmoothMaxText = rmsSmoothMaxText,
             rmsAverageMaxText = rmsAverageMaxText,
             peakThresholdZText = peakThresholdZText,
@@ -457,6 +483,7 @@ private fun SaveAsDialog(
     repository: SettingsRepository,
     profileRepository: VehicleProfileRepository,
     folderUri: String?,
+    initialValues: CalibrationSettings,
     rmsSmoothMaxText: String,
     rmsAverageMaxText: String,
     peakThresholdZText: String,
@@ -494,6 +521,7 @@ private fun SaveAsDialog(
                         return@TextButton
                     }
                     val parsed = parseCalibration(
+                        initialValues,
                         rmsSmoothMaxText, rmsAverageMaxText, peakThresholdZText,
                         symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
                         peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText
@@ -615,6 +643,7 @@ private data class CalibrationTextValues(
 )
 
 private fun parseCalibration(
+    initialValues: CalibrationSettings,
     rmsSmoothMax: String,
     rmsAverageMax: String,
     peakThresholdZ: String,
@@ -644,7 +673,8 @@ private fun parseCalibration(
         bumpSpikeThreshold = bump,
         peakCountSmoothMax = peakSmooth,
         peakCountAverageMax = peakAvg,
-        movingAverageWindow = maWindow
+        movingAverageWindow = maWindow,
+        baseGravityVector = initialValues.baseGravityVector
     )
 }
 
