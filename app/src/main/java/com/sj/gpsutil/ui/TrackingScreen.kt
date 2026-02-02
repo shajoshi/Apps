@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,16 +25,18 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import android.view.WindowManager
+import androidx.compose.foundation.BorderStroke
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.tasks.Task
@@ -248,35 +251,26 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.height(8.dp))
             Text("Ground Truth: Features (Tap on event)", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+                MomentaryHighlightButton(
+                    text = "Bump",
                     onClick = { TrackingState.setPendingFeatureLabel("speed_bump") },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = androidx.compose.ui.graphics.Color(0xFFFFA500) // Orange
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Bump ⚠️")
-                }
-                
-                Button(
+                    modifier = Modifier.weight(1f),
+                    highlightMillis = 750L
+                )
+
+                MomentaryHighlightButton(
+                    text = "Pothole",
                     onClick = { TrackingState.setPendingFeatureLabel("pothole") },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = androidx.compose.ui.graphics.Color.DarkGray
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Hole 🕳️")
-                }
-                
-                Button(
+                    modifier = Modifier.weight(1f),
+                    highlightMillis = 750L
+                )
+
+                MomentaryHighlightButton(
+                    text = "Jolt",
                     onClick = { TrackingState.setPendingFeatureLabel("bump") },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = androidx.compose.ui.graphics.Color.Blue
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Jolt ⚡")
-                }
+                    modifier = Modifier.weight(1f),
+                    highlightMillis = 750L
+                )
             }
         }
 
@@ -371,4 +365,54 @@ private fun formatSeconds(totalSeconds: Long): String {
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
     return "%02d:%02d:%02d".format(hours, minutes, seconds)
+}
+
+@Composable
+private fun MomentaryHighlightButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    highlightMillis: Long = 750L
+) {
+    var highlighted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(highlighted) {
+        if (highlighted) {
+            delay(highlightMillis)
+            highlighted = false
+        }
+    }
+
+    val highlightYellow = Color(0xFFFFEB3B)
+    val containerColor = if (highlighted) {
+        highlightYellow
+    } else {
+        Color.Transparent
+    }
+    val border = if (highlighted) {
+        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    }
+
+    val contentColor = if (highlighted) {
+        Color.Black
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
+    OutlinedButton(
+        onClick = {
+            highlighted = true
+            onClick()
+        },
+        modifier = modifier,
+        border = border,
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        )
+    ) {
+        Text(text)
+    }
 }
