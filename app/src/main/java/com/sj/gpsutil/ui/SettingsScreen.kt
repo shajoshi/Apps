@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,16 +43,29 @@ import com.sj.gpsutil.data.OutputFormat
 import com.sj.gpsutil.data.SettingsRepository
 import com.sj.gpsutil.data.TrackingSettings
 import com.sj.gpsutil.data.CalibrationSettings
+import com.sj.gpsutil.data.VehicleProfile
+import com.sj.gpsutil.data.VehicleProfileRepository
 import com.sj.gpsutil.data.MIN_INTERVAL_SECONDS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SettingsScreen(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { SettingsRepository(context) }
+    val profileRepository = remember { VehicleProfileRepository(context) }
     val scope = rememberCoroutineScope()
     val settings by repository.settingsFlow.collectAsState(initial = TrackingSettings())
+    
+    LaunchedEffect(Unit) {
+        scope.launch(Dispatchers.IO) {
+            val existingProfiles = profileRepository.listProfiles(settings.folderUri)
+            if (existingProfiles.isEmpty()) {
+                profileRepository.createDefaultProfiles(settings.folderUri)
+            }
+        }
+    }
     var intervalText by remember(settings.intervalSeconds) {
         mutableStateOf(settings.intervalSeconds.toString())
     }
@@ -197,8 +211,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(8.dp))
 
         // Calibration entry point
+        val profileName = settings.currentProfileName ?: "Default"
         Button(onClick = { showCalibration = true }) {
-            Text("Calibration")
+            Text("Calibration (Profile: $profileName)")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -261,6 +276,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
     if (showCalibration) {
         CalibrationDialog(
+            context = context,
+            repository = repository,
+            profileRepository = remember { VehicleProfileRepository(context) },
+            currentProfileName = settings.currentProfileName,
+            folderUri = settings.folderUri,
             initialValues = settings.calibration,
             rmsSmoothMaxText = rmsSmoothMax,
             rmsAverageMaxText = rmsAverageMax,
@@ -294,27 +314,16 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 peakCountAverageMax = defaults.peakCountAverageMax.toString()
                 movingAverageWindow = defaults.movingAverageWindow.toString()
             },
-            onSave = {
-                val parsed = parseCalibration(
-                    rmsSmoothMax,
-                    rmsAverageMax,
-                    peakThresholdZ,
-                    symmetricBumpThreshold,
-                    potholeDipThreshold,
-                    bumpSpikeThreshold,
-                    peakCountSmoothMax,
-                    peakCountAverageMax,
-                    movingAverageWindow
-                )
-                if (parsed == null) {
-                    Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
-                    return@CalibrationDialog
-                }
-                scope.launch(Dispatchers.IO) {
-                    repository.updateCalibration(parsed)
-                }
-                Toast.makeText(context, "Calibration saved", Toast.LENGTH_LONG).show()
-                showCalibration = false
+            onLoadProfile = { profile ->
+                rmsSmoothMax = profile.calibration.rmsSmoothMax.toString()
+                rmsAverageMax = profile.calibration.rmsAverageMax.toString()
+                peakThresholdZ = profile.calibration.peakThresholdZ.toString()
+                symmetricBumpThreshold = profile.calibration.symmetricBumpThreshold.toString()
+                potholeDipThreshold = profile.calibration.potholeDipThreshold.toString()
+                bumpSpikeThreshold = profile.calibration.bumpSpikeThreshold.toString()
+                peakCountSmoothMax = profile.calibration.peakCountSmoothMax.toString()
+                peakCountAverageMax = profile.calibration.peakCountAverageMax.toString()
+                movingAverageWindow = profile.calibration.movingAverageWindow.toString()
             },
             onDismiss = { showCalibration = false }
         )
@@ -323,6 +332,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun CalibrationDialog(
+    context: Context,
+    repository: SettingsRepository,
+    profileRepository: VehicleProfileRepository,
+    currentProfileName: String?,
+    folderUri: String?,
     initialValues: CalibrationSettings,
     rmsSmoothMaxText: String,
     rmsAverageMaxText: String,
@@ -335,14 +349,22 @@ private fun CalibrationDialog(
     movingAverageWindowText: String,
     onValuesChange: (CalibrationTextValues) -> Unit,
     onResetDefaults: () -> Unit,
-    onSave: () -> Unit,
+    onLoadProfile: (VehicleProfile) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    var showSaveAsDialog by remember { mutableStateOf(false) }
+    var showLoadDialog by remember { mutableStateOf(false) }
+    val profileDisplayName = currentProfileName ?: "Default"
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Calibration") },
+        title = { Text("Calibration - Profile: $profileDisplayName") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, rmsAverageMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText)) }
                 CalibrationField("RMS average max", rmsAverageMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText)) }
                 CalibrationField("Peak threshold Z", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, rmsAverageMaxText, it, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText)) }
@@ -355,13 +377,214 @@ private fun CalibrationDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onSave) { Text("Save") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(
+                    onClick = {
+                        val parsed = parseCalibration(
+                            rmsSmoothMaxText, rmsAverageMaxText, peakThresholdZText,
+                            symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
+                            peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText
+                        )
+                        if (parsed == null) {
+                            Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
+                            return@TextButton
+                        }
+                        if (currentProfileName == null) {
+                            Toast.makeText(context, "Cannot save to Default profile. Use Save As.", Toast.LENGTH_LONG).show()
+                            return@TextButton
+                        }
+                        scope.launch(Dispatchers.IO) {
+                            repository.updateCalibration(parsed)
+                            val profile = VehicleProfile(currentProfileName, parsed)
+                            profileRepository.saveProfile(profile, folderUri)
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "Profile '$currentProfileName' saved", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    enabled = currentProfileName != null
+                ) { Text("Save") }
+                
+                TextButton(onClick = { showSaveAsDialog = true }) { Text("Save As") }
+                TextButton(onClick = { showLoadDialog = true }) { Text("Load") }
+            }
         },
         dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onResetDefaults) { Text("Reset to Defaults") }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onResetDefaults) { Text("Reset") }
                 TextButton(onClick = onDismiss) { Text("Cancel") }
             }
+        }
+    )
+
+    if (showSaveAsDialog) {
+        SaveAsDialog(
+            context = context,
+            repository = repository,
+            profileRepository = profileRepository,
+            folderUri = folderUri,
+            rmsSmoothMaxText = rmsSmoothMaxText,
+            rmsAverageMaxText = rmsAverageMaxText,
+            peakThresholdZText = peakThresholdZText,
+            symmetricBumpThresholdText = symmetricBumpThresholdText,
+            potholeDipThresholdText = potholeDipThresholdText,
+            bumpSpikeThresholdText = bumpSpikeThresholdText,
+            peakCountSmoothMaxText = peakCountSmoothMaxText,
+            peakCountAverageMaxText = peakCountAverageMaxText,
+            movingAverageWindowText = movingAverageWindowText,
+            onDismiss = { showSaveAsDialog = false }
+        )
+    }
+
+    if (showLoadDialog) {
+        LoadProfileDialog(
+            context = context,
+            repository = repository,
+            profileRepository = profileRepository,
+            folderUri = folderUri,
+            onProfileSelected = { profile ->
+                onLoadProfile(profile)
+                showLoadDialog = false
+            },
+            onDismiss = { showLoadDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun SaveAsDialog(
+    context: Context,
+    repository: SettingsRepository,
+    profileRepository: VehicleProfileRepository,
+    folderUri: String?,
+    rmsSmoothMaxText: String,
+    rmsAverageMaxText: String,
+    peakThresholdZText: String,
+    symmetricBumpThresholdText: String,
+    potholeDipThresholdText: String,
+    bumpSpikeThresholdText: String,
+    peakCountSmoothMaxText: String,
+    peakCountAverageMaxText: String,
+    movingAverageWindowText: String,
+    onDismiss: () -> Unit
+) {
+    var profileName by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Save Profile As") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Enter a name for this profile:")
+                TextField(
+                    value = profileName,
+                    onValueChange = { profileName = it.filter { c -> c.isLetterOrDigit() || c == ' ' || c == '_' || c == '-' } },
+                    label = { Text("Profile Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (profileName.isBlank()) {
+                        Toast.makeText(context, "Profile name cannot be empty", Toast.LENGTH_SHORT).show()
+                        return@TextButton
+                    }
+                    val parsed = parseCalibration(
+                        rmsSmoothMaxText, rmsAverageMaxText, peakThresholdZText,
+                        symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
+                        peakCountSmoothMaxText, peakCountAverageMaxText, movingAverageWindowText
+                    )
+                    if (parsed == null) {
+                        Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
+                        return@TextButton
+                    }
+                    scope.launch(Dispatchers.IO) {
+                        repository.updateCalibration(parsed)
+                        repository.updateCurrentProfileName(profileName)
+                        val profile = VehicleProfile(profileName, parsed)
+                        profileRepository.saveProfile(profile, folderUri)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Profile '$profileName' saved", Toast.LENGTH_LONG).show()
+                            onDismiss()
+                        }
+                    }
+                },
+                enabled = profileName.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun LoadProfileDialog(
+    context: Context,
+    repository: SettingsRepository,
+    profileRepository: VehicleProfileRepository,
+    folderUri: String?,
+    onProfileSelected: (VehicleProfile) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var profiles by remember { mutableStateOf<List<VehicleProfile>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scope.launch(Dispatchers.IO) {
+            val loadedProfiles = profileRepository.listProfiles(folderUri)
+            withContext(Dispatchers.Main) {
+                profiles = loadedProfiles
+                isLoading = false
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Load Profile") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isLoading) {
+                    Text("Loading profiles...")
+                } else if (profiles.isEmpty()) {
+                    Text("No profiles found. Create one using Save As.")
+                } else {
+                    profiles.forEach { profile ->
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch(Dispatchers.IO) {
+                                    repository.updateCalibration(profile.calibration)
+                                    repository.updateCurrentProfileName(profile.name)
+                                    withContext(Dispatchers.Main) {
+                                        onProfileSelected(profile)
+                                        Toast.makeText(context, "Profile '${profile.name}' loaded", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(profile.name)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

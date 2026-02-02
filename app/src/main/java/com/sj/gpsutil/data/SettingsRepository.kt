@@ -28,7 +28,8 @@ data class TrackingSettings(
     val outputFormat: OutputFormat = OutputFormat.KML,
     val disablePointFiltering: Boolean = false,
     val enableAccelerometer: Boolean = true,
-    val calibration: CalibrationSettings = CalibrationSettings()
+    val calibration: CalibrationSettings = CalibrationSettings(),
+    val currentProfileName: String? = null
 )
 
 data class CalibrationSettings(
@@ -58,6 +59,7 @@ class SettingsRepository(private val context: Context) {
     private val peakCountSmoothMaxKey = longPreferencesKey("cal_peakcount_smooth_max")
     private val peakCountAverageMaxKey = longPreferencesKey("cal_peakcount_average_max")
     private val movingAverageWindowKey = longPreferencesKey("cal_moving_average_window")
+    private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
 
     val settingsFlow: Flow<TrackingSettings> = context.settingsDataStore.data.map { prefs ->
         TrackingSettings(
@@ -78,7 +80,8 @@ class SettingsRepository(private val context: Context) {
                 peakCountSmoothMax = (prefs[peakCountSmoothMaxKey] ?: 5L).toInt(),
                 peakCountAverageMax = (prefs[peakCountAverageMaxKey] ?: 15L).toInt(),
                 movingAverageWindow = (prefs[movingAverageWindowKey] ?: 5L).toInt()
-            )
+            ),
+            currentProfileName = prefs[currentProfileNameKey]
         )
     }
 
@@ -127,6 +130,16 @@ class SettingsRepository(private val context: Context) {
             prefs[peakCountSmoothMaxKey] = calibration.peakCountSmoothMax.toLong()
             prefs[peakCountAverageMaxKey] = calibration.peakCountAverageMax.toLong()
             prefs[movingAverageWindowKey] = calibration.movingAverageWindow.toLong()
+        }
+    }
+
+    suspend fun updateCurrentProfileName(profileName: String?) {
+        context.settingsDataStore.edit { prefs ->
+            if (profileName == null) {
+                prefs.remove(currentProfileNameKey)
+            } else {
+                prefs[currentProfileNameKey] = profileName
+            }
         }
     }
 }
