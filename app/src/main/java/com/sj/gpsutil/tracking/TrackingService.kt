@@ -45,7 +45,6 @@ class TrackingService : Service() {
         const val ACTION_START = "com.sj.gpsutil.tracking.action.START"
         const val ACTION_PAUSE = "com.sj.gpsutil.tracking.action.PAUSE"
         const val ACTION_STOP = "com.sj.gpsutil.tracking.action.STOP"
-        const val ACTION_CAPTURE_BASELINE = "com.sj.gpsutil.tracking.action.CAPTURE_BASELINE"
 
         private const val NOTIFICATION_CHANNEL_ID = "tracking_channel"
         private const val NOTIFICATION_CHANNEL_NAME = "GPS Tracking"
@@ -54,6 +53,8 @@ class TrackingService : Service() {
         private const val REJECTION_WINDOW_SAMPLES = 20
         private const val REJECTION_RATIO_THRESHOLD = 0.5
         private const val REJECTION_WARNING_COOLDOWN_MS = 60_000L
+        private const val ACCEL_SAMPLING_PERIOD_US = 10_000 // 10 ms
+        private const val TAG = "TrackingService"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -83,16 +84,19 @@ class TrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate: initializing service")
         applyDistanceAccuracyConfigFromManifest()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val location = result.lastLocation ?: return
+                val accuracyText = if (location.hasAccuracy()) "${"%.1f".format(location.accuracy)} m" else "--"
+                val speedText = if (location.hasSpeed()) "${"%.1f".format(location.speed * 3.6)} km/h" else "--"
+                Log.d(TAG, "GPS fix received lat=${"%.5f".format(location.latitude)}, lon=${"%.5f".format(location.longitude)}, acc=$accuracyText, speed=$speedText")
                 val accelMetrics = if (enableAccelerometer) computeAccelMetrics() else null
                 val manualLabel = if (roadCalibrationMode) TrackingState.manualLabel.value else null
                 val manualFeature = if (roadCalibrationMode) TrackingState.consumePendingFeatureLabel() else null
-                val gravityVector = if (roadCalibrationMode) TrackingState.gravityVector.value else null
                 val sample = TrackingSample(
                     latitude = location.latitude,
                     longitude = location.longitude,
@@ -111,10 +115,9 @@ class TrackingService : Service() {
                     accelRMS = accelMetrics?.rms,
                     roadQuality = accelMetrics?.roadQuality,
                     featureDetected = accelMetrics?.featureDetected,
-                    peakCount = accelMetrics?.peakCount,
+                    peakRatio = accelMetrics?.peakRatio,
                     stdDev = accelMetrics?.stdDev,
                     rawAccelData = if (roadCalibrationMode) accelMetrics?.rawData else null,
-                    gravityVector = gravityVector,
                     manualLabel = manualLabel,
                     manualFeatureLabel = manualFeature
                 )
@@ -163,16 +166,22 @@ class TrackingService : Service() {
         if (!enableAccelerometer) return
         val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         if (accelerometer != null) {
-            sensorManager.registerListener(
-                accelerometerListener,
-                accelerometer,
-                SensorManager.SENSOR_DELAY_FASTEST
-            )
+            try {
+                sensorManager.registerListener(
+                    accelerometerListener,
+                    accelerometer,
+                    ACCEL_SAMPLING_PERIOD_US
+                )
+                Log.d(TAG, "Accelerometer listener registered at ${ACCEL_SAMPLING_PERIOD_US}µs")
+            } catch (se: SecurityException) {
+                Log.e(TAG, "Missing permission for accelerometer sampling", se)
+            }
         }
     }
 
     private fun unregisterAccelerometerListener() {
         sensorManager.unregisterListener(accelerometerListener)
+        Log.d(TAG, "Accelerometer listener unregistered")
     }
 
     private fun computeAccelMetrics(): AccelMetrics? {
@@ -202,7 +211,7 @@ class TrackingService : Service() {
             var sumVert = 0f
             var maxMagnitude = 0f
             var sumSquares = 0f
-            var peakCount = 0
+            var aboveThresholdCount = 0
             val magnitudes = mutableListOf<Float>()
 
             val g = calibration.baseGravityVector
@@ -230,8 +239,8 @@ class TrackingService : Service() {
                 if (magnitude > maxMagnitude) maxMagnitude = magnitude
                 sumSquares += magnitude * magnitude
 
-                // Peak detection using calibration threshold
-                if (kotlin.math.abs(aVert) > calibration.peakThresholdZ) peakCount++
+                // Peak ratio (sample-count-invariant): fraction of samples above threshold
+                if (kotlin.math.abs(aVert) > calibration.peakThresholdZ) aboveThresholdCount++
             }
 
             val count = smoothed.size
@@ -240,6 +249,7 @@ class TrackingService : Service() {
             val meanZ = sumZ / count
             val meanVert = sumVert / count
             val rms = kotlin.math.sqrt(sumSquares / count)
+            val peakRatio = aboveThresholdCount.toFloat() / count.toFloat()
 
             // Calculate standard deviation
             val meanMagnitude = magnitudes.average().toFloat()
@@ -248,7 +258,7 @@ class TrackingService : Service() {
 
             // Step 4: Classify road quality (binary classification: smooth/rough)
             val roadQuality = when {
-                rms < calibration.rmsSmoothMax && peakCount < calibration.peakCountSmoothMax -> "smooth"
+                rms < calibration.rmsSmoothMax && peakRatio < calibration.peakRatioSmoothMax -> "smooth"
                 else -> "rough"
             }
 
@@ -269,7 +279,7 @@ class TrackingService : Service() {
 
             return AccelMetrics(
                 meanX, meanY, meanZ, meanVert, maxMagnitude, rms,
-                peakCount, stdDev, roadQuality, feature, rawData
+                peakRatio, stdDev, roadQuality, feature, rawData
             )
         }
     }
@@ -361,53 +371,20 @@ class TrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand action=${intent?.action}")
         when (intent?.action) {
             ACTION_START -> startRecording()
             ACTION_PAUSE -> pauseRecording()
             ACTION_STOP -> stopRecording()
-            ACTION_CAPTURE_BASELINE -> captureBaseline()
         }
         return START_STICKY
-    }
-
-    private fun captureBaseline() {
-        synchronized(accelLock) {
-            if (accelBuffer.isNotEmpty()) {
-                val count = accelBuffer.size
-                var sumX = 0f
-                var sumY = 0f
-                var sumZ = 0f
-                accelBuffer.forEach {
-                    sumX += it[0]
-                    sumY += it[1]
-                    sumZ += it[2]
-                }
-                val gravity = floatArrayOf(sumX / count, sumY / count, sumZ / count)
-                TrackingState.setGravityVector(gravity)
-                scope.launch {
-                    val settings = settingsRepository.settingsFlow.first()
-                    val updatedCalibration = settings.calibration.copy(baseGravityVector = gravity)
-                    settingsRepository.updateCalibration(updatedCalibration)
-                }
-                updateNotification("Baseline Captured")
-                
-                // Revert notification after short delay if we are recording
-                if (currentStatus == TrackingStatus.Recording) {
-                    scope.launch {
-                        kotlinx.coroutines.delay(2000)
-                        if (currentStatus == TrackingStatus.Recording) {
-                            updateNotification("Recording")
-                        }
-                    }
-                }
-            }
-        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
+        Log.d(TAG, "onDestroy: tearing down service")
         stopLocationUpdates()
         trackWriter?.close(TrackingState.distanceMeters.value)
         trackWriter = null
@@ -418,6 +395,7 @@ class TrackingService : Service() {
     }
 
     private fun startRecording() {
+        Log.d(TAG, "startRecording requested (currentStatus=$currentStatus)")
         if (currentStatus == TrackingStatus.Recording) return
         ensureForeground("Starting tracking")
         scope.launch {
@@ -454,6 +432,7 @@ class TrackingService : Service() {
                 trackWriter = writer
                 TrackingState.resetPointCount()
                 TrackingState.updateCurrentFileName(handle.filename)
+                Log.d(TAG, "Recording initialized: interval=${settings.intervalSeconds}s, accel=$enableAccelerometer, calibrationMode=$roadCalibrationMode, output=${settings.outputFormat}")
             }
             currentStatus = TrackingStatus.Recording
             TrackingState.updateStatus(currentStatus)
@@ -465,11 +444,13 @@ class TrackingService : Service() {
             registerAccelerometerListener()
             startLocationUpdates(currentIntervalSeconds)
             updateNotification("Recording")
+            Log.d(TAG, "Recording started")
         }
     }
 
     private fun pauseRecording() {
         if (currentStatus != TrackingStatus.Recording) return
+        Log.d(TAG, "Pausing recording")
         stopLocationUpdates()
         currentStatus = TrackingStatus.Paused
         TrackingState.updateStatus(currentStatus)
@@ -480,6 +461,7 @@ class TrackingService : Service() {
 
     private fun stopRecording() {
         if (currentStatus == TrackingStatus.Idle) return
+        Log.d(TAG, "Stopping recording (status=$currentStatus)")
         stopLocationUpdates()
         trackWriter?.close(TrackingState.distanceMeters.value)
         trackWriter = null
@@ -547,11 +529,13 @@ class TrackingService : Service() {
 
     private fun startLocationUpdates(intervalSeconds: Long) {
         if (!hasLocationPermission()) {
+            Log.w(TAG, "Cannot start location updates: location permission missing")
             updateNotification("Location permission missing")
             stopSelf()
             return
         }
         val intervalMillis = intervalSeconds.coerceAtLeast(1L) * 1000L
+        Log.d(TAG, "Starting location updates every ${intervalMillis}ms")
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMillis)
             .setMinUpdateIntervalMillis(intervalMillis)
             .setMaxUpdateDelayMillis(intervalMillis)
@@ -561,6 +545,7 @@ class TrackingService : Service() {
 
     private fun stopLocationUpdates() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        Log.d(TAG, "Location updates stopped")
     }
 
     private fun registerGnssCallback() {
@@ -583,6 +568,9 @@ class TrackingService : Service() {
         }
         if (!success) {
             gnssStatusCallback = null
+            Log.w(TAG, "Failed to register GNSS status callback")
+        } else {
+            Log.d(TAG, "GNSS status callback registered")
         }
     }
 
@@ -591,6 +579,7 @@ class TrackingService : Service() {
         gnssStatusCallback?.let { callback ->
             locationManager.unregisterGnssStatusCallback(callback)
             gnssStatusCallback = null
+            Log.d(TAG, "GNSS status callback unregistered")
         }
     }
 

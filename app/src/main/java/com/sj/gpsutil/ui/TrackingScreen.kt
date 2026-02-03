@@ -176,6 +176,9 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             Text("Bearing: $bearingDisplay")
             val accelVertMeanText = latestSample?.accelVertMean?.let { "%.3f m/s²".format(it) } ?: "--"
             Text("Accel vertical mean: $accelVertMeanText")
+
+            val peakRatioText = latestSample?.peakRatio?.let { "%.3f".format(it) } ?: "--"
+            Text("Peak ratio: $peakRatioText")
             
             // Road quality and feature detection
             val roadQualityText = latestSample?.roadQuality?.let { quality ->
@@ -198,18 +201,10 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             }
         }
 
-        // Calibration Mode UI
-        if (status == TrackingStatus.Recording) {
+        // Calibration Mode UI (only when enabled)
+        if (status == TrackingStatus.Recording && settingsState.roadCalibrationMode) {
             Spacer(modifier = Modifier.height(16.dp))
             Text("Calibration Mode", style = MaterialTheme.typography.titleMedium)
-            
-            // Mount Calibration
-            OutlinedButton(
-                onClick = { sendTrackingAction(context, TrackingService.ACTION_CAPTURE_BASELINE) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Capture Mount Baseline (Stationary)")
-            }
             
             Spacer(modifier = Modifier.height(8.dp))
             Text("Ground Truth: Road Quality", style = MaterialTheme.typography.labelMedium)

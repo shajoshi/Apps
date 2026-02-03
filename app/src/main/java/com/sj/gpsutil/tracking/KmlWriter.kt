@@ -40,7 +40,7 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<Data name=\"calibration.symmetricBumpThreshold\"><value>${"%.3f".format(cal.symmetricBumpThreshold)}</value></Data>\n")
             writer.write("<Data name=\"calibration.potholeDipThreshold\"><value>${"%.3f".format(cal.potholeDipThreshold)}</value></Data>\n")
             writer.write("<Data name=\"calibration.bumpSpikeThreshold\"><value>${"%.3f".format(cal.bumpSpikeThreshold)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.peakCountSmoothMax\"><value>${cal.peakCountSmoothMax}</value></Data>\n")
+            writer.write("<Data name=\"calibration.peakRatioSmoothMax\"><value>${"%.3f".format(cal.peakRatioSmoothMax)}</value></Data>\n")
             writer.write("<Data name=\"calibration.movingAverageWindow\"><value>${cal.movingAverageWindow}</value></Data>\n")
             cal.baseGravityVector?.let { g ->
                 writer.write("<Data name=\"calibration.baseGravityVectorX\"><value>${"%.3f".format(g[0])}</value></Data>\n")
@@ -127,8 +127,8 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("<Data name=\"featureDetected\"><value>$it</value></Data>")
                 writer.newLine()
             }
-            sample.peakCount?.let {
-                writer.write("<Data name=\"peakCount\"><value>$it</value></Data>")
+            sample.peakRatio?.let {
+                writer.write("<Data name=\"peakRatio\"><value>${"%.3f".format(it)}</value></Data>")
                 writer.newLine()
             }
             sample.stdDev?.let {

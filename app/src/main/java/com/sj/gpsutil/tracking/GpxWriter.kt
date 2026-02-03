@@ -37,7 +37,7 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<sj:symmetricBumpThreshold>${"%.3f".format(cal.symmetricBumpThreshold)}</sj:symmetricBumpThreshold>\n")
             writer.write("<sj:potholeDipThreshold>${"%.3f".format(cal.potholeDipThreshold)}</sj:potholeDipThreshold>\n")
             writer.write("<sj:bumpSpikeThreshold>${"%.3f".format(cal.bumpSpikeThreshold)}</sj:bumpSpikeThreshold>\n")
-            writer.write("<sj:peakCountSmoothMax>${cal.peakCountSmoothMax}</sj:peakCountSmoothMax>\n")
+            writer.write("<sj:peakRatioSmoothMax>${"%.3f".format(cal.peakRatioSmoothMax)}</sj:peakRatioSmoothMax>\n")
             writer.write("<sj:movingAverageWindow>${cal.movingAverageWindow}</sj:movingAverageWindow>\n")
             cal.baseGravityVector?.let { g ->
                 writer.write("<sj:baseGravityVectorX>${"%.3f".format(g[0])}</sj:baseGravityVectorX>\n")
@@ -101,8 +101,8 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             sample.featureDetected?.let {
                 writer.write("<sj:featureDetected>$it</sj:featureDetected>\n")
             }
-            sample.peakCount?.let {
-                writer.write("<sj:peakCount>$it</sj:peakCount>\n")
+            sample.peakRatio?.let {
+                writer.write("<sj:peakRatio>${"%.3f".format(it)}</sj:peakRatio>\n")
             }
             sample.stdDev?.let {
                 writer.write("<sj:stdDev>${"%.3f".format(it)}</sj:stdDev>\n")

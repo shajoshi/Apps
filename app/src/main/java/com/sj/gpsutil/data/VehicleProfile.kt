@@ -32,7 +32,7 @@ data class VehicleProfile(
                         symmetricBumpThreshold = 2.0f,
                         potholeDipThreshold = -2.5f,
                         bumpSpikeThreshold = 2.5f,
-                        peakCountSmoothMax = 5,
+                        peakRatioSmoothMax = 0.05f,
                         movingAverageWindow = 5
                     )
                 ),
@@ -44,7 +44,7 @@ data class VehicleProfile(
                         symmetricBumpThreshold = 2.5f,
                         potholeDipThreshold = -3.0f,
                         bumpSpikeThreshold = 3.0f,
-                        peakCountSmoothMax = 8,
+                        peakRatioSmoothMax = 0.08f,
                         movingAverageWindow = 7
                     )
                 ),
@@ -56,7 +56,7 @@ data class VehicleProfile(
                         symmetricBumpThreshold = 1.5f,
                         potholeDipThreshold = -2.0f,
                         bumpSpikeThreshold = 2.0f,
-                        peakCountSmoothMax = 3,
+                        peakRatioSmoothMax = 0.03f,
                         movingAverageWindow = 3
                     )
                 )

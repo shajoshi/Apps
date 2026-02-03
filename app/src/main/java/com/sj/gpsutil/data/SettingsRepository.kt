@@ -39,7 +39,7 @@ data class CalibrationSettings(
     val symmetricBumpThreshold: Float = 2.0f,
     val potholeDipThreshold: Float = -2.5f,
     val bumpSpikeThreshold: Float = 2.5f,
-    val peakCountSmoothMax: Int = 5,
+    val peakRatioSmoothMax: Float = 0.10f,
     val movingAverageWindow: Int = 5,
     val baseGravityVector: FloatArray? = null
 )
@@ -56,6 +56,7 @@ class SettingsRepository(private val context: Context) {
     private val symmetricBumpThresholdKey = floatPreferencesKey("cal_sym_bump_threshold")
     private val potholeDipThresholdKey = floatPreferencesKey("cal_pothole_dip_threshold")
     private val bumpSpikeThresholdKey = floatPreferencesKey("cal_bump_spike_threshold")
+    private val peakRatioSmoothMaxKey = floatPreferencesKey("cal_peakratio_smooth_max")
     private val peakCountSmoothMaxKey = longPreferencesKey("cal_peakcount_smooth_max")
     private val movingAverageWindowKey = longPreferencesKey("cal_moving_average_window")
     private val baseGravityVectorKey = stringPreferencesKey("cal_base_gravity_vector")
@@ -77,6 +78,10 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settingsFlow: Flow<TrackingSettings> = context.settingsDataStore.data.map { prefs ->
+        val ratioFromPrefs = prefs[peakRatioSmoothMaxKey]
+        val ratioFromLegacyCount = (prefs[peakCountSmoothMaxKey] ?: 5L)
+            .toFloat()
+            .coerceAtLeast(0f) / 100f
         TrackingSettings(
             intervalSeconds = (prefs[intervalKey] ?: MIN_INTERVAL_SECONDS).coerceAtLeast(MIN_INTERVAL_SECONDS),
             folderUri = prefs[folderUriKey],
@@ -92,7 +97,7 @@ class SettingsRepository(private val context: Context) {
                 symmetricBumpThreshold = prefs[symmetricBumpThresholdKey] ?: 2.0f,
                 potholeDipThreshold = prefs[potholeDipThresholdKey] ?: -2.5f,
                 bumpSpikeThreshold = prefs[bumpSpikeThresholdKey] ?: 2.5f,
-                peakCountSmoothMax = (prefs[peakCountSmoothMaxKey] ?: 5L).toInt(),
+                peakRatioSmoothMax = ratioFromPrefs ?: ratioFromLegacyCount,
                 movingAverageWindow = (prefs[movingAverageWindowKey] ?: 5L).toInt(),
                 baseGravityVector = parseGravityVector(prefs[baseGravityVectorKey])
             ),
@@ -147,7 +152,7 @@ class SettingsRepository(private val context: Context) {
             prefs[symmetricBumpThresholdKey] = calibration.symmetricBumpThreshold
             prefs[potholeDipThresholdKey] = calibration.potholeDipThreshold
             prefs[bumpSpikeThresholdKey] = calibration.bumpSpikeThreshold
-            prefs[peakCountSmoothMaxKey] = calibration.peakCountSmoothMax.toLong()
+            prefs[peakRatioSmoothMaxKey] = calibration.peakRatioSmoothMax
             prefs[movingAverageWindowKey] = calibration.movingAverageWindow.toLong()
             val gravityEncoded = formatGravityVector(calibration.baseGravityVector)
             if (gravityEncoded == null) {

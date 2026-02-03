@@ -28,7 +28,7 @@ data class TrackingSample(
     val accelRMS: Float? = null,
     val roadQuality: String? = null,
     val featureDetected: String? = null,
-    val peakCount: Int? = null,
+    val peakRatio: Float? = null,
     val stdDev: Float? = null,
     val rawAccelData: List<FloatArray>? = null,
     val gravityVector: FloatArray? = null,

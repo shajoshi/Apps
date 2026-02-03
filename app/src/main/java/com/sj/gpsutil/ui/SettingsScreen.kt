@@ -1,8 +1,13 @@
 package com.sj.gpsutil.ui
 
 import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Environment
+import android.os.Build
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import android.util.Log
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +52,15 @@ import com.sj.gpsutil.data.CalibrationSettings
 import com.sj.gpsutil.data.VehicleProfile
 import com.sj.gpsutil.data.VehicleProfileRepository
 import com.sj.gpsutil.data.MIN_INTERVAL_SECONDS
+import com.sj.gpsutil.tracking.TrackingState
+import com.sj.gpsutil.tracking.TrackingStatus
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.sqrt
+
+private const val TAG = "SettingsScreen"
 
 @Composable
 fun SettingsScreen(modifier: Modifier = Modifier) {
@@ -57,6 +69,23 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val profileRepository = remember { VehicleProfileRepository(context) }
     val scope = rememberCoroutineScope()
     val settings by repository.settingsFlow.collectAsState(initial = TrackingSettings())
+    val trackingStatus by TrackingState.status.collectAsState()
+    var previousBaseline by remember { mutableStateOf<FloatArray?>(null) }
+    var baselineCaptureInProgress by remember { mutableStateOf(false) }
+
+    LaunchedEffect(settings.calibration.baseGravityVector) {
+        val current = settings.calibration.baseGravityVector
+        if (current != null) {
+            val previous = previousBaseline
+            if (previous != null && !current.contentEquals(previous)) {
+                Toast.makeText(context, "Mount baseline updated", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "Baseline updated to ${current.joinToString(prefix = "[", postfix = "]")}")
+            }
+            previousBaseline = current.copyOf()
+        } else {
+            previousBaseline = null
+        }
+    }
     
     LaunchedEffect(Unit) {
         scope.launch(Dispatchers.IO) {
@@ -81,7 +110,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var symmetricBumpThreshold by remember(cal) { mutableStateOf(cal.symmetricBumpThreshold.toString()) }
     var potholeDipThreshold by remember(cal) { mutableStateOf(cal.potholeDipThreshold.toString()) }
     var bumpSpikeThreshold by remember(cal) { mutableStateOf(cal.bumpSpikeThreshold.toString()) }
-    var peakCountSmoothMax by remember(cal) { mutableStateOf(cal.peakCountSmoothMax.toString()) }
+    var peakRatioSmoothMax by remember(cal) { mutableStateOf((cal.peakRatioSmoothMax * 100f).toString()) }
     var movingAverageWindow by remember(cal) { mutableStateOf(cal.movingAverageWindow.toString()) }
 
     val folderPicker = rememberLauncherForActivityResult(
@@ -182,8 +211,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -206,8 +233,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -228,6 +253,51 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     ).show()
                 }
             )
+        }
+
+        val canCaptureBaseline = trackingStatus != TrackingStatus.Recording && !baselineCaptureInProgress
+        OutlinedButton(
+            onClick = {
+                baselineCaptureInProgress = true
+                Log.d(TAG, "Baseline capture requested from Settings")
+                scope.launch {
+                    val gravity = captureBaselineFromAccelerometer(context, durationMillis = 500L)
+                    if (gravity != null) {
+                        withContext(Dispatchers.IO) {
+                            repository.updateCalibration(settings.calibration.copy(baseGravityVector = gravity))
+                        }
+                        Log.d(TAG, "Baseline capture successful: ${gravity.joinToString(prefix = "[", postfix = "]")}")
+                    } else {
+                        Toast.makeText(context, "Unable to capture baseline", Toast.LENGTH_SHORT).show()
+                        Log.w(TAG, "Baseline capture failed (no samples or permission issue)")
+                    }
+                    baselineCaptureInProgress = false
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = canCaptureBaseline
+        ) {
+            Text(
+                when {
+                    baselineCaptureInProgress -> "Capturing baseline..."
+                    canCaptureBaseline -> "Capture mount baseline (stationary)"
+                    else -> "Stop recording to capture baseline"
+                }
+            )
+        }
+
+        settings.calibration.baseGravityVector?.let { g ->
+            if (g.size >= 3) {
+                val magnitude = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2].toDouble()).toFloat()
+                Text(
+                    "Baseline: x=${"%.2f".format(g[0])}, y=${"%.2f".format(g[1])}, z=${"%.2f".format(g[2])}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "g: ${"%.2f".format(magnitude)} m/s²",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -309,7 +379,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             symmetricBumpThresholdText = symmetricBumpThreshold,
             potholeDipThresholdText = potholeDipThreshold,
             bumpSpikeThresholdText = bumpSpikeThreshold,
-            peakCountSmoothMaxText = peakCountSmoothMax,
+            peakRatioSmoothMaxText = peakRatioSmoothMax,
             movingAverageWindowText = movingAverageWindow,
             onValuesChange = { newVals ->
                 rmsSmoothMax = newVals.rmsSmoothMax
@@ -317,7 +387,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 symmetricBumpThreshold = newVals.symmetricBumpThreshold
                 potholeDipThreshold = newVals.potholeDipThreshold
                 bumpSpikeThreshold = newVals.bumpSpikeThreshold
-                peakCountSmoothMax = newVals.peakCountSmoothMax
+                peakRatioSmoothMax = newVals.peakRatioSmoothMax
                 movingAverageWindow = newVals.movingAverageWindow
             },
             onResetDefaults = {
@@ -327,7 +397,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 symmetricBumpThreshold = defaults.symmetricBumpThreshold.toString()
                 potholeDipThreshold = defaults.potholeDipThreshold.toString()
                 bumpSpikeThreshold = defaults.bumpSpikeThreshold.toString()
-                peakCountSmoothMax = defaults.peakCountSmoothMax.toString()
+                peakRatioSmoothMax = (defaults.peakRatioSmoothMax * 100f).toString()
                 movingAverageWindow = defaults.movingAverageWindow.toString()
             },
             onLoadProfile = { profile ->
@@ -336,7 +406,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 symmetricBumpThreshold = profile.calibration.symmetricBumpThreshold.toString()
                 potholeDipThreshold = profile.calibration.potholeDipThreshold.toString()
                 bumpSpikeThreshold = profile.calibration.bumpSpikeThreshold.toString()
-                peakCountSmoothMax = profile.calibration.peakCountSmoothMax.toString()
+                peakRatioSmoothMax = (profile.calibration.peakRatioSmoothMax * 100f).toString()
                 movingAverageWindow = profile.calibration.movingAverageWindow.toString()
             },
             onDismiss = { showCalibration = false }
@@ -357,7 +427,7 @@ private fun CalibrationDialog(
     symmetricBumpThresholdText: String,
     potholeDipThresholdText: String,
     bumpSpikeThresholdText: String,
-    peakCountSmoothMaxText: String,
+    peakRatioSmoothMaxText: String,
     movingAverageWindowText: String,
     onValuesChange: (CalibrationTextValues) -> Unit,
     onResetDefaults: () -> Unit,
@@ -377,13 +447,13 @@ private fun CalibrationDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, movingAverageWindowText)) }
-                CalibrationField("Peak threshold Z", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, movingAverageWindowText)) }
-                CalibrationField("Speed bump threshold", symmetricBumpThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, movingAverageWindowText)) }
-                CalibrationField("Pothole dip threshold", potholeDipThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, it, bumpSpikeThresholdText, peakCountSmoothMaxText, movingAverageWindowText)) }
-                CalibrationField("Bump spike threshold", bumpSpikeThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, it, peakCountSmoothMaxText, movingAverageWindowText)) }
-                CalibrationField("Peak count smooth max", peakCountSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, it, movingAverageWindowText)) }
-                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakCountSmoothMaxText, it)) }
+                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText)) }
+                CalibrationField("Peak threshold Z", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText)) }
+                CalibrationField("Speed bump threshold", symmetricBumpThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText)) }
+                CalibrationField("Pothole dip threshold", potholeDipThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, it, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText)) }
+                CalibrationField("Bump spike threshold", bumpSpikeThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, it, peakRatioSmoothMaxText, movingAverageWindowText)) }
+                CalibrationField("Peak ratio smooth max (%)", peakRatioSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, it, movingAverageWindowText)) }
+                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, it)) }
             }
         },
         confirmButton = {
@@ -394,7 +464,7 @@ private fun CalibrationDialog(
                             initialValues,
                             rmsSmoothMaxText, peakThresholdZText,
                             symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
-                            peakCountSmoothMaxText, movingAverageWindowText
+                            peakRatioSmoothMaxText, movingAverageWindowText
                         )
                         if (parsed == null) {
                             Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
@@ -440,7 +510,7 @@ private fun CalibrationDialog(
             symmetricBumpThresholdText = symmetricBumpThresholdText,
             potholeDipThresholdText = potholeDipThresholdText,
             bumpSpikeThresholdText = bumpSpikeThresholdText,
-            peakCountSmoothMaxText = peakCountSmoothMaxText,
+            peakRatioSmoothMaxText = peakRatioSmoothMaxText,
             movingAverageWindowText = movingAverageWindowText,
             onDismiss = { showSaveAsDialog = false }
         )
@@ -473,7 +543,7 @@ private fun SaveAsDialog(
     symmetricBumpThresholdText: String,
     potholeDipThresholdText: String,
     bumpSpikeThresholdText: String,
-    peakCountSmoothMaxText: String,
+    peakRatioSmoothMaxText: String,
     movingAverageWindowText: String,
     onDismiss: () -> Unit
 ) {
@@ -506,7 +576,7 @@ private fun SaveAsDialog(
                         initialValues,
                         rmsSmoothMaxText, peakThresholdZText,
                         symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
-                        peakCountSmoothMaxText, movingAverageWindowText
+                        peakRatioSmoothMaxText, movingAverageWindowText
                     )
                     if (parsed == null) {
                         Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
@@ -618,7 +688,7 @@ private data class CalibrationTextValues(
     val symmetricBumpThreshold: String,
     val potholeDipThreshold: String,
     val bumpSpikeThreshold: String,
-    val peakCountSmoothMax: String,
+    val peakRatioSmoothMax: String,
     val movingAverageWindow: String
 )
 
@@ -629,7 +699,7 @@ private fun parseCalibration(
     symmetricBumpThreshold: String,
     potholeDipThreshold: String,
     bumpSpikeThreshold: String,
-    peakCountSmoothMax: String,
+    peakRatioSmoothMax: String,
     movingAverageWindow: String
 ): CalibrationSettings? {
     val rmsSmooth = rmsSmoothMax.toFloatOrNull() ?: return null
@@ -637,7 +707,9 @@ private fun parseCalibration(
     val sym = symmetricBumpThreshold.toFloatOrNull() ?: return null
     val pothole = potholeDipThreshold.toFloatOrNull() ?: return null
     val bump = bumpSpikeThreshold.toFloatOrNull() ?: return null
-    val peakSmooth = peakCountSmoothMax.toIntOrNull() ?: return null
+    val peakSmoothPercent = peakRatioSmoothMax.toFloatOrNull() ?: return null
+    if (peakSmoothPercent < 1f || peakSmoothPercent > 99f) return null
+    val peakSmooth = peakSmoothPercent / 100f
     val maWindow = movingAverageWindow.toIntOrNull() ?: return null
     if (maWindow <= 0) return null
     return CalibrationSettings(
@@ -646,10 +718,61 @@ private fun parseCalibration(
         symmetricBumpThreshold = sym,
         potholeDipThreshold = pothole,
         bumpSpikeThreshold = bump,
-        peakCountSmoothMax = peakSmooth,
+        peakRatioSmoothMax = peakSmooth,
         movingAverageWindow = maWindow,
         baseGravityVector = initialValues.baseGravityVector
     )
+}
+
+private suspend fun captureBaselineFromAccelerometer(
+    context: Context,
+    durationMillis: Long
+): FloatArray? {
+    val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return null
+    val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return null
+
+    val samples = mutableListOf<FloatArray>()
+    val listener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent?) {
+            val e = event ?: return
+            if (e.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+            samples.add(floatArrayOf(e.values[0], e.values[1], e.values[2]))
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    val registered = withContext(Dispatchers.Main) {
+        try {
+            sensorManager.registerListener(listener, accelerometer, 10_000)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
+    if (!registered) return null
+
+    try {
+        delay(durationMillis)
+    } finally {
+        withContext(Dispatchers.Main) {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+
+    if (samples.isEmpty()) return null
+
+    var sumX = 0f
+    var sumY = 0f
+    var sumZ = 0f
+    samples.forEach {
+        sumX += it[0]
+        sumY += it[1]
+        sumZ += it[2]
+    }
+    val count = samples.size.coerceAtLeast(1)
+    return floatArrayOf(sumX / count, sumY / count, sumZ / count)
 }
 
 private fun takePersistablePermission(context: Context, uri: Uri) {

@@ -70,7 +70,7 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("          \"symmetricBumpThreshold\": ${"%.3f".format(cal.symmetricBumpThreshold)},\n")
                 writer.write("          \"potholeDipThreshold\": ${"%.3f".format(cal.potholeDipThreshold)},\n")
                 writer.write("          \"bumpSpikeThreshold\": ${"%.3f".format(cal.bumpSpikeThreshold)},\n")
-                writer.write("          \"peakCountSmoothMax\": ${cal.peakCountSmoothMax},\n")
+                writer.write("          \"peakRatioSmoothMax\": ${"%.3f".format(cal.peakRatioSmoothMax)},\n")
                 writer.write("          \"movingAverageWindow\": ${cal.movingAverageWindow}")
                 cal.baseGravityVector?.let { g ->
                     writer.write(",\n")
@@ -142,10 +142,6 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write(",\n")
                 writer.write("          \"manualFeatureLabel\": \"$it\"")
             }
-            sample.gravityVector?.let { g ->
-                writer.write(",\n")
-                writer.write("          \"gravityVector\": { \"x\": ${"%.3f".format(g[0])}, \"y\": ${"%.3f".format(g[1])}, \"z\": ${"%.3f".format(g[2])} }")
-            }
             sample.rawAccelData?.let { raw ->
                 writer.write(",\n")
                 writer.write("          \"raw\": [\n")
@@ -174,9 +170,9 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                     writer.write("          \"color\": \"#FF0000\"")
                 }
             }
-            sample.peakCount?.let {
+            sample.peakRatio?.let {
                 writer.write(",\n")
-                writer.write("          \"peakCount\": $it")
+                writer.write("          \"peakRatio\": ${"%.3f".format(it)}")
             }
             sample.stdDev?.let {
                 writer.write(",\n")
