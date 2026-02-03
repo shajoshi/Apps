@@ -66,13 +66,11 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("        \"profileName\": ${settingsSnapshot.profileName?.let { "\"$it\"" } ?: "null"},\n")
                 writer.write("        \"calibration\": {\n")
                 writer.write("          \"rmsSmoothMax\": ${"%.3f".format(cal.rmsSmoothMax)},\n")
-                writer.write("          \"rmsAverageMax\": ${"%.3f".format(cal.rmsAverageMax)},\n")
                 writer.write("          \"peakThresholdZ\": ${"%.3f".format(cal.peakThresholdZ)},\n")
                 writer.write("          \"symmetricBumpThreshold\": ${"%.3f".format(cal.symmetricBumpThreshold)},\n")
                 writer.write("          \"potholeDipThreshold\": ${"%.3f".format(cal.potholeDipThreshold)},\n")
                 writer.write("          \"bumpSpikeThreshold\": ${"%.3f".format(cal.bumpSpikeThreshold)},\n")
                 writer.write("          \"peakCountSmoothMax\": ${cal.peakCountSmoothMax},\n")
-                writer.write("          \"peakCountAverageMax\": ${cal.peakCountAverageMax},\n")
                 writer.write("          \"movingAverageWindow\": ${cal.movingAverageWindow}")
                 cal.baseGravityVector?.let { g ->
                     writer.write(",\n")

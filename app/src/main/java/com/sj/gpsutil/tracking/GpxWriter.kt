@@ -33,13 +33,11 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             val cal = settings.calibration
             writer.write("<sj:calibration>\n")
             writer.write("<sj:rmsSmoothMax>${"%.3f".format(cal.rmsSmoothMax)}</sj:rmsSmoothMax>\n")
-            writer.write("<sj:rmsAverageMax>${"%.3f".format(cal.rmsAverageMax)}</sj:rmsAverageMax>\n")
             writer.write("<sj:peakThresholdZ>${"%.3f".format(cal.peakThresholdZ)}</sj:peakThresholdZ>\n")
             writer.write("<sj:symmetricBumpThreshold>${"%.3f".format(cal.symmetricBumpThreshold)}</sj:symmetricBumpThreshold>\n")
             writer.write("<sj:potholeDipThreshold>${"%.3f".format(cal.potholeDipThreshold)}</sj:potholeDipThreshold>\n")
             writer.write("<sj:bumpSpikeThreshold>${"%.3f".format(cal.bumpSpikeThreshold)}</sj:bumpSpikeThreshold>\n")
             writer.write("<sj:peakCountSmoothMax>${cal.peakCountSmoothMax}</sj:peakCountSmoothMax>\n")
-            writer.write("<sj:peakCountAverageMax>${cal.peakCountAverageMax}</sj:peakCountAverageMax>\n")
             writer.write("<sj:movingAverageWindow>${cal.movingAverageWindow}</sj:movingAverageWindow>\n")
             cal.baseGravityVector?.let { g ->
                 writer.write("<sj:baseGravityVectorX>${"%.3f".format(g[0])}</sj:baseGravityVectorX>\n")
@@ -87,13 +85,11 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<sj:rms>${"%.3f".format(sample.accelRMS)}</sj:rms>\n")
             val styleId = when (sample.roadQuality) {
                 "smooth" -> "smoothStyle"
-                "average" -> "averageStyle"
                 "rough" -> "roughStyle"
                 else -> null
             }
             val styleColor = when (sample.roadQuality) {
                 "smooth" -> "#00FF00"
-                "average" -> "#FFA500"
                 "rough" -> "#FF0000"
                 else -> null
             }

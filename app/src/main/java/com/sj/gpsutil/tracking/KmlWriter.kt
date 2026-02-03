@@ -36,13 +36,11 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<Data name=\"profileName\"><value>${settings.profileName ?: ""}</value></Data>\n")
             val cal = settings.calibration
             writer.write("<Data name=\"calibration.rmsSmoothMax\"><value>${"%.3f".format(cal.rmsSmoothMax)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.rmsAverageMax\"><value>${"%.3f".format(cal.rmsAverageMax)}</value></Data>\n")
             writer.write("<Data name=\"calibration.peakThresholdZ\"><value>${"%.3f".format(cal.peakThresholdZ)}</value></Data>\n")
             writer.write("<Data name=\"calibration.symmetricBumpThreshold\"><value>${"%.3f".format(cal.symmetricBumpThreshold)}</value></Data>\n")
             writer.write("<Data name=\"calibration.potholeDipThreshold\"><value>${"%.3f".format(cal.potholeDipThreshold)}</value></Data>\n")
             writer.write("<Data name=\"calibration.bumpSpikeThreshold\"><value>${"%.3f".format(cal.bumpSpikeThreshold)}</value></Data>\n")
             writer.write("<Data name=\"calibration.peakCountSmoothMax\"><value>${cal.peakCountSmoothMax}</value></Data>\n")
-            writer.write("<Data name=\"calibration.peakCountAverageMax\"><value>${cal.peakCountAverageMax}</value></Data>\n")
             writer.write("<Data name=\"calibration.movingAverageWindow\"><value>${cal.movingAverageWindow}</value></Data>\n")
             cal.baseGravityVector?.let { g ->
                 writer.write("<Data name=\"calibration.baseGravityVectorX\"><value>${"%.3f".format(g[0])}</value></Data>\n")
@@ -53,8 +51,6 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
         }
         // Styles for point coloring by road quality
         writer.write("<Style id=\"smoothStyle\"><IconStyle><color>ff00ff00</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>")
-        writer.newLine()
-        writer.write("<Style id=\"averageStyle\"><IconStyle><color>ff00a5ff</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>")
         writer.newLine()
         writer.write("<Style id=\"roughStyle\"><IconStyle><color>ff0000ff</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>")
         writer.newLine()
@@ -86,7 +82,6 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
         writer.newLine()
         val styleId = when (sample.roadQuality) {
             "smooth" -> "smoothStyle"
-            "average" -> "averageStyle"
             "rough" -> "roughStyle"
             else -> null
         }
