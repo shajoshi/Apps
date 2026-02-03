@@ -51,7 +51,9 @@ object TrackingState {
     private val _lastMovementTimestampMillis = MutableStateFlow<Long?>(null)
     private val _skippedPoints = MutableStateFlow(0L)
     private val _manualLabel = MutableStateFlow<String?>(null)
+    private val _manualLabelStartTime = MutableStateFlow<Long?>(null)
     private val _pendingFeatureLabel = MutableStateFlow<String?>(null)
+    private val _pendingFeatureTimestamp = MutableStateFlow<Long?>(null)
     private val _gravityVector = MutableStateFlow<FloatArray?>(null)
 
     val status = _status.asStateFlow()
@@ -66,7 +68,9 @@ object TrackingState {
     val notMovingMillis = _notMovingMillis.asStateFlow()
     val skippedPoints = _skippedPoints.asStateFlow()
     val manualLabel = _manualLabel.asStateFlow()
+    val manualLabelStartTime = _manualLabelStartTime.asStateFlow()
     val pendingFeatureLabel = _pendingFeatureLabel.asStateFlow()
+    val pendingFeatureTimestamp = _pendingFeatureTimestamp.asStateFlow()
     val gravityVector = _gravityVector.asStateFlow()
 
     fun updateStatus(status: TrackingStatus) {
@@ -175,18 +179,27 @@ object TrackingState {
 
     fun setManualLabel(label: String?) {
         _manualLabel.value = label
+        _manualLabelStartTime.value = if (label != null) System.currentTimeMillis() else null
     }
 
     fun setPendingFeatureLabel(label: String?) {
         _pendingFeatureLabel.value = label
+        _pendingFeatureTimestamp.value = if (label != null) System.currentTimeMillis() else null
     }
 
     fun consumePendingFeatureLabel(): String? {
         val label = _pendingFeatureLabel.value
-        if (label != null) {
-            _pendingFeatureLabel.value = null
+        val timestamp = _pendingFeatureTimestamp.value
+        if (label != null && timestamp != null) {
+            // Only consume if 5 seconds have passed since button press
+            val elapsed = System.currentTimeMillis() - timestamp
+            if (elapsed >= 5000) {
+                _pendingFeatureLabel.value = null
+                _pendingFeatureTimestamp.value = null
+                return label
+            }
         }
-        return label
+        return null
     }
 
     fun setGravityVector(vector: FloatArray?) {

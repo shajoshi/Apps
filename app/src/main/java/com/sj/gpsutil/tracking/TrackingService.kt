@@ -166,7 +166,7 @@ class TrackingService : Service() {
             sensorManager.registerListener(
                 accelerometerListener,
                 accelerometer,
-                SensorManager.SENSOR_DELAY_GAME
+                SensorManager.SENSOR_DELAY_FASTEST
             )
         }
     }
@@ -246,10 +246,9 @@ class TrackingService : Service() {
             val variance = magnitudes.map { (it - meanMagnitude) * (it - meanMagnitude) }.average().toFloat()
             val stdDev = kotlin.math.sqrt(variance)
 
-            // Step 4: Classify road quality (motorcycle-adjusted thresholds)
+            // Step 4: Classify road quality (binary classification: smooth/rough)
             val roadQuality = when {
                 rms < calibration.rmsSmoothMax && peakCount < calibration.peakCountSmoothMax -> "smooth"
-                rms < calibration.rmsAverageMax && peakCount < calibration.peakCountAverageMax -> "average"
                 else -> "rough"
             }
 

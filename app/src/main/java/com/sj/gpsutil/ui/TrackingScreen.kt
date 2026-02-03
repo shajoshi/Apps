@@ -181,7 +181,6 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             val roadQualityText = latestSample?.roadQuality?.let { quality ->
                 when (quality) {
                     "smooth" -> "🟢 Smooth"
-                    "average" -> "🟡 Average"
                     "rough" -> "🔴 Rough"
                     else -> quality
                 }
@@ -216,60 +215,105 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             Text("Ground Truth: Road Quality", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val currentLabel by TrackingState.manualLabel.collectAsState()
+                val labelStartTime by TrackingState.manualLabelStartTime.collectAsState()
+                
+                // Auto-stop timer display
+                val remainingSeconds = remember { mutableStateOf(0) }
+                LaunchedEffect(labelStartTime, currentLabel) {
+                    if (currentLabel != null && labelStartTime != null) {
+                        while (currentLabel != null) {
+                            val elapsed = System.currentTimeMillis() - labelStartTime!!
+                            val remaining = (30000 - elapsed) / 1000
+                            if (remaining <= 0) {
+                                TrackingState.setManualLabel(null)
+                                break
+                            }
+                            remainingSeconds.value = remaining.toInt()
+                            delay(100)
+                        }
+                    }
+                }
                 
                 Button(
-                    onClick = { TrackingState.setManualLabel("smooth") },
+                    onClick = { 
+                        if (currentLabel == "smooth") {
+                            TrackingState.setManualLabel(null)
+                        } else {
+                            TrackingState.setManualLabel("smooth")
+                        }
+                    },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                         containerColor = if (currentLabel == "smooth") androidx.compose.ui.graphics.Color.Green else androidx.compose.ui.graphics.Color.Gray
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Smooth")
+                    Text(if (currentLabel == "smooth") "Smooth (${remainingSeconds.value}s)" else "Smooth")
                 }
                 
                 Button(
-                    onClick = { TrackingState.setManualLabel("average") },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = if (currentLabel == "average") androidx.compose.ui.graphics.Color.Yellow else androidx.compose.ui.graphics.Color.Gray
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Avg", color = androidx.compose.ui.graphics.Color.Black)
-                }
-                
-                Button(
-                    onClick = { TrackingState.setManualLabel("rough") },
+                    onClick = { 
+                        if (currentLabel == "rough") {
+                            TrackingState.setManualLabel(null)
+                        } else {
+                            TrackingState.setManualLabel("rough")
+                        }
+                    },
                     colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                         containerColor = if (currentLabel == "rough") androidx.compose.ui.graphics.Color.Red else androidx.compose.ui.graphics.Color.Gray
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Rough")
+                    Text(if (currentLabel == "rough") "Rough (${remainingSeconds.value}s)" else "Rough")
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Ground Truth: Features (Tap on event)", style = MaterialTheme.typography.labelMedium)
+            Text("Ground Truth: Features (Tag 5s after press)", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MomentaryHighlightButton(
+                val pendingFeature by TrackingState.pendingFeatureLabel.collectAsState()
+                val featureTimestamp by TrackingState.pendingFeatureTimestamp.collectAsState()
+                
+                // Countdown timer for pending feature
+                val featureRemainingSeconds = remember { mutableStateOf(0) }
+                LaunchedEffect(featureTimestamp, pendingFeature) {
+                    if (pendingFeature != null && featureTimestamp != null) {
+                        while (pendingFeature != null) {
+                            val elapsed = System.currentTimeMillis() - featureTimestamp!!
+                            val remaining = (5000 - elapsed) / 1000
+                            if (remaining <= 0) {
+                                break
+                            }
+                            featureRemainingSeconds.value = remaining.toInt()
+                            delay(100)
+                        }
+                    }
+                }
+                
+                DelayedFeatureButton(
                     text = "Bump",
+                    featureType = "speed_bump",
+                    currentFeature = pendingFeature,
+                    remainingSeconds = featureRemainingSeconds.value,
                     onClick = { TrackingState.setPendingFeatureLabel("speed_bump") },
-                    modifier = Modifier.weight(1f),
-                    highlightMillis = 750L
+                    modifier = Modifier.weight(1f)
                 )
 
-                MomentaryHighlightButton(
+                DelayedFeatureButton(
                     text = "Pothole",
+                    featureType = "pothole",
+                    currentFeature = pendingFeature,
+                    remainingSeconds = featureRemainingSeconds.value,
                     onClick = { TrackingState.setPendingFeatureLabel("pothole") },
-                    modifier = Modifier.weight(1f),
-                    highlightMillis = 750L
+                    modifier = Modifier.weight(1f)
                 )
 
-                MomentaryHighlightButton(
+                DelayedFeatureButton(
                     text = "Jolt",
+                    featureType = "bump",
+                    currentFeature = pendingFeature,
+                    remainingSeconds = featureRemainingSeconds.value,
                     onClick = { TrackingState.setPendingFeatureLabel("bump") },
-                    modifier = Modifier.weight(1f),
-                    highlightMillis = 750L
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -368,44 +412,37 @@ private fun formatSeconds(totalSeconds: Long): String {
 }
 
 @Composable
-private fun MomentaryHighlightButton(
+private fun DelayedFeatureButton(
     text: String,
+    featureType: String,
+    currentFeature: String?,
+    remainingSeconds: Int,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    highlightMillis: Long = 750L
+    modifier: Modifier = Modifier
 ) {
-    var highlighted by remember { mutableStateOf(false) }
-
-    LaunchedEffect(highlighted) {
-        if (highlighted) {
-            delay(highlightMillis)
-            highlighted = false
-        }
-    }
-
+    val isActive = currentFeature == featureType
     val highlightYellow = Color(0xFFFFEB3B)
-    val containerColor = if (highlighted) {
+    
+    val containerColor = if (isActive) {
         highlightYellow
     } else {
         Color.Transparent
     }
-    val border = if (highlighted) {
+    
+    val border = if (isActive) {
         BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
     } else {
         BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     }
 
-    val contentColor = if (highlighted) {
+    val contentColor = if (isActive) {
         Color.Black
     } else {
         MaterialTheme.colorScheme.onSurface
     }
 
     OutlinedButton(
-        onClick = {
-            highlighted = true
-            onClick()
-        },
+        onClick = onClick,
         modifier = modifier,
         border = border,
         colors = ButtonDefaults.outlinedButtonColors(
@@ -413,6 +450,6 @@ private fun MomentaryHighlightButton(
             contentColor = contentColor
         )
     ) {
-        Text(text)
+        Text(if (isActive) "$text (${remainingSeconds}s)" else text)
     }
 }
