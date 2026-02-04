@@ -256,10 +256,24 @@ class TrackingService : Service() {
             val variance = magnitudes.map { (it - meanMagnitude) * (it - meanMagnitude) }.average().toFloat()
             val stdDev = kotlin.math.sqrt(variance)
 
-            // Step 4: Classify road quality (binary classification: smooth/rough)
+            // Step 4: Classify road quality (three-tier classification: smooth/average/rough)
+            // Based on calibration analysis distributions:
+            // - Smooth: low RMS, low peakRatio, low stdDev (all metrics below thresholds)
+            // - Rough: high RMS, high peakRatio, high stdDev (at least 2 out of 3 metrics above thresholds)
+            // - Average: mixed signals or borderline values
             val roadQuality = when {
-                rms < calibration.rmsSmoothMax && peakRatio < calibration.peakRatioSmoothMax -> "smooth"
-                else -> "rough"
+                // Smooth: All metrics must be below thresholds
+                rms < calibration.rmsSmoothMax && 
+                peakRatio < calibration.peakRatioSmoothMax && 
+                stdDev < calibration.stdDevSmoothMax -> "smooth"
+                
+                // Rough: At least 2 out of 3 metrics indicate rough conditions
+                (rms >= calibration.rmsRoughMin && peakRatio >= calibration.peakRatioRoughMin) ||
+                (rms >= calibration.rmsRoughMin && stdDev >= calibration.stdDevRoughMin) ||
+                (peakRatio >= calibration.peakRatioRoughMin && stdDev >= calibration.stdDevRoughMin) -> "rough"
+                
+                // Average: Everything else (mixed signals or borderline values)
+                else -> "average"
             }
 
             // Step 5: Detect features (use vertical component projected onto gravity)

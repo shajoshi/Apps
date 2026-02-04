@@ -41,7 +41,11 @@ data class CalibrationSettings(
     val bumpSpikeThreshold: Float = 2.5f,
     val peakRatioSmoothMax: Float = 0.10f,
     val movingAverageWindow: Int = 5,
-    val baseGravityVector: FloatArray? = null
+    val baseGravityVector: FloatArray? = null,
+    val stdDevSmoothMax: Float = 2.5f,
+    val rmsRoughMin: Float = 4.5f,
+    val peakRatioRoughMin: Float = 0.6f,
+    val stdDevRoughMin: Float = 3.0f
 )
 
 class SettingsRepository(private val context: Context) {
@@ -60,6 +64,10 @@ class SettingsRepository(private val context: Context) {
     private val peakCountSmoothMaxKey = longPreferencesKey("cal_peakcount_smooth_max")
     private val movingAverageWindowKey = longPreferencesKey("cal_moving_average_window")
     private val baseGravityVectorKey = stringPreferencesKey("cal_base_gravity_vector")
+    private val stdDevSmoothMaxKey = floatPreferencesKey("cal_stddev_smooth_max")
+    private val rmsRoughMinKey = floatPreferencesKey("cal_rms_rough_min")
+    private val peakRatioRoughMinKey = floatPreferencesKey("cal_peakratio_rough_min")
+    private val stdDevRoughMinKey = floatPreferencesKey("cal_stddev_rough_min")
     private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
 
     private fun parseGravityVector(encoded: String?): FloatArray? {
@@ -99,7 +107,11 @@ class SettingsRepository(private val context: Context) {
                 bumpSpikeThreshold = prefs[bumpSpikeThresholdKey] ?: 2.5f,
                 peakRatioSmoothMax = ratioFromPrefs ?: ratioFromLegacyCount,
                 movingAverageWindow = (prefs[movingAverageWindowKey] ?: 5L).toInt(),
-                baseGravityVector = parseGravityVector(prefs[baseGravityVectorKey])
+                baseGravityVector = parseGravityVector(prefs[baseGravityVectorKey]),
+                stdDevSmoothMax = prefs[stdDevSmoothMaxKey] ?: 2.5f,
+                rmsRoughMin = prefs[rmsRoughMinKey] ?: 4.5f,
+                peakRatioRoughMin = prefs[peakRatioRoughMinKey] ?: 0.6f,
+                stdDevRoughMin = prefs[stdDevRoughMinKey] ?: 3.0f
             ),
             currentProfileName = prefs[currentProfileNameKey]
         )
@@ -154,6 +166,10 @@ class SettingsRepository(private val context: Context) {
             prefs[bumpSpikeThresholdKey] = calibration.bumpSpikeThreshold
             prefs[peakRatioSmoothMaxKey] = calibration.peakRatioSmoothMax
             prefs[movingAverageWindowKey] = calibration.movingAverageWindow.toLong()
+            prefs[stdDevSmoothMaxKey] = calibration.stdDevSmoothMax
+            prefs[rmsRoughMinKey] = calibration.rmsRoughMin
+            prefs[peakRatioRoughMinKey] = calibration.peakRatioRoughMin
+            prefs[stdDevRoughMinKey] = calibration.stdDevRoughMin
             val gravityEncoded = formatGravityVector(calibration.baseGravityVector)
             if (gravityEncoded == null) {
                 prefs.remove(baseGravityVectorKey)
