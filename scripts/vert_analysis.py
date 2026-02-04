@@ -11,8 +11,6 @@ def main():
         return
 
     input_path = sys.argv[1]
-    
-    # Generate output filename: input_name.json -> input_name.csv
     base_name = os.path.splitext(input_path)[0]
     output_path = f"{base_name}.csv"
 
@@ -53,33 +51,42 @@ def main():
     }
 
     # 5. Scan ALL segments to build a complete list of headers
-    # This ensures fields like "manualLabel" appearing late in the file are included.
+    # We now look for keys in both 'gps' and 'accel' objects
     segments = data['gpslogger2path'].get("data", [])
     
-    # Use a set to collect unique keys from the 'accel' object across all segments
-    all_metadata_keys = set()
+    all_gps_keys = set()
+    all_accel_keys = set()
     
     for segment in segments:
-        accel_keys = segment.get('accel', {}).keys()
-        all_metadata_keys.update(accel_keys)
-    
-    # Remove 'raw' from the metadata columns as it contains the samples we will process separately
-    if 'raw' in all_metadata_keys:
-        all_metadata_keys.remove('raw')
+        # Collect GPS keys
+        gps_data = segment.get('gps', {})
+        all_gps_keys.update(gps_data.keys())
         
-    # Sort keys for consistent column order in CSV
-    sorted_metadata_keys = sorted(list(all_metadata_keys))
+        # Collect Accel keys
+        accel_data = segment.get('accel', {})
+        all_accel_keys.update(accel_data.keys())
+    
+    # Remove 'raw' from accel keys as we process it separately
+    if 'raw' in all_accel_keys:
+        all_accel_keys.remove('raw')
+        
+    # Sort keys for consistent column order
+    sorted_gps_keys = sorted(list(all_gps_keys))
+    sorted_accel_keys = sorted(list(all_accel_keys))
 
     # 6. Process Data Segments
     processed_rows = []
 
     for segment in segments:
+        gps_data = segment.get('gps', {})
         accel_data = segment.get('accel', {})
         raw_samples = accel_data.get('raw', [])
         
-        # Extract values for the metadata columns for the current segment
-        # We ensure a value exists for every key in the header, defaulting to empty string
-        current_metadata_values = [accel_data.get(k, "") for k in sorted_metadata_keys]
+        # Extract values for GPS columns (default to empty string if missing)
+        current_gps_values = [gps_data.get(k, "") for k in sorted_gps_keys]
+        
+        # Extract values for Accel Metadata columns
+        current_accel_meta_values = [accel_data.get(k, "") for k in sorted_accel_keys]
 
         for sample in raw_samples:
             # Parse raw sample list: [x, y, z]
@@ -88,14 +95,14 @@ def main():
                 
             sx, sy, sz = sample[0], sample[1], sample[2]
 
-            # Vector Projection: Dot Product
+            # Vector Projection
             projection = (sx * unit_g['x']) + (sy * unit_g['y']) + (sz * unit_g['z'])
 
-            # Compensate: Subtract static gravity
+            # Compensate
             vertical_accel = projection - g_magnitude
 
-            # Combine metadata with the calculated value
-            row = current_metadata_values + [vertical_accel]
+            # Combine: GPS Columns + Accel Metadata + Calculated Value
+            row = current_gps_values + current_accel_meta_values + [vertical_accel]
             processed_rows.append(row)
 
     # 7. Write to CSV
@@ -107,15 +114,15 @@ def main():
         with open(output_path, 'w', newline='') as f:
             writer = csv.writer(f)
             
-            # Write Header (Metadata keys + new column)
-            full_header = sorted_metadata_keys + ["Z accel"]
+            # Write Header
+            full_header = sorted_gps_keys + sorted_accel_keys + ["Z accel"]
             writer.writerow(full_header)
             
             # Write Data
             writer.writerows(processed_rows)
         
         print(f"Success! Processed {len(processed_rows)} samples.")
-        print(f"Columns included: {sorted_metadata_keys + ['Z accel']}")
+        print(f"Columns included: {full_header}")
         print(f"Output saved to: {output_path}")
         
     except IOError as e:
