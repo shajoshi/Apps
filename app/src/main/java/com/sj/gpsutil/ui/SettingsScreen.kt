@@ -107,15 +107,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val cal = settings.calibration
     var rmsSmoothMax by remember(cal) { mutableStateOf(cal.rmsSmoothMax.toString()) }
     var peakThresholdZ by remember(cal) { mutableStateOf(cal.peakThresholdZ.toString()) }
-    var symmetricBumpThreshold by remember(cal) { mutableStateOf(cal.symmetricBumpThreshold.toString()) }
-    var potholeDipThreshold by remember(cal) { mutableStateOf(cal.potholeDipThreshold.toString()) }
-    var bumpSpikeThreshold by remember(cal) { mutableStateOf(cal.bumpSpikeThreshold.toString()) }
-    var peakRatioSmoothMax by remember(cal) { mutableStateOf((cal.peakRatioSmoothMax * 100f).toString()) }
     var movingAverageWindow by remember(cal) { mutableStateOf(cal.movingAverageWindow.toString()) }
     var stdDevSmoothMax by remember(cal) { mutableStateOf(cal.stdDevSmoothMax.toString()) }
     var rmsRoughMin by remember(cal) { mutableStateOf(cal.rmsRoughMin.toString()) }
     var peakRatioRoughMin by remember(cal) { mutableStateOf((cal.peakRatioRoughMin * 100f).toString()) }
     var stdDevRoughMin by remember(cal) { mutableStateOf(cal.stdDevRoughMin.toString()) }
+    var magMaxSpeedBumpMin by remember(cal) { mutableStateOf(cal.magMaxSpeedBumpMin.toString()) }
+    var magMaxSpeedBumpMax by remember(cal) { mutableStateOf(cal.magMaxSpeedBumpMax.toString()) }
+    var magMaxSevereMin by remember(cal) { mutableStateOf(cal.magMaxSevereMin.toString()) }
 
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -380,54 +379,50 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             initialValues = settings.calibration,
             rmsSmoothMaxText = rmsSmoothMax,
             peakThresholdZText = peakThresholdZ,
-            symmetricBumpThresholdText = symmetricBumpThreshold,
-            potholeDipThresholdText = potholeDipThreshold,
-            bumpSpikeThresholdText = bumpSpikeThreshold,
-            peakRatioSmoothMaxText = peakRatioSmoothMax,
             movingAverageWindowText = movingAverageWindow,
             stdDevSmoothMaxText = stdDevSmoothMax,
             rmsRoughMinText = rmsRoughMin,
             peakRatioRoughMinText = peakRatioRoughMin,
             stdDevRoughMinText = stdDevRoughMin,
+            magMaxSpeedBumpMinText = magMaxSpeedBumpMin,
+            magMaxSpeedBumpMaxText = magMaxSpeedBumpMax,
+            magMaxSevereMinText = magMaxSevereMin,
             onValuesChange = { newVals ->
                 rmsSmoothMax = newVals.rmsSmoothMax
                 peakThresholdZ = newVals.peakThresholdZ
-                symmetricBumpThreshold = newVals.symmetricBumpThreshold
-                potholeDipThreshold = newVals.potholeDipThreshold
-                bumpSpikeThreshold = newVals.bumpSpikeThreshold
-                peakRatioSmoothMax = newVals.peakRatioSmoothMax
                 movingAverageWindow = newVals.movingAverageWindow
                 stdDevSmoothMax = newVals.stdDevSmoothMax
                 rmsRoughMin = newVals.rmsRoughMin
                 peakRatioRoughMin = newVals.peakRatioRoughMin
                 stdDevRoughMin = newVals.stdDevRoughMin
+                magMaxSpeedBumpMin = newVals.magMaxSpeedBumpMin
+                magMaxSpeedBumpMax = newVals.magMaxSpeedBumpMax
+                magMaxSevereMin = newVals.magMaxSevereMin
             },
             onResetDefaults = {
                 val defaults = CalibrationSettings()
                 rmsSmoothMax = defaults.rmsSmoothMax.toString()
                 peakThresholdZ = defaults.peakThresholdZ.toString()
-                symmetricBumpThreshold = defaults.symmetricBumpThreshold.toString()
-                potholeDipThreshold = defaults.potholeDipThreshold.toString()
-                bumpSpikeThreshold = defaults.bumpSpikeThreshold.toString()
-                peakRatioSmoothMax = (defaults.peakRatioSmoothMax * 100f).toString()
                 movingAverageWindow = defaults.movingAverageWindow.toString()
                 stdDevSmoothMax = defaults.stdDevSmoothMax.toString()
                 rmsRoughMin = defaults.rmsRoughMin.toString()
                 peakRatioRoughMin = (defaults.peakRatioRoughMin * 100f).toString()
                 stdDevRoughMin = defaults.stdDevRoughMin.toString()
+                magMaxSpeedBumpMin = defaults.magMaxSpeedBumpMin.toString()
+                magMaxSpeedBumpMax = defaults.magMaxSpeedBumpMax.toString()
+                magMaxSevereMin = defaults.magMaxSevereMin.toString()
             },
             onLoadProfile = { profile ->
                 rmsSmoothMax = profile.calibration.rmsSmoothMax.toString()
                 peakThresholdZ = profile.calibration.peakThresholdZ.toString()
-                symmetricBumpThreshold = profile.calibration.symmetricBumpThreshold.toString()
-                potholeDipThreshold = profile.calibration.potholeDipThreshold.toString()
-                bumpSpikeThreshold = profile.calibration.bumpSpikeThreshold.toString()
-                peakRatioSmoothMax = (profile.calibration.peakRatioSmoothMax * 100f).toString()
                 movingAverageWindow = profile.calibration.movingAverageWindow.toString()
                 stdDevSmoothMax = profile.calibration.stdDevSmoothMax.toString()
                 rmsRoughMin = profile.calibration.rmsRoughMin.toString()
                 peakRatioRoughMin = (profile.calibration.peakRatioRoughMin * 100f).toString()
                 stdDevRoughMin = profile.calibration.stdDevRoughMin.toString()
+                magMaxSpeedBumpMin = profile.calibration.magMaxSpeedBumpMin.toString()
+                magMaxSpeedBumpMax = profile.calibration.magMaxSpeedBumpMax.toString()
+                magMaxSevereMin = profile.calibration.magMaxSevereMin.toString()
             },
             onDismiss = { showCalibration = false }
         )
@@ -444,15 +439,14 @@ private fun CalibrationDialog(
     initialValues: CalibrationSettings,
     rmsSmoothMaxText: String,
     peakThresholdZText: String,
-    symmetricBumpThresholdText: String,
-    potholeDipThresholdText: String,
-    bumpSpikeThresholdText: String,
-    peakRatioSmoothMaxText: String,
     movingAverageWindowText: String,
     stdDevSmoothMaxText: String,
     rmsRoughMinText: String,
     peakRatioRoughMinText: String,
     stdDevRoughMinText: String,
+    magMaxSpeedBumpMinText: String,
+    magMaxSpeedBumpMaxText: String,
+    magMaxSevereMinText: String,
     onValuesChange: (CalibrationTextValues) -> Unit,
     onResetDefaults: () -> Unit,
     onLoadProfile: (VehicleProfile) -> Unit,
@@ -472,23 +466,19 @@ private fun CalibrationDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Road Quality Thresholds", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("Peak ratio smooth max (%)", peakRatioSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, it, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("StdDev smooth max", stdDevSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, it, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("RMS rough min", rmsRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, it, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("Peak ratio rough min (%)", peakRatioRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, it, stdDevRoughMinText)) }
-                CalibrationField("StdDev rough min", stdDevRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, it)) }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Feature Detection Thresholds", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("Peak threshold Z", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("Speed bump threshold", symmetricBumpThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("Pothole dip threshold", potholeDipThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, it, bumpSpikeThresholdText, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
-                CalibrationField("Bump spike threshold", bumpSpikeThresholdText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, it, peakRatioSmoothMaxText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
+                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("Peak Threshold", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("StdDev smooth max", stdDevSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, it, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("RMS rough min", rmsRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, it, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("Peak ratio rough min (%)", peakRatioRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, it, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("StdDev rough min", stdDevRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, it, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("MagMax speed bump min", magMaxSpeedBumpMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, it, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
+                CalibrationField("MagMax speed bump max", magMaxSpeedBumpMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, it, magMaxSevereMinText)) }
+                CalibrationField("MagMax severe min", magMaxSevereMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, it)) }
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Other Settings", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText, peakRatioSmoothMaxText, it, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText)) }
+                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText)) }
             }
         },
         confirmButton = {
@@ -498,9 +488,9 @@ private fun CalibrationDialog(
                         val parsed = parseCalibration(
                             initialValues,
                             rmsSmoothMaxText, peakThresholdZText,
-                            symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
-                            peakRatioSmoothMaxText, movingAverageWindowText,
-                            stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText
+                            movingAverageWindowText,
+                            stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText,
+                            magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText
                         )
                         if (parsed == null) {
                             Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
@@ -529,7 +519,7 @@ private fun CalibrationDialog(
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onResetDefaults) { Text("Reset") }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text("Back") }
             }
         }
     )
@@ -543,15 +533,14 @@ private fun CalibrationDialog(
             initialValues = initialValues,
             rmsSmoothMaxText = rmsSmoothMaxText,
             peakThresholdZText = peakThresholdZText,
-            symmetricBumpThresholdText = symmetricBumpThresholdText,
-            potholeDipThresholdText = potholeDipThresholdText,
-            bumpSpikeThresholdText = bumpSpikeThresholdText,
-            peakRatioSmoothMaxText = peakRatioSmoothMaxText,
             movingAverageWindowText = movingAverageWindowText,
             stdDevSmoothMaxText = stdDevSmoothMaxText,
             rmsRoughMinText = rmsRoughMinText,
             peakRatioRoughMinText = peakRatioRoughMinText,
             stdDevRoughMinText = stdDevRoughMinText,
+            magMaxSpeedBumpMinText = magMaxSpeedBumpMinText,
+            magMaxSpeedBumpMaxText = magMaxSpeedBumpMaxText,
+            magMaxSevereMinText = magMaxSevereMinText,
             onDismiss = { showSaveAsDialog = false }
         )
     }
@@ -580,15 +569,14 @@ private fun SaveAsDialog(
     initialValues: CalibrationSettings,
     rmsSmoothMaxText: String,
     peakThresholdZText: String,
-    symmetricBumpThresholdText: String,
-    potholeDipThresholdText: String,
-    bumpSpikeThresholdText: String,
-    peakRatioSmoothMaxText: String,
     movingAverageWindowText: String,
     stdDevSmoothMaxText: String,
     rmsRoughMinText: String,
     peakRatioRoughMinText: String,
     stdDevRoughMinText: String,
+    magMaxSpeedBumpMinText: String,
+    magMaxSpeedBumpMaxText: String,
+    magMaxSevereMinText: String,
     onDismiss: () -> Unit
 ) {
     var profileName by remember { mutableStateOf("") }
@@ -619,9 +607,9 @@ private fun SaveAsDialog(
                     val parsed = parseCalibration(
                         initialValues,
                         rmsSmoothMaxText, peakThresholdZText,
-                        symmetricBumpThresholdText, potholeDipThresholdText, bumpSpikeThresholdText,
-                        peakRatioSmoothMaxText, movingAverageWindowText,
-                        stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText
+                        movingAverageWindowText,
+                        stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText,
+                        magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText
                     )
                     if (parsed == null) {
                         Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
@@ -730,39 +718,31 @@ private fun CalibrationField(label: String, value: String, onChange: (String) ->
 private data class CalibrationTextValues(
     val rmsSmoothMax: String,
     val peakThresholdZ: String,
-    val symmetricBumpThreshold: String,
-    val potholeDipThreshold: String,
-    val bumpSpikeThreshold: String,
-    val peakRatioSmoothMax: String,
     val movingAverageWindow: String,
     val stdDevSmoothMax: String,
     val rmsRoughMin: String,
     val peakRatioRoughMin: String,
-    val stdDevRoughMin: String
+    val stdDevRoughMin: String,
+    val magMaxSpeedBumpMin: String,
+    val magMaxSpeedBumpMax: String,
+    val magMaxSevereMin: String
 )
 
 private fun parseCalibration(
     initialValues: CalibrationSettings,
     rmsSmoothMax: String,
     peakThresholdZ: String,
-    symmetricBumpThreshold: String,
-    potholeDipThreshold: String,
-    bumpSpikeThreshold: String,
-    peakRatioSmoothMax: String,
     movingAverageWindow: String,
     stdDevSmoothMax: String,
     rmsRoughMin: String,
     peakRatioRoughMin: String,
-    stdDevRoughMin: String
+    stdDevRoughMin: String,
+    magMaxSpeedBumpMin: String,
+    magMaxSpeedBumpMax: String,
+    magMaxSevereMin: String
 ): CalibrationSettings? {
     val rmsSmooth = rmsSmoothMax.toFloatOrNull() ?: return null
     val peakThresh = peakThresholdZ.toFloatOrNull() ?: return null
-    val sym = symmetricBumpThreshold.toFloatOrNull() ?: return null
-    val pothole = potholeDipThreshold.toFloatOrNull() ?: return null
-    val bump = bumpSpikeThreshold.toFloatOrNull() ?: return null
-    val peakSmoothPercent = peakRatioSmoothMax.toFloatOrNull() ?: return null
-    if (peakSmoothPercent < 1f || peakSmoothPercent > 99f) return null
-    val peakSmooth = peakSmoothPercent / 100f
     val maWindow = movingAverageWindow.toIntOrNull() ?: return null
     if (maWindow <= 0) return null
     val stdDevSmooth = stdDevSmoothMax.toFloatOrNull() ?: return null
@@ -771,19 +751,25 @@ private fun parseCalibration(
     if (peakRoughPercent < 1f || peakRoughPercent > 99f) return null
     val peakRough = peakRoughPercent / 100f
     val stdDevRough = stdDevRoughMin.toFloatOrNull() ?: return null
+    val magSpeedMin = magMaxSpeedBumpMin.toFloatOrNull() ?: return null
+    val magSpeedMax = magMaxSpeedBumpMax.toFloatOrNull() ?: return null
+    val magSevereMin = magMaxSevereMin.toFloatOrNull() ?: return null
+    if (!(magSpeedMin.isFinite() && magSpeedMax.isFinite() && magSevereMin.isFinite())) return null
+    if (magSpeedMin <= 0f || magSpeedMax <= 0f || magSevereMin <= 0f) return null
+    if (magSpeedMin > magSpeedMax) return null
+    if (magSevereMin <= magSpeedMax) return null
     return CalibrationSettings(
         rmsSmoothMax = rmsSmooth,
         peakThresholdZ = peakThresh,
-        symmetricBumpThreshold = sym,
-        potholeDipThreshold = pothole,
-        bumpSpikeThreshold = bump,
-        peakRatioSmoothMax = peakSmooth,
         movingAverageWindow = maWindow,
         baseGravityVector = initialValues.baseGravityVector,
         stdDevSmoothMax = stdDevSmooth,
         rmsRoughMin = rmsRough,
         peakRatioRoughMin = peakRough,
-        stdDevRoughMin = stdDevRough
+        stdDevRoughMin = stdDevRough,
+        magMaxSpeedBumpMin = magSpeedMin,
+        magMaxSpeedBumpMax = magSpeedMax,
+        magMaxSevereMin = magSevereMin
     )
 }
 

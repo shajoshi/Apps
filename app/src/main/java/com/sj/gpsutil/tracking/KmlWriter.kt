@@ -37,10 +37,13 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             val cal = settings.calibration
             writer.write("<Data name=\"calibration.rmsSmoothMax\"><value>${"%.3f".format(cal.rmsSmoothMax)}</value></Data>\n")
             writer.write("<Data name=\"calibration.peakThresholdZ\"><value>${"%.3f".format(cal.peakThresholdZ)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.symmetricBumpThreshold\"><value>${"%.3f".format(cal.symmetricBumpThreshold)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.potholeDipThreshold\"><value>${"%.3f".format(cal.potholeDipThreshold)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.bumpSpikeThreshold\"><value>${"%.3f".format(cal.bumpSpikeThreshold)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.peakRatioSmoothMax\"><value>${"%.3f".format(cal.peakRatioSmoothMax)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.stdDevSmoothMax\"><value>${"%.3f".format(cal.stdDevSmoothMax)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.rmsRoughMin\"><value>${"%.3f".format(cal.rmsRoughMin)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.peakRatioRoughMin\"><value>${"%.3f".format(cal.peakRatioRoughMin)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.stdDevRoughMin\"><value>${"%.3f".format(cal.stdDevRoughMin)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.magMaxSpeedBumpMin\"><value>${"%.3f".format(cal.magMaxSpeedBumpMin)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.magMaxSpeedBumpMax\"><value>${"%.3f".format(cal.magMaxSpeedBumpMax)}</value></Data>\n")
+            writer.write("<Data name=\"calibration.magMaxSevereMin\"><value>${"%.3f".format(cal.magMaxSevereMin)}</value></Data>\n")
             writer.write("<Data name=\"calibration.movingAverageWindow\"><value>${cal.movingAverageWindow}</value></Data>\n")
             cal.baseGravityVector?.let { g ->
                 writer.write("<Data name=\"calibration.baseGravityVectorX\"><value>${"%.3f".format(g[0])}</value></Data>\n")

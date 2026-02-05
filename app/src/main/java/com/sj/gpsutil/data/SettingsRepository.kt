@@ -36,16 +36,15 @@ data class TrackingSettings(
 data class CalibrationSettings(
     val rmsSmoothMax: Float = 1.0f,
     val peakThresholdZ: Float = 1.5f,
-    val symmetricBumpThreshold: Float = 2.0f,
-    val potholeDipThreshold: Float = -2.5f,
-    val bumpSpikeThreshold: Float = 2.5f,
-    val peakRatioSmoothMax: Float = 0.10f,
     val movingAverageWindow: Int = 5,
     val baseGravityVector: FloatArray? = null,
     val stdDevSmoothMax: Float = 2.5f,
     val rmsRoughMin: Float = 4.5f,
     val peakRatioRoughMin: Float = 0.6f,
-    val stdDevRoughMin: Float = 3.0f
+    val stdDevRoughMin: Float = 3.0f,
+    val magMaxSpeedBumpMin: Float = 10.0f,
+    val magMaxSpeedBumpMax: Float = 18.0f,
+    val magMaxSevereMin: Float = 20.0f
 )
 
 class SettingsRepository(private val context: Context) {
@@ -57,17 +56,15 @@ class SettingsRepository(private val context: Context) {
     private val roadCalibrationModeKey = booleanPreferencesKey("road_calibration_mode")
     private val rmsSmoothMaxKey = floatPreferencesKey("cal_rms_smooth_max")
     private val peakThresholdKey = floatPreferencesKey("cal_peak_threshold_z")
-    private val symmetricBumpThresholdKey = floatPreferencesKey("cal_sym_bump_threshold")
-    private val potholeDipThresholdKey = floatPreferencesKey("cal_pothole_dip_threshold")
-    private val bumpSpikeThresholdKey = floatPreferencesKey("cal_bump_spike_threshold")
-    private val peakRatioSmoothMaxKey = floatPreferencesKey("cal_peakratio_smooth_max")
-    private val peakCountSmoothMaxKey = longPreferencesKey("cal_peakcount_smooth_max")
     private val movingAverageWindowKey = longPreferencesKey("cal_moving_average_window")
     private val baseGravityVectorKey = stringPreferencesKey("cal_base_gravity_vector")
     private val stdDevSmoothMaxKey = floatPreferencesKey("cal_stddev_smooth_max")
     private val rmsRoughMinKey = floatPreferencesKey("cal_rms_rough_min")
     private val peakRatioRoughMinKey = floatPreferencesKey("cal_peakratio_rough_min")
     private val stdDevRoughMinKey = floatPreferencesKey("cal_stddev_rough_min")
+    private val magMaxSpeedBumpMinKey = floatPreferencesKey("cal_magmax_speedbump_min")
+    private val magMaxSpeedBumpMaxKey = floatPreferencesKey("cal_magmax_speedbump_max")
+    private val magMaxSevereMinKey = floatPreferencesKey("cal_magmax_severe_min")
     private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
 
     private fun parseGravityVector(encoded: String?): FloatArray? {
@@ -86,10 +83,6 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settingsFlow: Flow<TrackingSettings> = context.settingsDataStore.data.map { prefs ->
-        val ratioFromPrefs = prefs[peakRatioSmoothMaxKey]
-        val ratioFromLegacyCount = (prefs[peakCountSmoothMaxKey] ?: 5L)
-            .toFloat()
-            .coerceAtLeast(0f) / 100f
         TrackingSettings(
             intervalSeconds = (prefs[intervalKey] ?: MIN_INTERVAL_SECONDS).coerceAtLeast(MIN_INTERVAL_SECONDS),
             folderUri = prefs[folderUriKey],
@@ -102,16 +95,15 @@ class SettingsRepository(private val context: Context) {
             calibration = CalibrationSettings(
                 rmsSmoothMax = prefs[rmsSmoothMaxKey] ?: 1.0f,
                 peakThresholdZ = prefs[peakThresholdKey] ?: 1.5f,
-                symmetricBumpThreshold = prefs[symmetricBumpThresholdKey] ?: 2.0f,
-                potholeDipThreshold = prefs[potholeDipThresholdKey] ?: -2.5f,
-                bumpSpikeThreshold = prefs[bumpSpikeThresholdKey] ?: 2.5f,
-                peakRatioSmoothMax = ratioFromPrefs ?: ratioFromLegacyCount,
                 movingAverageWindow = (prefs[movingAverageWindowKey] ?: 5L).toInt(),
                 baseGravityVector = parseGravityVector(prefs[baseGravityVectorKey]),
                 stdDevSmoothMax = prefs[stdDevSmoothMaxKey] ?: 2.5f,
                 rmsRoughMin = prefs[rmsRoughMinKey] ?: 4.5f,
                 peakRatioRoughMin = prefs[peakRatioRoughMinKey] ?: 0.6f,
-                stdDevRoughMin = prefs[stdDevRoughMinKey] ?: 3.0f
+                stdDevRoughMin = prefs[stdDevRoughMinKey] ?: 3.0f,
+                magMaxSpeedBumpMin = prefs[magMaxSpeedBumpMinKey] ?: 10.0f,
+                magMaxSpeedBumpMax = prefs[magMaxSpeedBumpMaxKey] ?: 18.0f,
+                magMaxSevereMin = prefs[magMaxSevereMinKey] ?: 20.0f
             ),
             currentProfileName = prefs[currentProfileNameKey]
         )
@@ -161,15 +153,14 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { prefs ->
             prefs[rmsSmoothMaxKey] = calibration.rmsSmoothMax
             prefs[peakThresholdKey] = calibration.peakThresholdZ
-            prefs[symmetricBumpThresholdKey] = calibration.symmetricBumpThreshold
-            prefs[potholeDipThresholdKey] = calibration.potholeDipThreshold
-            prefs[bumpSpikeThresholdKey] = calibration.bumpSpikeThreshold
-            prefs[peakRatioSmoothMaxKey] = calibration.peakRatioSmoothMax
             prefs[movingAverageWindowKey] = calibration.movingAverageWindow.toLong()
             prefs[stdDevSmoothMaxKey] = calibration.stdDevSmoothMax
             prefs[rmsRoughMinKey] = calibration.rmsRoughMin
             prefs[peakRatioRoughMinKey] = calibration.peakRatioRoughMin
             prefs[stdDevRoughMinKey] = calibration.stdDevRoughMin
+            prefs[magMaxSpeedBumpMinKey] = calibration.magMaxSpeedBumpMin
+            prefs[magMaxSpeedBumpMaxKey] = calibration.magMaxSpeedBumpMax
+            prefs[magMaxSevereMinKey] = calibration.magMaxSevereMin
             val gravityEncoded = formatGravityVector(calibration.baseGravityVector)
             if (gravityEncoded == null) {
                 prefs.remove(baseGravityVectorKey)

@@ -12,7 +12,7 @@ def main():
 
     input_path = sys.argv[1]
     base_name = os.path.splitext(input_path)[0]
-    output_path = f"{base_name}.csv"
+    output_path = f"{base_name}_filtered_feature.csv"  # Appending _filtered for clarity
 
     # 2. Read Input File
     try:
@@ -51,45 +51,49 @@ def main():
     }
 
     # 5. Scan ALL segments to build a complete list of headers
-    # We now look for keys in both 'gps' and 'accel' objects
     segments = data['gpslogger2path'].get("data", [])
     
     all_gps_keys = set()
     all_accel_keys = set()
     
     for segment in segments:
-        # Collect GPS keys
         gps_data = segment.get('gps', {})
         all_gps_keys.update(gps_data.keys())
         
-        # Collect Accel keys
         accel_data = segment.get('accel', {})
         all_accel_keys.update(accel_data.keys())
     
-    # Remove 'raw' from accel keys as we process it separately
     if 'raw' in all_accel_keys:
         all_accel_keys.remove('raw')
         
-    # Sort keys for consistent column order
     sorted_gps_keys = sorted(list(all_gps_keys))
     sorted_accel_keys = sorted(list(all_accel_keys))
 
-    # 6. Process Data Segments
+    # 6. Process Data Segments (With Filtering)
     processed_rows = []
+    skipped_count = 0
 
     for segment in segments:
-        gps_data = segment.get('gps', {})
         accel_data = segment.get('accel', {})
+        
+        # --- FILTERING LOGIC START ---
+        # Get the manualFeatureLabel value
+        manual_label = accel_data.get('manualFeatureLabel')
+        
+        # Skip if None or empty string (we use strip() to catch string with only spaces)
+        if manual_label is None or str(manual_label).strip() == "":
+            skipped_count += 1
+            continue
+        # --- FILTERING LOGIC END ---
+
+        gps_data = segment.get('gps', {})
         raw_samples = accel_data.get('raw', [])
         
-        # Extract values for GPS columns (default to empty string if missing)
+        # Extract values
         current_gps_values = [gps_data.get(k, "") for k in sorted_gps_keys]
-        
-        # Extract values for Accel Metadata columns
         current_accel_meta_values = [accel_data.get(k, "") for k in sorted_accel_keys]
 
         for sample in raw_samples:
-            # Parse raw sample list: [x, y, z]
             if len(sample) < 3:
                 continue
                 
@@ -97,17 +101,14 @@ def main():
 
             # Vector Projection
             projection = (sx * unit_g['x']) + (sy * unit_g['y']) + (sz * unit_g['z'])
-
-            # Compensate
             vertical_accel = projection - g_magnitude
 
-            # Combine: GPS Columns + Accel Metadata + Calculated Value
             row = current_gps_values + current_accel_meta_values + [vertical_accel]
             processed_rows.append(row)
 
     # 7. Write to CSV
     if not processed_rows:
-        print("No raw samples found to process.")
+        print("No rows matched the 'manualFeatureLabel' filter. CSV was not created.")
         return
 
     try:
@@ -122,7 +123,7 @@ def main():
             writer.writerows(processed_rows)
         
         print(f"Success! Processed {len(processed_rows)} samples.")
-        print(f"Columns included: {full_header}")
+        print(f"Skipped {skipped_count} segments that were missing a manualFeatureLabel.")
         print(f"Output saved to: {output_path}")
         
     except IOError as e:

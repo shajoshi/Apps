@@ -6,6 +6,7 @@ data class AccelMetrics(
     val meanZ: Float,
     val meanVert: Float,
     val maxMagnitude: Float,
+    val meanMagnitude: Float,
     val rms: Float,
     val peakRatio: Float,
     val stdDev: Float,

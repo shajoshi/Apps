@@ -25,6 +25,7 @@ data class TrackingSample(
     val accelZMean: Float? = null,
     val accelVertMean: Float? = null,
     val accelMagnitudeMax: Float? = null,
+    val meanMagnitude: Float? = null,
     val accelRMS: Float? = null,
     val roadQuality: String? = null,
     val featureDetected: String? = null,

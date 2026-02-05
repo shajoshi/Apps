@@ -112,6 +112,7 @@ class TrackingService : Service() {
                     accelZMean = accelMetrics?.meanZ,
                     accelVertMean = accelMetrics?.meanVert,
                     accelMagnitudeMax = accelMetrics?.maxMagnitude,
+                    meanMagnitude = accelMetrics?.meanMagnitude,
                     accelRMS = accelMetrics?.rms,
                     roadQuality = accelMetrics?.roadQuality,
                     featureDetected = accelMetrics?.featureDetected,
@@ -191,67 +192,94 @@ class TrackingService : Service() {
             // Capture raw data (copy of current buffer)
             val rawData = accelBuffer.toList()
 
-            // Step 1: Remove gravity/static offset from ALL axes (detrend)
-            // This makes RMS/magnitude metrics less sensitive to mount angle.
-            val biasX = accelBuffer.map { it[0] }.average().toFloat()
-            val biasY = accelBuffer.map { it[1] }.average().toFloat()
-            val biasZ = accelBuffer.map { it[2] }.average().toFloat()
-
-            val detrended = accelBuffer.map {
-                floatArrayOf(it[0] - biasX, it[1] - biasY, it[2] - biasZ)
-            }
-
             // Step 2: Apply simple moving average filter (window size from calibration)
-            val smoothed = applyMovingAverage(detrended, calibration.movingAverageWindow.coerceAtLeast(1))
+            val smoothed = applyMovingAverage(accelBuffer, calibration.movingAverageWindow.coerceAtLeast(1))
 
-            // Step 3: Calculate metrics
-            var sumX = 0f
-            var sumY = 0f
-            var sumZ = 0f
-            var sumVert = 0f
-            var maxMagnitude = 0f
-            var sumSquares = 0f
-            var aboveThresholdCount = 0
-            val magnitudes = mutableListOf<Float>()
+            // Step 3: Calculate metrics from accelerometer data
+            // Physics: Accelerometer measures proper acceleration (a = F/m) in m/s²
+            // This includes both vehicle motion AND gravity (unlike coordinate acceleration)
+            // Raw readings = motion acceleration + gravity vector
+            
+            // Accumulator variables for statistical calculations
+            var sumX = 0f          // Sum of X-axis accelerations (device frame)
+            var sumY = 0f          // Sum of Y-axis accelerations (device frame)
+            var sumZ = 0f          // Sum of Z-axis accelerations (device frame)
+            var sumVert = 0f       // Sum of vertical (gravity-aligned) accelerations
+            var maxMagnitude = 0f  // Peak 3D acceleration magnitude in window
+            var sumSquares = 0f    // Sum of squared magnitudes (for RMS calculation)
+            var aboveThresholdCount = 0  // Count of samples exceeding vertical threshold
+            val magnitudes = mutableListOf<Float>()  // All magnitude values (for stdDev)
 
+            // Gravity vector normalization: Convert baseline gravity to unit vector
+            // Physics: Gravity direction defines "vertical" axis in vehicle's rest frame
+            // Unit vector allows projection of any acceleration onto vertical axis via dot product
             val g = calibration.baseGravityVector
             val gUnit = if (g != null && g.size >= 3) {
+                // Normalize: ||g|| = sqrt(gx² + gy² + gz²), typically ~9.8 m/s²
                 val norm = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
+                // Create unit vector: ĝ = g / ||g||, only if norm is non-zero
                 if (norm > 1e-3f) floatArrayOf(g[0] / norm, g[1] / norm, g[2] / norm) else null
             } else {
                 null
             }
 
+            // Process each smoothed acceleration sample in the window
             smoothed.forEach { values ->
+                // Accumulate component-wise sums for mean calculations
                 sumX += values[0]
                 sumY += values[1]
                 sumZ += values[2]
 
+                // Vertical acceleration: Project 3D acceleration onto gravity direction
+                // Physics: aVert = a · ĝ (dot product) isolates motion along vertical axis
+                // This separates vertical bumps/dips from lateral/longitudinal motion
                 val aVert = if (gUnit != null) {
+                    // Dot product: a · ĝ = ax*ĝx + ay*ĝy + az*ĝz
                     values[0] * gUnit[0] + values[1] * gUnit[1] + values[2] * gUnit[2]
                 } else {
+                    // Fallback: Use Z-axis if no baseline (assumes device mounted vertically)
                     values[2]
                 }
                 sumVert += aVert
 
+                // 3D acceleration magnitude: ||a|| = sqrt(ax² + ay² + az²)
+                // Physics: Euclidean norm gives total acceleration intensity regardless of direction
+                // Units: m/s² (same as components)
                 val magnitude = sqrt(values[0] * values[0] + values[1] * values[1] + values[2] * values[2])
                 magnitudes.add(magnitude)
                 if (magnitude > maxMagnitude) maxMagnitude = magnitude
+                
+                // Accumulate squared magnitudes for RMS calculation
+                // RMS = sqrt(mean(magnitude²)) measures average energy/intensity
                 sumSquares += magnitude * magnitude
 
-                // Peak ratio (sample-count-invariant): fraction of samples above threshold
+                // Peak ratio: Count samples where vertical acceleration exceeds threshold
+                // Physics: Sharp vertical jolts (bumps/potholes) produce high |aVert| spikes
+                // Ratio = (spike count) / (total samples) is scale-invariant metric
                 if (kotlin.math.abs(aVert) > calibration.peakThresholdZ) aboveThresholdCount++
             }
 
+            // Calculate statistical metrics from accumulated values
             val count = smoothed.size
+            
+            // Mean accelerations: Average value over window (typically near zero for motion)
             val meanX = sumX / count
             val meanY = sumY / count
             val meanZ = sumZ / count
             val meanVert = sumVert / count
+            
+            // RMS (Root Mean Square): sqrt(mean(magnitude²))
+            // Physics: Measures average acceleration intensity, analogous to AC voltage RMS
+            // Higher RMS indicates rougher road with more sustained vibration energy
             val rms = kotlin.math.sqrt(sumSquares / count)
+            
+            // Peak ratio: Fraction of samples exceeding vertical threshold
+            // Range: [0, 1], where higher values indicate more frequent sharp impacts
             val peakRatio = aboveThresholdCount.toFloat() / count.toFloat()
 
-            // Calculate standard deviation
+            // Standard deviation of magnitude: Measures variability/spread of acceleration
+            // Physics: σ = sqrt(mean((x - μ)²)) quantifies consistency vs. spikiness
+            // Low stdDev = smooth/uniform motion, High stdDev = erratic/bumpy motion
             val meanMagnitude = magnitudes.average().toFloat()
             val variance = magnitudes.map { (it - meanMagnitude) * (it - meanMagnitude) }.average().toFloat()
             val stdDev = kotlin.math.sqrt(variance)
@@ -262,40 +290,51 @@ class TrackingService : Service() {
             // - Rough: high RMS, high peakRatio, high stdDev (at least 2 out of 3 metrics above thresholds)
             // - Average: mixed signals or borderline values
             val roadQuality = when {
-                // Smooth: All metrics must be below thresholds
-                rms < calibration.rmsSmoothMax && 
-                peakRatio < calibration.peakRatioSmoothMax && 
+                rms < calibration.rmsSmoothMax &&
                 stdDev < calibration.stdDevSmoothMax -> "smooth"
-                
-                // Rough: At least 2 out of 3 metrics indicate rough conditions
-                (rms >= calibration.rmsRoughMin && peakRatio >= calibration.peakRatioRoughMin) ||
-                (rms >= calibration.rmsRoughMin && stdDev >= calibration.stdDevRoughMin) ||
-                (peakRatio >= calibration.peakRatioRoughMin && stdDev >= calibration.stdDevRoughMin) -> "rough"
-                
-                // Average: Everything else (mixed signals or borderline values)
+
+                rms >= calibration.rmsRoughMin &&
+                stdDev >= calibration.stdDevRoughMin -> "rough"
+
                 else -> "average"
             }
 
-            // Step 5: Detect features (use vertical component projected onto gravity)
-            val aVertSeries = if (gUnit != null) {
-                smoothed.map { it[0] * gUnit[0] + it[1] * gUnit[1] + it[2] * gUnit[2] }
-            } else {
-                smoothed.map { it[2] }
-            }
-            val feature = detectFeatureVert(
-                aVertSeries,
-                symmetricThreshold = calibration.symmetricBumpThreshold,
-                potholeThreshold = calibration.potholeDipThreshold,
-                bumpSpikeThreshold = calibration.bumpSpikeThreshold
+            // Step 5: Detect features (metrics-based, hierarchical)
+            val feature = detectFeatureFromMetrics(
+                rms = rms,
+                magMax = maxMagnitude,
+                peakRatio = peakRatio
             )
 
             accelBuffer.clear()
 
             return AccelMetrics(
-                meanX, meanY, meanZ, meanVert, maxMagnitude, rms,
+                meanX, meanY, meanZ, meanVert, maxMagnitude, meanMagnitude, rms,
                 peakRatio, stdDev, roadQuality, feature, rawData
             )
         }
+    }
+
+    private fun detectFeatureFromMetrics(
+        rms: Float,
+        magMax: Float,
+        peakRatio: Float
+    ): String? {
+        // Step 1: Gate on roughness to decide whether we even attempt feature detection.
+        if (rms <= calibration.rmsRoughMin) return null
+
+        // Step 2: Severity by MagMax (3D magnitude)
+        if (magMax > calibration.magMaxSevereMin) {
+            // Step 3: Severe refinement (pothole vs bump)
+            return if (peakRatio > calibration.peakRatioRoughMin) "pothole" else "bump"
+        }
+
+        if (magMax >= calibration.magMaxSpeedBumpMin && magMax <= calibration.magMaxSpeedBumpMax) {
+            return "speed_bump"
+        }
+
+        // No event
+        return null
     }
 
     private fun applyMovingAverage(data: List<FloatArray>, windowSize: Int): List<FloatArray> {
@@ -311,68 +350,6 @@ class TrackingService : Service() {
             result.add(floatArrayOf(avgX, avgY, avgZ))
         }
         return result
-    }
-
-    private fun detectFeatureVert(
-        vertValues: List<Float>,
-        symmetricThreshold: Float,
-        potholeThreshold: Float,
-        bumpSpikeThreshold: Float
-    ): String? {
-        if (vertValues.size < 10) return null
-
-        // Speed bump: symmetric rise and fall pattern
-        val hasSymmetricBump = detectSymmetricPattern(vertValues, symmetricThreshold)
-        if (hasSymmetricBump) return "speed_bump"
-
-        // Pothole: sharp drop and recovery (asymmetric dip)
-        val hasAsymmetricDip = detectAsymmetricDip(vertValues, potholeThreshold)
-        if (hasAsymmetricDip) return "pothole"
-
-        // Single bump
-        if (vertValues.any { kotlin.math.abs(it) > bumpSpikeThreshold }) return "bump"
-
-        return null
-    }
-
-    private fun detectSymmetricPattern(zValues: List<Float>, threshold: Float): Boolean {
-        // Look for rise followed by fall pattern
-        for (i in 0 until zValues.size - 4) {
-            val segment = zValues.subList(i, minOf(i + 5, zValues.size))
-            val maxVal = segment.maxOrNull() ?: continue
-            val maxIdx = segment.indexOf(maxVal)
-
-            // Check if peak is in middle and exceeds threshold
-            if (maxVal > threshold && maxIdx in 1..3) {
-                val before = segment.subList(0, maxIdx).average().toFloat()
-                val after = segment.subList(maxIdx + 1, segment.size).average().toFloat()
-                // Symmetric if both sides are similar and below peak
-                if (kotlin.math.abs(before - after) < 1.0f && before < maxVal * 0.7f) {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    private fun detectAsymmetricDip(zValues: List<Float>, threshold: Float): Boolean {
-        // Look for sharp drop pattern
-        for (i in 0 until zValues.size - 4) {
-            val segment = zValues.subList(i, minOf(i + 5, zValues.size))
-            val minVal = segment.minOrNull() ?: continue
-            val minIdx = segment.indexOf(minVal)
-
-            // Check if dip is sharp and exceeds threshold
-            if (minVal < threshold && minIdx in 1..3) {
-                val before = segment.subList(0, minIdx).average().toFloat()
-                val after = segment.subList(minIdx + 1, segment.size).average().toFloat()
-                // Asymmetric dip: sharp drop, gradual recovery
-                if (before > minVal && after > minVal) {
-                    return true
-                }
-            }
-        }
-        return false
     }
 
     private fun applyDistanceAccuracyConfigFromManifest() {

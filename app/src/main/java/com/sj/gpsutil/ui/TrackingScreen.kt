@@ -146,7 +146,8 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Tracking", style = MaterialTheme.typography.headlineSmall)
+        val profileSuffix = settingsState.currentProfileName?.takeIf { it.isNotBlank() }?.let { " - $it" } ?: ""
+        Text("Tracking$profileSuffix", style = MaterialTheme.typography.headlineSmall)
         val accuracyDisplay = latestSample?.accuracyMeters?.let { "±%.1f m".format(it) } ?: "--"
         Text(
             "Status: ${status.name}  |  Accuracy: $accuracyDisplay",
@@ -174,11 +175,24 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
                 bearingText
             }
             Text("Bearing: $bearingDisplay")
-            val accelVertMeanText = latestSample?.accelVertMean?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("Accel vertical mean: $accelVertMeanText")
+
+            val rmsText = latestSample?.accelRMS?.let { "%.3f m/s²".format(it) } ?: "--"
+            Text("RMS: $rmsText")
+            
+            val stdDevText = latestSample?.stdDev?.let { "%.3f m/s²".format(it) } ?: "--"
+            Text("StdDev: $stdDevText")
+            
+            val maxMagnitudeText = latestSample?.accelMagnitudeMax?.let { "%.3f m/s²".format(it) } ?: "--"
+            Text("Max magnitude: $maxMagnitudeText")
+            
+            val meanMagnitudeText = latestSample?.meanMagnitude?.let { "%.3f m/s²".format(it) } ?: "--"
+            Text("Mean magnitude: $meanMagnitudeText")
 
             val peakRatioText = latestSample?.peakRatio?.let { "%.3f".format(it) } ?: "--"
             Text("Peak ratio: $peakRatioText")
+            
+            val accelVertMeanText = latestSample?.accelVertMean?.let { "%.3f m/s²".format(it) } ?: "--"
+            Text("Accel vertical mean: $accelVertMeanText")
             
             // Road quality and feature detection
             val roadQualityText = latestSample?.roadQuality?.let { quality ->
