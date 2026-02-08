@@ -138,6 +138,26 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("<Data name=\"stdDev\"><value>${formattedStdDev}</value></Data>")
                 writer.newLine()
             }
+            sample.avgRms?.let {
+                writer.write("<Data name=\"avgRms\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.avgMaxMagnitude?.let {
+                writer.write("<Data name=\"avgMaxMagnitude\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.avgMeanMagnitude?.let {
+                writer.write("<Data name=\"avgMeanMagnitude\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.avgStdDev?.let {
+                writer.write("<Data name=\"avgStdDev\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.avgPeakRatio?.let {
+                writer.write("<Data name=\"avgPeakRatio\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
         }
         writer.write("</ExtendedData>")
         writer.newLine()

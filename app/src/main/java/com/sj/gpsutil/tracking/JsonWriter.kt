@@ -181,6 +181,26 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write(",\n")
                 writer.write("          \"stdDev\": ${"%.3f".format(it)}")
             }
+            sample.avgRms?.let {
+                writer.write(",\n")
+                writer.write("          \"avgRms\": ${"%.3f".format(it)}")
+            }
+            sample.avgMaxMagnitude?.let {
+                writer.write(",\n")
+                writer.write("          \"avgMaxMagnitude\": ${"%.3f".format(it)}")
+            }
+            sample.avgMeanMagnitude?.let {
+                writer.write(",\n")
+                writer.write("          \"avgMeanMagnitude\": ${"%.3f".format(it)}")
+            }
+            sample.avgStdDev?.let {
+                writer.write(",\n")
+                writer.write("          \"avgStdDev\": ${"%.3f".format(it)}")
+            }
+            sample.avgPeakRatio?.let {
+                writer.write(",\n")
+                writer.write("          \"avgPeakRatio\": ${"%.3f".format(it)}")
+            }
             writer.write("\n")
             writer.write("        }")
         } else {

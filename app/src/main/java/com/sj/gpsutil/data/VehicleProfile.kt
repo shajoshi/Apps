@@ -36,7 +36,8 @@ data class VehicleProfile(
                         stdDevRoughMin = 2.8f,
                         magMaxSpeedBumpMin = 10.0f,
                         magMaxSpeedBumpMax = 18.0f,
-                        magMaxSevereMin = 20.0f
+                        magMaxSevereMin = 20.0f,
+                        qualityWindowSize = 3
                     )
                 ),
                 VehicleProfile(
@@ -51,7 +52,8 @@ data class VehicleProfile(
                         stdDevRoughMin = 3.0f,
                         magMaxSpeedBumpMin = 10.0f,
                         magMaxSpeedBumpMax = 18.0f,
-                        magMaxSevereMin = 20.0f
+                        magMaxSevereMin = 20.0f,
+                        qualityWindowSize = 3
                     )
                 ),
                 VehicleProfile(
@@ -66,7 +68,8 @@ data class VehicleProfile(
                         stdDevRoughMin = 2.5f,
                         magMaxSpeedBumpMin = 10.0f,
                         magMaxSpeedBumpMax = 18.0f,
-                        magMaxSevereMin = 20.0f
+                        magMaxSevereMin = 20.0f,
+                        qualityWindowSize = 3
                     )
                 )
             )

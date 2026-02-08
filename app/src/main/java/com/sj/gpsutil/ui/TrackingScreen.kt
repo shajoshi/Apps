@@ -176,20 +176,25 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             }
             Text("Bearing: $bearingDisplay")
 
-            val rmsText = latestSample?.accelRMS?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("RMS: $rmsText")
+            val rmsText = latestSample?.accelRMS?.let { "%.3f".format(it) } ?: "--"
+            val avgRmsText = latestSample?.avgRms?.let { "%.3f".format(it) } ?: "--"
+            Text("RMS: $rmsText (avg: $avgRmsText)")
             
-            val stdDevText = latestSample?.stdDev?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("StdDev: $stdDevText")
+            val stdDevText = latestSample?.stdDev?.let { "%.3f".format(it) } ?: "--"
+            val avgStdDevText = latestSample?.avgStdDev?.let { "%.3f".format(it) } ?: "--"
+            Text("StdDev: $stdDevText (avg: $avgStdDevText)")
             
-            val maxMagnitudeText = latestSample?.accelMagnitudeMax?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("Max magnitude: $maxMagnitudeText")
+            val maxMagnitudeText = latestSample?.accelMagnitudeMax?.let { "%.3f".format(it) } ?: "--"
+            val avgMaxMagText = latestSample?.avgMaxMagnitude?.let { "%.3f".format(it) } ?: "--"
+            Text("Max mag: $maxMagnitudeText (avg: $avgMaxMagText)")
             
-            val meanMagnitudeText = latestSample?.meanMagnitude?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("Mean magnitude: $meanMagnitudeText")
+            val meanMagnitudeText = latestSample?.meanMagnitude?.let { "%.3f".format(it) } ?: "--"
+            val avgMeanMagText = latestSample?.avgMeanMagnitude?.let { "%.3f".format(it) } ?: "--"
+            Text("Mean mag: $meanMagnitudeText (avg: $avgMeanMagText)")
 
             val peakRatioText = latestSample?.peakRatio?.let { "%.3f".format(it) } ?: "--"
-            Text("Peak ratio: $peakRatioText")
+            val avgPeakRatioText = latestSample?.avgPeakRatio?.let { "%.3f".format(it) } ?: "--"
+            Text("Peak ratio: $peakRatioText (avg: $avgPeakRatioText)")
             
             val accelVertMeanText = latestSample?.accelVertMean?.let { "%.3f m/s²".format(it) } ?: "--"
             Text("Accel vertical mean: $accelVertMeanText")
@@ -198,6 +203,7 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             val roadQualityText = latestSample?.roadQuality?.let { quality ->
                 when (quality) {
                     "smooth" -> "🟢 Smooth"
+                    "average" -> "🟡 Average"
                     "rough" -> "🔴 Rough"
                     else -> quality
                 }

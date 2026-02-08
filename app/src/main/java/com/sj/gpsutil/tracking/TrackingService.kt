@@ -82,6 +82,9 @@ class TrackingService : Service() {
     private val accelBuffer = mutableListOf<FloatArray>()
     private val accelLock = Any()
 
+    private data class FixMetrics(val rms: Float, val maxMagnitude: Float, val meanMagnitude: Float, val stdDev: Float, val peakRatio: Float)
+    private val metricsHistory = ArrayDeque<FixMetrics>()
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate: initializing service")
@@ -118,6 +121,11 @@ class TrackingService : Service() {
                     featureDetected = accelMetrics?.featureDetected,
                     peakRatio = accelMetrics?.peakRatio,
                     stdDev = accelMetrics?.stdDev,
+                    avgRms = accelMetrics?.avgRms,
+                    avgMaxMagnitude = accelMetrics?.avgMaxMagnitude,
+                    avgMeanMagnitude = accelMetrics?.avgMeanMagnitude,
+                    avgStdDev = accelMetrics?.avgStdDev,
+                    avgPeakRatio = accelMetrics?.avgPeakRatio,
                     rawAccelData = if (roadCalibrationMode) accelMetrics?.rawData else null,
                     manualLabel = manualLabel,
                     manualFeatureLabel = manualFeature
@@ -192,13 +200,58 @@ class TrackingService : Service() {
             // Capture raw data (copy of current buffer)
             val rawData = accelBuffer.toList()
 
-            // Step 2: Apply simple moving average filter (window size from calibration)
-            val smoothed = applyMovingAverage(accelBuffer, calibration.movingAverageWindow.coerceAtLeast(1))
+            // Step 1: Remove gravity/static offset from ALL axes (detrend)
+            // Physics: The mean acceleration over a window approximates the gravity vector,
+            // since transient vehicle motion averages out over many samples.
+            // Subtracting this bias removes the static gravity component and mount-angle
+            // dependency, so RMS/magnitude metrics reflect only dynamic road vibration.
+            val biasX = accelBuffer.map { it[0] }.average().toFloat()
+            val biasY = accelBuffer.map { it[1] }.average().toFloat()
+            val biasZ = accelBuffer.map { it[2] }.average().toFloat()
 
-            // Step 3: Calculate metrics from accelerometer data
-            // Physics: Accelerometer measures proper acceleration (a = F/m) in m/s²
-            // This includes both vehicle motion AND gravity (unlike coordinate acceleration)
-            // Raw readings = motion acceleration + gravity vector
+            val detrended = accelBuffer.map {
+                floatArrayOf(it[0] - biasX, it[1] - biasY, it[2] - biasZ)
+            }
+
+            // Compute gravity unit vector from per-window bias (estimated gravity direction)
+            // Physics: bias ≈ gravity vector in device frame; normalizing gives vertical axis
+            // This adapts automatically to any phone orientation without manual calibration
+            val biasNorm = sqrt(biasX * biasX + biasY * biasY + biasZ * biasZ)
+            val gUnit = if (biasNorm > 1e-3f) {
+                floatArrayOf(biasX / biasNorm, biasY / biasNorm, biasZ / biasNorm)
+            } else {
+                null
+            }
+
+            // Log difference between per-window gravity estimate and calibration baseline
+            val gCal = calibration.baseGravityVector
+            if (gUnit != null && gCal != null && gCal.size >= 3) {
+                val calNorm = sqrt(gCal[0] * gCal[0] + gCal[1] * gCal[1] + gCal[2] * gCal[2])
+                if (calNorm > 1e-3f) {
+                    val calUnit = floatArrayOf(gCal[0] / calNorm, gCal[1] / calNorm, gCal[2] / calNorm)
+                    val dx = gUnit[0] - calUnit[0]
+                    val dy = gUnit[1] - calUnit[1]
+                    val dz = gUnit[2] - calUnit[2]
+                    val angleDeg = Math.toDegrees(
+                        kotlin.math.acos(
+                            (gUnit[0] * calUnit[0] + gUnit[1] * calUnit[1] + gUnit[2] * calUnit[2])
+                                .coerceIn(-1f, 1f).toDouble()
+                        )
+                    )
+                    Log.d(TAG, "gVector diff: window=[%.3f,%.3f,%.3f] cal=[%.3f,%.3f,%.3f] delta=[%.4f,%.4f,%.4f] angle=%.2f°".format(
+                        gUnit[0], gUnit[1], gUnit[2],
+                        calUnit[0], calUnit[1], calUnit[2],
+                        dx, dy, dz, angleDeg
+                    ))
+                }
+            }
+
+            // Step 2: Apply simple moving average filter (window size from calibration)
+            val smoothed = applyMovingAverage(detrended, calibration.movingAverageWindow.coerceAtLeast(1))
+
+            // Step 3: Calculate metrics from detrended accelerometer data
+            // Physics: After detrending, readings ≈ dynamic acceleration only (gravity removed)
+            // This makes RMS/magnitude metrics orientation-independent
             
             // Accumulator variables for statistical calculations
             var sumX = 0f          // Sum of X-axis accelerations (device frame)
@@ -209,19 +262,6 @@ class TrackingService : Service() {
             var sumSquares = 0f    // Sum of squared magnitudes (for RMS calculation)
             var aboveThresholdCount = 0  // Count of samples exceeding vertical threshold
             val magnitudes = mutableListOf<Float>()  // All magnitude values (for stdDev)
-
-            // Gravity vector normalization: Convert baseline gravity to unit vector
-            // Physics: Gravity direction defines "vertical" axis in vehicle's rest frame
-            // Unit vector allows projection of any acceleration onto vertical axis via dot product
-            val g = calibration.baseGravityVector
-            val gUnit = if (g != null && g.size >= 3) {
-                // Normalize: ||g|| = sqrt(gx² + gy² + gz²), typically ~9.8 m/s²
-                val norm = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2])
-                // Create unit vector: ĝ = g / ||g||, only if norm is non-zero
-                if (norm > 1e-3f) floatArrayOf(g[0] / norm, g[1] / norm, g[2] / norm) else null
-            } else {
-                null
-            }
 
             // Process each smoothed acceleration sample in the window
             smoothed.forEach { values ->
@@ -284,22 +324,32 @@ class TrackingService : Service() {
             val variance = magnitudes.map { (it - meanMagnitude) * (it - meanMagnitude) }.average().toFloat()
             val stdDev = kotlin.math.sqrt(variance)
 
-            // Step 4: Classify road quality (three-tier classification: smooth/average/rough)
-            // Based on calibration analysis distributions:
-            // - Smooth: low RMS, low peakRatio, low stdDev (all metrics below thresholds)
-            // - Rough: high RMS, high peakRatio, high stdDev (at least 2 out of 3 metrics above thresholds)
-            // - Average: mixed signals or borderline values
-            val roadQuality = when {
-                rms < calibration.rmsSmoothMax &&
-                stdDev < calibration.stdDevSmoothMax -> "smooth"
+            // Step 3b: Push instantaneous metrics to history ring buffer and compute averages
+            // The moving average over recent GPS fixes smooths out noise for road quality
+            metricsHistory.addLast(FixMetrics(rms, maxMagnitude, meanMagnitude, stdDev, peakRatio))
+            val windowSize = calibration.qualityWindowSize.coerceAtLeast(1)
+            while (metricsHistory.size > windowSize) metricsHistory.removeFirst()
 
-                rms >= calibration.rmsRoughMin &&
-                stdDev >= calibration.stdDevRoughMin -> "rough"
+            val avgRms = metricsHistory.map { it.rms }.average().toFloat()
+            val avgMaxMagnitude = metricsHistory.map { it.maxMagnitude }.average().toFloat()
+            val avgMeanMagnitude = metricsHistory.map { it.meanMagnitude }.average().toFloat()
+            val avgStdDev = metricsHistory.map { it.stdDev }.average().toFloat()
+            val avgPeakRatio = metricsHistory.map { it.peakRatio }.average().toFloat()
+
+            // Step 4: Classify road quality using AVERAGED metrics (smooth/average/rough)
+            // Averaging over recent fixes provides more consistent quality determinations
+            val roadQuality = when {
+                avgRms < calibration.rmsSmoothMax &&
+                avgStdDev < calibration.stdDevSmoothMax -> "smooth"
+
+                avgRms >= calibration.rmsRoughMin &&
+                avgStdDev >= calibration.stdDevRoughMin -> "rough"
 
                 else -> "average"
             }
 
-            // Step 5: Detect features (metrics-based, hierarchical)
+            // Step 5: Detect features using INSTANTANEOUS metrics (single-fix sensitivity)
+            // Features are transient events; averaging would mask them
             val feature = detectFeatureFromMetrics(
                 rms = rms,
                 magMax = maxMagnitude,
@@ -310,7 +360,9 @@ class TrackingService : Service() {
 
             return AccelMetrics(
                 meanX, meanY, meanZ, meanVert, maxMagnitude, meanMagnitude, rms,
-                peakRatio, stdDev, roadQuality, feature, rawData
+                peakRatio, stdDev,
+                avgRms, avgMaxMagnitude, avgMeanMagnitude, avgStdDev, avgPeakRatio,
+                roadQuality, feature, rawData
             )
         }
     }
@@ -326,12 +378,12 @@ class TrackingService : Service() {
         // Step 2: Severity by MagMax (3D magnitude)
         if (magMax > calibration.magMaxSevereMin) {
             // Step 3: Severe refinement (pothole vs bump)
-            return if (peakRatio > calibration.peakRatioRoughMin) "pothole" else "bump"
+            return if (peakRatio < calibration.peakRatioRoughMin) "pothole" else "bump"
         }
 
-        if (magMax >= calibration.magMaxSpeedBumpMin && magMax <= calibration.magMaxSpeedBumpMax) {
-            return "speed_bump"
-        }
+        //if (magMax >= calibration.magMaxSpeedBumpMin && magMax <= calibration.magMaxSpeedBumpMax) {
+        //    return "speed_bump"
+        //}
 
         // No event
         return null
@@ -432,6 +484,7 @@ class TrackingService : Service() {
             resetRejectionCounters()
             TrackingState.resetNotMovingTimer()
             TrackingState.resetSkippedPoints()
+            metricsHistory.clear()
             registerAccelerometerListener()
             startLocationUpdates(currentIntervalSeconds)
             updateNotification("Recording")
@@ -463,6 +516,7 @@ class TrackingService : Service() {
         resetRejectionCounters()
         TrackingState.resetNotMovingTimer()
         TrackingState.resetSkippedPoints()
+        metricsHistory.clear()
         unregisterAccelerometerListener()
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForeground = false

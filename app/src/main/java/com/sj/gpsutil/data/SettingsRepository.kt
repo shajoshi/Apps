@@ -44,7 +44,8 @@ data class CalibrationSettings(
     val stdDevRoughMin: Float = 3.0f,
     val magMaxSpeedBumpMin: Float = 10.0f,
     val magMaxSpeedBumpMax: Float = 18.0f,
-    val magMaxSevereMin: Float = 20.0f
+    val magMaxSevereMin: Float = 20.0f,
+    val qualityWindowSize: Int = 3
 )
 
 class SettingsRepository(private val context: Context) {
@@ -65,6 +66,7 @@ class SettingsRepository(private val context: Context) {
     private val magMaxSpeedBumpMinKey = floatPreferencesKey("cal_magmax_speedbump_min")
     private val magMaxSpeedBumpMaxKey = floatPreferencesKey("cal_magmax_speedbump_max")
     private val magMaxSevereMinKey = floatPreferencesKey("cal_magmax_severe_min")
+    private val qualityWindowSizeKey = longPreferencesKey("cal_quality_window_size")
     private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
 
     private fun parseGravityVector(encoded: String?): FloatArray? {
@@ -103,7 +105,8 @@ class SettingsRepository(private val context: Context) {
                 stdDevRoughMin = prefs[stdDevRoughMinKey] ?: 3.0f,
                 magMaxSpeedBumpMin = prefs[magMaxSpeedBumpMinKey] ?: 10.0f,
                 magMaxSpeedBumpMax = prefs[magMaxSpeedBumpMaxKey] ?: 18.0f,
-                magMaxSevereMin = prefs[magMaxSevereMinKey] ?: 20.0f
+                magMaxSevereMin = prefs[magMaxSevereMinKey] ?: 20.0f,
+                qualityWindowSize = (prefs[qualityWindowSizeKey] ?: 3L).toInt()
             ),
             currentProfileName = prefs[currentProfileNameKey]
         )
@@ -161,6 +164,7 @@ class SettingsRepository(private val context: Context) {
             prefs[magMaxSpeedBumpMinKey] = calibration.magMaxSpeedBumpMin
             prefs[magMaxSpeedBumpMaxKey] = calibration.magMaxSpeedBumpMax
             prefs[magMaxSevereMinKey] = calibration.magMaxSevereMin
+            prefs[qualityWindowSizeKey] = calibration.qualityWindowSize.toLong()
             val gravityEncoded = formatGravityVector(calibration.baseGravityVector)
             if (gravityEncoded == null) {
                 prefs.remove(baseGravityVectorKey)

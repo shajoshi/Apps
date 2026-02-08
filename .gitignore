@@ -16,3 +16,4 @@ local.properties
 # Python virtual environment
 .venv/
 venv/
+keystore/sjgps

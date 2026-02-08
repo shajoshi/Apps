@@ -10,6 +10,11 @@ data class AccelMetrics(
     val rms: Float,
     val peakRatio: Float,
     val stdDev: Float,
+    val avgRms: Float,
+    val avgMaxMagnitude: Float,
+    val avgMeanMagnitude: Float,
+    val avgStdDev: Float,
+    val avgPeakRatio: Float,
     val roadQuality: String,
     val featureDetected: String?,
     val rawData: List<FloatArray>

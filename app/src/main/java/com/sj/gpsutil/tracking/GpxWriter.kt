@@ -110,6 +110,21 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             sample.stdDev?.let {
                 writer.write("<sj:stdDev>${"%.3f".format(it)}</sj:stdDev>\n")
             }
+            sample.avgRms?.let {
+                writer.write("<sj:avgRms>${"%.3f".format(it)}</sj:avgRms>\n")
+            }
+            sample.avgMaxMagnitude?.let {
+                writer.write("<sj:avgMaxMagnitude>${"%.3f".format(it)}</sj:avgMaxMagnitude>\n")
+            }
+            sample.avgMeanMagnitude?.let {
+                writer.write("<sj:avgMeanMagnitude>${"%.3f".format(it)}</sj:avgMeanMagnitude>\n")
+            }
+            sample.avgStdDev?.let {
+                writer.write("<sj:avgStdDev>${"%.3f".format(it)}</sj:avgStdDev>\n")
+            }
+            sample.avgPeakRatio?.let {
+                writer.write("<sj:avgPeakRatio>${"%.3f".format(it)}</sj:avgPeakRatio>\n")
+            }
             writer.write("</sj:accel>\n")
             writer.write("</extensions>\n")
         }
