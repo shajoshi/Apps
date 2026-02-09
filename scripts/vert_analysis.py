@@ -18,14 +18,21 @@ def main():
                         help="Column name to filter by (e.g., manualFeatureLabel). "
                              "Only rows with a non-empty value in this field are kept.",
                         default=None)
+    parser.add_argument("--nodata",
+                        help="Exclude raw accel data rows. "
+                             "Only summary rows (one per GPS point) will be kept.",
+                        action="store_true")
 
     args = parser.parse_args()
     input_path = args.input_file
     filter_label = args.filterby
+    exclude_data = args.nodata
 
     # Generate output filename
     base_name = os.path.splitext(input_path)[0]
-    if filter_label:
+    if exclude_data:
+        output_path = f"{base_name}_summary.csv"
+    elif filter_label:
         output_path = f"{base_name}_filtered_{filter_label}.csv"
     else:
         output_path = f"{base_name}.csv"
@@ -56,6 +63,8 @@ def main():
 
         if filter_label:
             print(f"Filtering: keeping only rows where '{filter_label}' is present.")
+        elif exclude_data:
+            print("Filtering: excluding raw accel rows (--nodata).")
         else:
             print("Filtering: disabled (all rows).")
     except KeyError as e:
@@ -128,19 +137,32 @@ def main():
         base_row = gps_values + accel_values
 
         if raw_samples:
-            # One row per raw sample, GPS + accel attributes repeated
-            for sample in raw_samples:
-                if len(sample) < 3:
-                    continue
-                sx, sy, sz = sample[0], sample[1], sample[2]
-                raw_cols = [sx, sy, sz]
-                if unit_g:
-                    projection = (sx * unit_g['x']) + (sy * unit_g['y']) + (sz * unit_g['z'])
-                    vert_accel = projection - g_magnitude
-                    raw_cols.append(vert_accel)
-                processed_rows.append(base_row + raw_cols)
+            if not exclude_data:
+                # One row per raw sample, GPS + accel attributes repeated
+                for sample in raw_samples:
+                    if len(sample) < 3:
+                        continue
+                    sx, sy, sz = sample[0], sample[1], sample[2]
+                    raw_cols = [sx, sy, sz]
+                    if unit_g:
+                        projection = (sx * unit_g['x']) + (sy * unit_g['y']) + (sz * unit_g['z'])
+                        vert_accel = projection - g_magnitude
+                        raw_cols.append(vert_accel)
+                    processed_rows.append(base_row + raw_cols)
+            # --nodata: skip raw rows entirely, fall through to summary row
         else:
-            # No raw data — one row per data point
+            # No raw data — always create summary row
+            if has_raw:
+                # Pad raw columns with empty values for consistent CSV shape
+                pad = ["", "", ""]
+                if unit_g:
+                    pad.append("")
+                processed_rows.append(base_row + pad)
+            else:
+                processed_rows.append(base_row)
+
+        # --nodata: always create summary row (one per GPS point)
+        if exclude_data and raw_samples:
             if has_raw:
                 # Pad raw columns with empty values for consistent CSV shape
                 pad = ["", "", ""]
@@ -167,6 +189,8 @@ def main():
         print(f"Success! Wrote {len(processed_rows)} rows.")
         if filter_label:
             print(f"Skipped {skipped_count} segments missing '{filter_label}'.")
+        elif exclude_data:
+            print(f"Excluded raw accel rows from {len(processed_rows)} summary rows.")
         print(f"Output: {output_path}")
 
     except IOError as e:

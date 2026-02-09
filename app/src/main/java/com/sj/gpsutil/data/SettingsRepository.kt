@@ -45,7 +45,16 @@ data class CalibrationSettings(
     val magMaxSpeedBumpMin: Float = 10.0f,
     val magMaxSpeedBumpMax: Float = 18.0f,
     val magMaxSevereMin: Float = 20.0f,
-    val qualityWindowSize: Int = 3
+    val qualityWindowSize: Int = 3,
+    val speedHumpMinAmplitude: Float = 45.0f,
+    val speedHumpMinPeaks: Int = 4,
+    val speedHumpMaxDuration: Float = 2.0f,
+    val speedHumpDecayRatio: Float = 0.8f,
+    val speedHumpMinFwdMax: Float = 40.0f,
+    // Speed-based adaptive thresholds
+    val speedHumpLowSpeedThreshold: Float = 20.0f, // Speed below which to use low-speed thresholds
+    val speedHumpLowSpeedAmplitude: Float = 20.0f, // Amplitude threshold for low speeds
+    val speedHumpLowSpeedFwdMax: Float = 15.0f, // Forward max threshold for low speeds
 )
 
 class SettingsRepository(private val context: Context) {
@@ -67,6 +76,14 @@ class SettingsRepository(private val context: Context) {
     private val magMaxSpeedBumpMaxKey = floatPreferencesKey("cal_magmax_speedbump_max")
     private val magMaxSevereMinKey = floatPreferencesKey("cal_magmax_severe_min")
     private val qualityWindowSizeKey = longPreferencesKey("cal_quality_window_size")
+    private val speedHumpMinAmplitudeKey = floatPreferencesKey("cal_speedhump_min_amplitude")
+    private val speedHumpMinPeaksKey = longPreferencesKey("cal_speedhump_min_peaks")
+    private val speedHumpMaxDurationKey = floatPreferencesKey("cal_speedhump_max_duration")
+    private val speedHumpDecayRatioKey = floatPreferencesKey("cal_speedhump_decay_ratio")
+    private val speedHumpMinFwdMaxKey = floatPreferencesKey("cal_speedhump_min_fwdmax")
+    private val speedHumpLowSpeedThresholdKey = floatPreferencesKey("cal_speedhump_low_speed_threshold")
+    private val speedHumpLowSpeedAmplitudeKey = floatPreferencesKey("cal_speedhump_low_speed_amplitude")
+    private val speedHumpLowSpeedFwdMaxKey = floatPreferencesKey("cal_speedhump_low_speed_fwdmax")
     private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
 
     private fun parseGravityVector(encoded: String?): FloatArray? {
@@ -106,7 +123,15 @@ class SettingsRepository(private val context: Context) {
                 magMaxSpeedBumpMin = prefs[magMaxSpeedBumpMinKey] ?: 10.0f,
                 magMaxSpeedBumpMax = prefs[magMaxSpeedBumpMaxKey] ?: 18.0f,
                 magMaxSevereMin = prefs[magMaxSevereMinKey] ?: 20.0f,
-                qualityWindowSize = (prefs[qualityWindowSizeKey] ?: 3L).toInt()
+                qualityWindowSize = (prefs[qualityWindowSizeKey] ?: 3L).toInt(),
+                speedHumpMinAmplitude = prefs[speedHumpMinAmplitudeKey] ?: 45.0f,
+                speedHumpMinPeaks = (prefs[speedHumpMinPeaksKey] ?: 4L).toInt(),
+                speedHumpMaxDuration = prefs[speedHumpMaxDurationKey] ?: 2.0f,
+                speedHumpDecayRatio = prefs[speedHumpDecayRatioKey] ?: 0.8f,
+                speedHumpMinFwdMax = prefs[speedHumpMinFwdMaxKey] ?: 40.0f,
+                speedHumpLowSpeedThreshold = prefs[speedHumpLowSpeedThresholdKey] ?: 20.0f,
+                speedHumpLowSpeedAmplitude = prefs[speedHumpLowSpeedAmplitudeKey] ?: 20.0f,
+                speedHumpLowSpeedFwdMax = prefs[speedHumpLowSpeedFwdMaxKey] ?: 15.0f
             ),
             currentProfileName = prefs[currentProfileNameKey]
         )
@@ -165,6 +190,14 @@ class SettingsRepository(private val context: Context) {
             prefs[magMaxSpeedBumpMaxKey] = calibration.magMaxSpeedBumpMax
             prefs[magMaxSevereMinKey] = calibration.magMaxSevereMin
             prefs[qualityWindowSizeKey] = calibration.qualityWindowSize.toLong()
+            prefs[speedHumpMinAmplitudeKey] = calibration.speedHumpMinAmplitude
+            prefs[speedHumpMinPeaksKey] = calibration.speedHumpMinPeaks.toLong()
+            prefs[speedHumpMaxDurationKey] = calibration.speedHumpMaxDuration
+            prefs[speedHumpDecayRatioKey] = calibration.speedHumpDecayRatio
+            prefs[speedHumpMinFwdMaxKey] = calibration.speedHumpMinFwdMax
+            prefs[speedHumpLowSpeedThresholdKey] = calibration.speedHumpLowSpeedThreshold
+            prefs[speedHumpLowSpeedAmplitudeKey] = calibration.speedHumpLowSpeedAmplitude
+            prefs[speedHumpLowSpeedFwdMaxKey] = calibration.speedHumpLowSpeedFwdMax
             val gravityEncoded = formatGravityVector(calibration.baseGravityVector)
             if (gravityEncoded == null) {
                 prefs.remove(baseGravityVectorKey)

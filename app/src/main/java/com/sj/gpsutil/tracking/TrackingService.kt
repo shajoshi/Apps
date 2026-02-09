@@ -107,7 +107,8 @@ class TrackingService : Service() {
                 val accuracyText = if (location.hasAccuracy()) "${"%.1f".format(location.accuracy)} m" else "--"
                 val speedText = if (location.hasSpeed()) "${"%.1f".format(location.speed * 3.6)} km/h" else "--"
                 Log.d(TAG, "GPS fix received lat=${"%.5f".format(location.latitude)}, lon=${"%.5f".format(location.longitude)}, acc=$accuracyText, speed=$speedText")
-                val accelMetrics = if (enableAccelerometer) computeAccelMetrics() else null
+                val currentSpeed = if (location.hasSpeed()) (location.speed * 3.6).toFloat() else 0f
+                val accelMetrics = if (enableAccelerometer) computeAccelMetrics(currentSpeed) else null
                 val manualLabel = if (roadCalibrationMode) TrackingState.manualLabel.value else null
                 val manualFeature = if (roadCalibrationMode) TrackingState.consumePendingFeatureLabel() else null
                 val sample = TrackingSample(
@@ -264,7 +265,7 @@ class TrackingService : Service() {
         ))
     }
 
-    private fun computeAccelMetrics(): AccelMetrics? {
+    private fun computeAccelMetrics(speedKmph: Float = 0f): AccelMetrics? {
         synchronized(accelLock) {
             if (accelBuffer.isEmpty()) return null
 
@@ -446,7 +447,31 @@ class TrackingService : Service() {
             }
 
             // Step 5: Detect features using INSTANTANEOUS vertical metrics
-            val feature = detectFeatureFromMetrics(
+            // First check for speed hump pattern (before general severe detection)
+            val speedHumpFeature = if (rawData.isNotEmpty()) {
+                // Calculate proper vertical acceleration like the Python script
+                val rawVertAccel = mutableListOf<Float>()
+                val useG = gUnitBasis
+                
+                for (values in smoothed) {
+                    val aVert = if (useG != null) {
+                        values[0] * useG[0] + values[1] * useG[1] + values[2] * useG[2]
+                    } else {
+                        values[2] // Fallback to Z-axis
+                    }
+                    rawVertAccel.add(aVert)
+                }
+                
+                detectSpeedHumpPattern(
+                    rawVertAccel = rawVertAccel,
+                    fwdMax = fwdMax,
+                    speed = speedKmph,
+                    samplingRate = 100f // 10ms intervals = 100 Hz
+                )
+            } else null
+            
+            // If speed hump detected, use that; otherwise fall back to general detection
+            val feature = speedHumpFeature ?: detectFeatureFromMetrics(
                 rms = rmsVert,
                 magMax = maxMagnitude,
                 peakRatio = peakRatio
@@ -484,6 +509,93 @@ class TrackingService : Service() {
 
         // No event
         return null
+    }
+
+    private fun detectSpeedHumpPattern(
+        rawVertAccel: List<Float>,
+        fwdMax: Float,
+        speed: Float, // Current speed in km/h
+        samplingRate: Float = 100f // Updated to 100 Hz (10ms intervals)
+    ): String? {
+        // Data-driven thresholds based on Python analysis
+        val LOW_SPEED_THRESHOLD = 20.0f
+        
+        // Low speed thresholds (< 20 km/h) - from 75th percentile analysis
+        val LOW_SPEED_AMPLITUDE = 10.0f
+        val LOW_SPEED_MIN_PEAKS = 8
+        
+        // High speed thresholds (≥ 20 km/h) - from 75th percentile analysis
+        val HIGH_SPEED_AMPLITUDE = 10.0f
+        val HIGH_SPEED_MIN_PEAKS = 12
+        
+        // Common thresholds
+        val MAX_DURATION = 8.0f // seconds (for actual 6-7 second raw data windows)
+        val DECAY_RATIO_THRESHOLD = 0.7f
+        val MIN_ZERO_CROSSINGS = 20
+        
+        // Choose appropriate thresholds based on speed
+        val (minAmplitude, minPeaks) = if (speed < LOW_SPEED_THRESHOLD) {
+            Pair(LOW_SPEED_AMPLITUDE, LOW_SPEED_MIN_PEAKS)
+        } else {
+            Pair(HIGH_SPEED_AMPLITUDE, HIGH_SPEED_MIN_PEAKS)
+        }
+        
+        // Gate 1: Minimum number of peaks (removed fwdMax and RMS gates)
+        val peaks = mutableListOf<Float>()
+        
+        for (i in 1 until rawVertAccel.size - 1) {
+            val current = rawVertAccel[i]
+            val prev = rawVertAccel[i - 1]
+            val next = rawVertAccel[i + 1]
+            
+            // Peak detection: current > prev and current > next and above threshold
+            if (current > prev && current > next && kotlin.math.abs(current) > 5.0f) {
+                peaks.add(current)
+            }
+        }
+        
+        if (peaks.size < minPeaks) return null
+        
+        // Gate 2: Zero crossings (must have oscillations)
+        var zeroCrossings = 0
+        for (i in 1 until rawVertAccel.size) {
+            if (rawVertAccel[i - 1] * rawVertAccel[i] < 0) { // Sign change
+                zeroCrossings++
+            }
+        }
+        
+        if (zeroCrossings < MIN_ZERO_CROSSINGS) return null
+        
+        // Gate 3: Duration check
+        val duration = (rawVertAccel.size / samplingRate)
+        if (duration > MAX_DURATION) return null
+        
+        // Gate 4: Peak-to-peak amplitude
+        if (peaks.isEmpty()) return null
+        
+        val maxPeak = peaks.maxOrNull() ?: return null
+        val minPeak = peaks.minOrNull() ?: return null
+        val peakToPeakAmplitude = maxPeak - minPeak
+        
+        if (peakToPeakAmplitude < minAmplitude) return null
+        
+        // Gate 5: Amplitude decay (characteristic of speed humps)
+        if (peaks.size >= 4) {
+            val midPoint = peaks.size / 2
+            val firstHalfPeaks = peaks.take(midPoint)
+            val secondHalfPeaks = peaks.drop(midPoint)
+            
+            if (firstHalfPeaks.isNotEmpty() && secondHalfPeaks.isNotEmpty()) {
+                val firstHalfAvg = firstHalfPeaks.map { kotlin.math.abs(it) }.average()
+                val secondHalfAvg = secondHalfPeaks.map { kotlin.math.abs(it) }.average()
+                val decayRatio = if (firstHalfAvg > 0) secondHalfAvg / firstHalfAvg else 1.0
+                
+                if (decayRatio > DECAY_RATIO_THRESHOLD) return null
+            }
+        }
+        
+        // All speed hump criteria met
+        return "speed_hump"
     }
 
     private fun applyMovingAverage(data: List<FloatArray>, windowSize: Int): List<FloatArray> {

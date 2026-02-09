@@ -27,33 +27,49 @@ data class VehicleProfile(
                 VehicleProfile(
                     name = "Motorcycle",
                     calibration = CalibrationSettings(
-                        rmsSmoothMax = 1.0f,
+                        rmsSmoothMax = 3.3f,
                         peakThresholdZ = 1.5f,
                         movingAverageWindow = 5,
                         stdDevSmoothMax = 2.0f,
-                        rmsRoughMin = 4.0f,
+                        rmsRoughMin = 3.3f,
                         peakRatioRoughMin = 0.55f,
-                        stdDevRoughMin = 2.8f,
+                        stdDevRoughMin = 2.0f,
                         magMaxSpeedBumpMin = 10.0f,
                         magMaxSpeedBumpMax = 18.0f,
                         magMaxSevereMin = 20.0f,
-                        qualityWindowSize = 3
+                        qualityWindowSize = 3,
+                        speedHumpMinAmplitude = 45.0f,
+                        speedHumpMinPeaks = 4,
+                        speedHumpMaxDuration = 2.0f,
+                        speedHumpDecayRatio = 0.8f,
+                        speedHumpMinFwdMax = 40.0f,
+                        speedHumpLowSpeedThreshold = 20.0f,
+                        speedHumpLowSpeedAmplitude = 20.0f,
+                        speedHumpLowSpeedFwdMax = 15.0f
                     )
                 ),
                 VehicleProfile(
                     name = "Car",
                     calibration = CalibrationSettings(
-                        rmsSmoothMax = 1.5f,
+                        rmsSmoothMax = 3.3f,
                         peakThresholdZ = 2.0f,
                         movingAverageWindow = 7,
-                        stdDevSmoothMax = 2.5f,
-                        rmsRoughMin = 4.5f,
+                        stdDevSmoothMax = 2.0f,
+                        rmsRoughMin = 3.3f,
                         peakRatioRoughMin = 0.60f,
-                        stdDevRoughMin = 3.0f,
+                        stdDevRoughMin = 2.0f,
                         magMaxSpeedBumpMin = 10.0f,
                         magMaxSpeedBumpMax = 18.0f,
                         magMaxSevereMin = 20.0f,
-                        qualityWindowSize = 3
+                        qualityWindowSize = 3,
+                        speedHumpMinAmplitude = 45.0f,
+                        speedHumpMinPeaks = 4,
+                        speedHumpMaxDuration = 2.0f,
+                        speedHumpDecayRatio = 0.8f,
+                        speedHumpMinFwdMax = 40.0f,
+                        speedHumpLowSpeedThreshold = 20.0f,
+                        speedHumpLowSpeedAmplitude = 20.0f,
+                        speedHumpLowSpeedFwdMax = 15.0f
                     )
                 ),
                 VehicleProfile(
