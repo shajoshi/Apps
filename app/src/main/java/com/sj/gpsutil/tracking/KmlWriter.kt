@@ -158,6 +158,22 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("<Data name=\"avgPeakRatio\"><value>${"%.3f".format(it)}</value></Data>")
                 writer.newLine()
             }
+            sample.accelFwdRms?.let {
+                writer.write("<Data name=\"fwdRms\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.accelFwdMax?.let {
+                writer.write("<Data name=\"fwdMax\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.accelLatRms?.let {
+                writer.write("<Data name=\"latRms\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            sample.accelLatMax?.let {
+                writer.write("<Data name=\"latMax\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
         }
         writer.write("</ExtendedData>")
         writer.newLine()

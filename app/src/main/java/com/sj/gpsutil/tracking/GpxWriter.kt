@@ -125,6 +125,18 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             sample.avgPeakRatio?.let {
                 writer.write("<sj:avgPeakRatio>${"%.3f".format(it)}</sj:avgPeakRatio>\n")
             }
+            sample.accelFwdRms?.let {
+                writer.write("<sj:fwdRms>${"%.3f".format(it)}</sj:fwdRms>\n")
+            }
+            sample.accelFwdMax?.let {
+                writer.write("<sj:fwdMax>${"%.3f".format(it)}</sj:fwdMax>\n")
+            }
+            sample.accelLatRms?.let {
+                writer.write("<sj:latRms>${"%.3f".format(it)}</sj:latRms>\n")
+            }
+            sample.accelLatMax?.let {
+                writer.write("<sj:latMax>${"%.3f".format(it)}</sj:latMax>\n")
+            }
             writer.write("</sj:accel>\n")
             writer.write("</extensions>\n")
         }

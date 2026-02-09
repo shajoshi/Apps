@@ -39,7 +39,11 @@ data class TrackingSample(
     val rawAccelData: List<FloatArray>? = null,
     val gravityVector: FloatArray? = null,
     val manualLabel: String? = null,
-    val manualFeatureLabel: String? = null
+    val manualFeatureLabel: String? = null,
+    val accelFwdRms: Float? = null,
+    val accelFwdMax: Float? = null,
+    val accelLatRms: Float? = null,
+    val accelLatMax: Float? = null
 )
 
 object TrackingState {

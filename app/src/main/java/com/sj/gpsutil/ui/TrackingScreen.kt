@@ -17,11 +17,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +72,8 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
     val notMovingMillis by TrackingState.notMovingMillis.collectAsState()
     val skippedPoints by TrackingState.skippedPoints.collectAsState()
     var pendingStart by remember { mutableStateOf(false) }
+    var showTrackNameDialog by remember { mutableStateOf(false) }
+    var trackNameInput by remember { mutableStateOf("") }
     val requiredPermissions = remember {
         buildList {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -84,7 +90,11 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             result[permission] == true
         }
         if (pendingStart && granted) {
-            sendTrackingAction(context, TrackingService.ACTION_START)
+            if (settingsState.roadCalibrationMode) {
+                showTrackNameDialog = true
+            } else {
+                sendTrackingAction(context, TrackingService.ACTION_START)
+            }
         }
         pendingStart = false
     }
@@ -176,28 +186,49 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             }
             Text("Bearing: $bearingDisplay")
 
+            // Vertical (Z) metrics
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
             val rmsText = latestSample?.accelRMS?.let { "%.3f".format(it) } ?: "--"
             val avgRmsText = latestSample?.avgRms?.let { "%.3f".format(it) } ?: "--"
-            Text("RMS: $rmsText (avg: $avgRmsText)")
-            
-            val stdDevText = latestSample?.stdDev?.let { "%.3f".format(it) } ?: "--"
-            val avgStdDevText = latestSample?.avgStdDev?.let { "%.3f".format(it) } ?: "--"
-            Text("StdDev: $stdDevText (avg: $avgStdDevText)")
+            Text("RMS Z: $rmsText (avg: $avgRmsText)")
             
             val maxMagnitudeText = latestSample?.accelMagnitudeMax?.let { "%.3f".format(it) } ?: "--"
             val avgMaxMagText = latestSample?.avgMaxMagnitude?.let { "%.3f".format(it) } ?: "--"
-            Text("Max mag: $maxMagnitudeText (avg: $avgMaxMagText)")
-            
-            val meanMagnitudeText = latestSample?.meanMagnitude?.let { "%.3f".format(it) } ?: "--"
-            val avgMeanMagText = latestSample?.avgMeanMagnitude?.let { "%.3f".format(it) } ?: "--"
-            Text("Mean mag: $meanMagnitudeText (avg: $avgMeanMagText)")
+            Text("Peak Z: $maxMagnitudeText (avg: $avgMaxMagText)")
+  
+            val stdDevText = latestSample?.stdDev?.let { "%.3f".format(it) } ?: "--"
+            val avgStdDevText = latestSample?.avgStdDev?.let { "%.3f".format(it) } ?: "--"
+            Text("StdDev Z: $stdDevText (avg: $avgStdDevText)")
 
             val peakRatioText = latestSample?.peakRatio?.let { "%.3f".format(it) } ?: "--"
             val avgPeakRatioText = latestSample?.avgPeakRatio?.let { "%.3f".format(it) } ?: "--"
             Text("Peak ratio: $peakRatioText (avg: $avgPeakRatioText)")
             
-            val accelVertMeanText = latestSample?.accelVertMean?.let { "%.3f m/s²".format(it) } ?: "--"
-            Text("Accel vertical mean: $accelVertMeanText")
+            // Forward (Y) and Lateral (X) metrics
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+            val fwdRmsText = latestSample?.accelFwdRms?.let { "%.3f".format(it) } ?: "--"
+            Text("RMS Y: $fwdRmsText")
+
+             val fwdMaxText = latestSample?.accelFwdMax?.let { "%.3f".format(it) } ?: "--"
+            Text("Peak Y: $fwdMaxText")
+            
+            val latRmsText = latestSample?.accelLatRms?.let { "%.3f".format(it) } ?: "--"
+            Text("RMS X: $latRmsText")
+            
+            val latMaxText = latestSample?.accelLatMax?.let { "%.3f".format(it) } ?: "--"
+            Text("Peak X: $latMaxText")
+            
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+           
             
             // Road quality and feature detection
             val roadQualityText = latestSample?.roadQuality?.let { quality ->
@@ -345,6 +376,9 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
                     if (missing.isNotEmpty()) {
                         pendingStart = true
                         permissionsLauncher.launch(missing.toTypedArray())
+                    } else if (settingsState.roadCalibrationMode) {
+                        trackNameInput = ""
+                        showTrackNameDialog = true
                     } else {
                         sendTrackingAction(context, TrackingService.ACTION_START)
                     }
@@ -393,11 +427,45 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
         val fileLabel = currentFileName ?: "--"
         Text("Current file: $fileLabel")
     }
+
+    // Track name dialog for calibration mode
+    if (showTrackNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showTrackNameDialog = false },
+            title = { Text("Name this calibration track") },
+            text = {
+                OutlinedTextField(
+                    value = trackNameInput,
+                    onValueChange = { trackNameInput = it },
+                    label = { Text("Track name (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTrackNameDialog = false
+                    val name = trackNameInput.trim().takeIf { it.isNotEmpty() }
+                    sendTrackingAction(context, TrackingService.ACTION_START, name)
+                }) {
+                    Text(if (trackNameInput.trim().isNotEmpty()) "Start" else "Start with default")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTrackNameDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
-private fun sendTrackingAction(context: Context, action: String) {
+private fun sendTrackingAction(context: Context, action: String, trackName: String? = null) {
     val intent = Intent(context, TrackingService::class.java).apply {
         this.action = action
+        if (trackName != null) {
+            putExtra(TrackingService.EXTRA_TRACK_NAME, trackName)
+        }
     }
     if (action == TrackingService.ACTION_START && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         ContextCompat.startForegroundService(context, intent)

@@ -96,7 +96,7 @@ class TrackHistoryRepository(private val context: Context) {
     private fun String?.isTrackFileName(): Boolean {
         if (this.isNullOrBlank()) return false
         val lower = lowercase()
-        return lower.startsWith("track_") && (lower.endsWith(".kml") || lower.endsWith(".gpx") || lower.endsWith(".json"))
+        return lower.endsWith(".kml") || lower.endsWith(".gpx") || lower.endsWith(".json")
     }
 
     suspend fun loadDetails(settings: TrackingSettings, info: TrackFileInfo): TrackDetails? = withContext(Dispatchers.IO) {

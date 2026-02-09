@@ -23,12 +23,13 @@ class TrackingFileStore(private val context: Context) {
         val filename: String
     )
 
-    fun createTrackOutputStream(settings: TrackingSettings): TrackFileHandle {
+    fun createTrackOutputStream(settings: TrackingSettings, customName: String? = null): TrackFileHandle {
         val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
+        val prefix = customName?.takeIf { it.isNotBlank() } ?: "track"
         val (filename, mimeType) = when (settings.outputFormat) {
-            OutputFormat.GPX -> "track_$timestamp.gpx" to GPX_MIME_TYPE
-            OutputFormat.KML -> "track_$timestamp.kml" to KML_MIME_TYPE
-            OutputFormat.JSON -> "track_$timestamp.json" to JSON_MIME_TYPE
+            OutputFormat.GPX -> "${prefix}_$timestamp.gpx" to GPX_MIME_TYPE
+            OutputFormat.KML -> "${prefix}_$timestamp.kml" to KML_MIME_TYPE
+            OutputFormat.JSON -> "${prefix}_$timestamp.json" to JSON_MIME_TYPE
         }
         val folderUri = settings.folderUri?.let { Uri.parse(it) }
 

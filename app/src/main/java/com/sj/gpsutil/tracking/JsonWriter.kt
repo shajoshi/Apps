@@ -201,6 +201,22 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write(",\n")
                 writer.write("          \"avgPeakRatio\": ${"%.3f".format(it)}")
             }
+            sample.accelFwdRms?.let {
+                writer.write(",\n")
+                writer.write("          \"fwdRms\": ${"%.3f".format(it)}")
+            }
+            sample.accelFwdMax?.let {
+                writer.write(",\n")
+                writer.write("          \"fwdMax\": ${"%.3f".format(it)}")
+            }
+            sample.accelLatRms?.let {
+                writer.write(",\n")
+                writer.write("          \"latRms\": ${"%.3f".format(it)}")
+            }
+            sample.accelLatMax?.let {
+                writer.write(",\n")
+                writer.write("          \"latMax\": ${"%.3f".format(it)}")
+            }
             writer.write("\n")
             writer.write("        }")
         } else {
