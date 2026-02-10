@@ -34,18 +34,8 @@ data class VehicleProfile(
                         rmsRoughMin = 3.3f,
                         peakRatioRoughMin = 0.55f,
                         stdDevRoughMin = 2.0f,
-                        magMaxSpeedBumpMin = 10.0f,
-                        magMaxSpeedBumpMax = 18.0f,
                         magMaxSevereMin = 20.0f,
-                        qualityWindowSize = 3,
-                        speedHumpMinAmplitude = 45.0f,
-                        speedHumpMinPeaks = 4,
-                        speedHumpMaxDuration = 2.0f,
-                        speedHumpDecayRatio = 0.8f,
-                        speedHumpMinFwdMax = 40.0f,
-                        speedHumpLowSpeedThreshold = 20.0f,
-                        speedHumpLowSpeedAmplitude = 20.0f,
-                        speedHumpLowSpeedFwdMax = 15.0f
+                        qualityWindowSize = 3
                     )
                 ),
                 VehicleProfile(
@@ -58,18 +48,8 @@ data class VehicleProfile(
                         rmsRoughMin = 3.3f,
                         peakRatioRoughMin = 0.60f,
                         stdDevRoughMin = 2.0f,
-                        magMaxSpeedBumpMin = 10.0f,
-                        magMaxSpeedBumpMax = 18.0f,
                         magMaxSevereMin = 20.0f,
-                        qualityWindowSize = 3,
-                        speedHumpMinAmplitude = 45.0f,
-                        speedHumpMinPeaks = 4,
-                        speedHumpMaxDuration = 2.0f,
-                        speedHumpDecayRatio = 0.8f,
-                        speedHumpMinFwdMax = 40.0f,
-                        speedHumpLowSpeedThreshold = 20.0f,
-                        speedHumpLowSpeedAmplitude = 20.0f,
-                        speedHumpLowSpeedFwdMax = 15.0f
+                        qualityWindowSize = 3
                     )
                 ),
                 VehicleProfile(
@@ -82,9 +62,7 @@ data class VehicleProfile(
                         rmsRoughMin = 3.5f,
                         peakRatioRoughMin = 0.50f,
                         stdDevRoughMin = 2.5f,
-                        magMaxSpeedBumpMin = 10.0f,
-                        magMaxSpeedBumpMax = 18.0f,
-                        magMaxSevereMin = 20.0f,
+                                                magMaxSevereMin = 20.0f,
                         qualityWindowSize = 3
                     )
                 )

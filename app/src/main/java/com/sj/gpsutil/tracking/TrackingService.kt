@@ -91,9 +91,14 @@ class TrackingService : Service() {
     private var gUnitBasis: FloatArray? = null   // Vertical axis (gravity direction)
     private var fwdUnit: FloatArray? = null       // Forward/longitudinal axis (device-Y projected horizontal)
     private var latUnit: FloatArray? = null        // Lateral axis (cross product of ĝ × fwd)
+    
+    // Raw gravity vector captured at recording start (for export to tracking files)
+    private var capturedGravityVector: FloatArray? = null
 
     private data class FixMetrics(val rmsVert: Float, val maxMagnitude: Float, val meanMagnitudeVert: Float, val stdDevVert: Float, val peakRatio: Float)
     private val metricsHistory = ArrayDeque<FixMetrics>()
+    
+    fun getCapturedGravityVector(): FloatArray? = capturedGravityVector?.copyOf()
 
     override fun onCreate() {
         super.onCreate()
@@ -295,29 +300,7 @@ class TrackingService : Service() {
                 null
             }
 
-            // Log difference between per-window gravity estimate and calibration baseline
-            val gCal = calibration.baseGravityVector
-            if (gUnit != null && gCal != null && gCal.size >= 3) {
-                val calNorm = sqrt(gCal[0] * gCal[0] + gCal[1] * gCal[1] + gCal[2] * gCal[2])
-                if (calNorm > 1e-3f) {
-                    val calUnit = floatArrayOf(gCal[0] / calNorm, gCal[1] / calNorm, gCal[2] / calNorm)
-                    val dx = gUnit[0] - calUnit[0]
-                    val dy = gUnit[1] - calUnit[1]
-                    val dz = gUnit[2] - calUnit[2]
-                    val angleDeg = Math.toDegrees(
-                        kotlin.math.acos(
-                            (gUnit[0] * calUnit[0] + gUnit[1] * calUnit[1] + gUnit[2] * calUnit[2])
-                                .coerceIn(-1f, 1f).toDouble()
-                        )
-                    )
-                    Log.d(TAG, "gVector diff: window=[%.3f,%.3f,%.3f] cal=[%.3f,%.3f,%.3f] delta=[%.4f,%.4f,%.4f] angle=%.2f°".format(
-                        gUnit[0], gUnit[1], gUnit[2],
-                        calUnit[0], calUnit[1], calUnit[2],
-                        dx, dy, dz, angleDeg
-                    ))
-                }
-            }
-
+            
             // Step 2: Apply simple moving average filter (window size from calibration)
             val smoothed = applyMovingAverage(detrended, calibration.movingAverageWindow.coerceAtLeast(1))
 
@@ -435,47 +418,58 @@ class TrackingService : Service() {
             val avgStdDev = metricsHistory.map { it.stdDevVert }.average().toFloat()
             val avgPeakRatio = metricsHistory.map { it.peakRatio }.average().toFloat()
 
-            // Step 4: Classify road quality using AVERAGED vertical metrics (smooth/average/rough)
-            val roadQuality = when {
-                avgRms < calibration.rmsSmoothMax &&
-                avgStdDev < calibration.stdDevSmoothMax -> "smooth"
+            // Step 4 & 5: Skip road quality classification and feature detection at very low speeds
+            // to prevent false positives from walking, idling, or handling the device
+            val MIN_SPEED_FOR_DETECTION = 6f // km/h
 
-                avgRms >= calibration.rmsRoughMin &&
-                avgStdDev >= calibration.stdDevRoughMin -> "rough"
+            val roadQuality: String?
+            val feature: String?
 
-                else -> "average"
-            }
+            if (speedKmph < MIN_SPEED_FOR_DETECTION) {
+                roadQuality = null
+                feature = null
+            } else {
+                // Classify road quality using AVERAGED vertical metrics (smooth/average/rough)
+                roadQuality = when {
+                    avgRms < calibration.rmsSmoothMax &&
+                    avgStdDev < calibration.stdDevSmoothMax -> "smooth"
 
-            // Step 5: Detect features using INSTANTANEOUS vertical metrics
-            // First check for speed hump pattern (before general severe detection)
-            val speedHumpFeature = if (rawData.isNotEmpty()) {
-                // Calculate proper vertical acceleration like the Python script
-                val rawVertAccel = mutableListOf<Float>()
-                val useG = gUnitBasis
-                
-                for (values in smoothed) {
-                    val aVert = if (useG != null) {
-                        values[0] * useG[0] + values[1] * useG[1] + values[2] * useG[2]
-                    } else {
-                        values[2] // Fallback to Z-axis
-                    }
-                    rawVertAccel.add(aVert)
+                    avgRms >= calibration.rmsRoughMin &&
+                    avgStdDev >= calibration.stdDevRoughMin -> "rough"
+
+                    else -> "average"
                 }
+
+                // Detect features using INSTANTANEOUS vertical metrics
+                // First check for speed hump pattern (before general severe detection)
+                val speedHumpFeature = if (rawData.isNotEmpty()) {
+                    val rawVertAccel = mutableListOf<Float>()
+                    val useG = gUnitBasis
+                    
+                    for (values in smoothed) {
+                        val aVert = if (useG != null) {
+                            values[0] * useG[0] + values[1] * useG[1] + values[2] * useG[2]
+                        } else {
+                            values[2] // Fallback to Z-axis
+                        }
+                        rawVertAccel.add(aVert)
+                    }
+                    
+                    detectSpeedHumpPattern(
+                        rawVertAccel = rawVertAccel,
+                        fwdMax = fwdMax,
+                        speed = speedKmph,
+                        samplingRate = 100f // 10ms intervals = 100 Hz
+                    )
+                } else null
                 
-                detectSpeedHumpPattern(
-                    rawVertAccel = rawVertAccel,
-                    fwdMax = fwdMax,
-                    speed = speedKmph,
-                    samplingRate = 100f // 10ms intervals = 100 Hz
+                // If speed hump detected, use that; otherwise fall back to general detection
+                feature = speedHumpFeature ?: detectFeatureFromMetrics(
+                    rms = rmsVert,
+                    magMax = maxMagnitude,
+                    peakRatio = peakRatio
                 )
-            } else null
-            
-            // If speed hump detected, use that; otherwise fall back to general detection
-            val feature = speedHumpFeature ?: detectFeatureFromMetrics(
-                rms = rmsVert,
-                magMax = maxMagnitude,
-                peakRatio = peakRatio
-            )
+            }
 
             accelBuffer.clear()
 
@@ -503,10 +497,7 @@ class TrackingService : Service() {
             return if (peakRatio < calibration.peakRatioRoughMin) "pothole" else "bump"
         }
 
-        //if (magMax >= calibration.magMaxSpeedBumpMin && magMax <= calibration.magMaxSpeedBumpMax) {
-        //    return "speed_bump"
-        //}
-
+        
         // No event
         return null
     }
@@ -525,7 +516,7 @@ class TrackingService : Service() {
         val LOW_SPEED_MIN_PEAKS = 8
         
         // High speed thresholds (≥ 20 km/h) - from 75th percentile analysis
-        val HIGH_SPEED_AMPLITUDE = 10.0f
+        val HIGH_SPEED_AMPLITUDE = 12.0f
         val HIGH_SPEED_MIN_PEAKS = 12
         
         // Common thresholds
@@ -594,8 +585,8 @@ class TrackingService : Service() {
             }
         }
         
-        // All speed hump criteria met
-        return "speed_hump"
+        // All speed bump criteria met
+        return "speed_bump"
     }
 
     private fun applyMovingAverage(data: List<FloatArray>, windowSize: Int): List<FloatArray> {
@@ -682,9 +673,7 @@ class TrackingService : Service() {
                     val gMag = sqrt(capturedGravity[0] * capturedGravity[0] + capturedGravity[1] * capturedGravity[1] + capturedGravity[2] * capturedGravity[2])
                     Log.d(TAG, "Gravity captured at start: [%.3f, %.3f, %.3f] |g|=%.3f".format(
                         capturedGravity[0], capturedGravity[1], capturedGravity[2], gMag))
-                    // Update calibration with fresh gravity and persist to settings
-                    calibration = calibration.copy(baseGravityVector = capturedGravity)
-                    settingsRepository.updateCalibration(calibration)
+                    capturedGravityVector = capturedGravity.copyOf()
                     TrackingState.setGravityVector(capturedGravity)
                     computeVehicleBasis(capturedGravity)
                     // Show toast on main thread
@@ -715,7 +704,8 @@ class TrackingService : Service() {
                     roadCalibrationMode = settings.roadCalibrationMode,
                     outputFormat = settings.outputFormat,
                     calibration = calibration,  // Use updated calibration with newly captured gravity
-                    profileName = settings.currentProfileName
+                    profileName = settings.currentProfileName,
+                    baseGravityVector = capturedGravityVector?.copyOf()
                 )
                 val handle = runCatching { fileStore.createTrackOutputStream(settings, pendingTrackName) }.getOrNull()
                     ?: run {

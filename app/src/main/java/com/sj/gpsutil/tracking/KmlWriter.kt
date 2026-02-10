@@ -41,11 +41,10 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<Data name=\"calibration.rmsRoughMin\"><value>${"%.3f".format(cal.rmsRoughMin)}</value></Data>\n")
             writer.write("<Data name=\"calibration.peakRatioRoughMin\"><value>${"%.3f".format(cal.peakRatioRoughMin)}</value></Data>\n")
             writer.write("<Data name=\"calibration.stdDevRoughMin\"><value>${"%.3f".format(cal.stdDevRoughMin)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.magMaxSpeedBumpMin\"><value>${"%.3f".format(cal.magMaxSpeedBumpMin)}</value></Data>\n")
-            writer.write("<Data name=\"calibration.magMaxSpeedBumpMax\"><value>${"%.3f".format(cal.magMaxSpeedBumpMax)}</value></Data>\n")
             writer.write("<Data name=\"calibration.magMaxSevereMin\"><value>${"%.3f".format(cal.magMaxSevereMin)}</value></Data>\n")
             writer.write("<Data name=\"calibration.movingAverageWindow\"><value>${cal.movingAverageWindow}</value></Data>\n")
-            cal.baseGravityVector?.let { g ->
+            // Add captured gravity vector from recording start
+            recordingSettings?.baseGravityVector?.let { g ->
                 writer.write("<Data name=\"calibration.baseGravityVectorX\"><value>${"%.3f".format(g[0])}</value></Data>\n")
                 writer.write("<Data name=\"calibration.baseGravityVectorY\"><value>${"%.3f".format(g[1])}</value></Data>\n")
                 writer.write("<Data name=\"calibration.baseGravityVectorZ\"><value>${"%.3f".format(g[2])}</value></Data>\n")

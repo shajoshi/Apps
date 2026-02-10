@@ -72,21 +72,9 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val trackingStatus by TrackingState.status.collectAsState()
     var previousBaseline by remember { mutableStateOf<FloatArray?>(null) }
     var baselineCaptureInProgress by remember { mutableStateOf(false) }
+    var temporaryBaseline by remember { mutableStateOf<FloatArray?>(null) }
 
-    LaunchedEffect(settings.calibration.baseGravityVector) {
-        val current = settings.calibration.baseGravityVector
-        if (current != null) {
-            val previous = previousBaseline
-            if (previous != null && !current.contentEquals(previous)) {
-                Toast.makeText(context, "Mount baseline updated", Toast.LENGTH_SHORT).show()
-                Log.d(TAG, "Baseline updated to ${current.joinToString(prefix = "[", postfix = "]")}")
-            }
-            previousBaseline = current.copyOf()
-        } else {
-            previousBaseline = null
-        }
-    }
-    
+        
     LaunchedEffect(Unit) {
         scope.launch(Dispatchers.IO) {
             val existingProfiles = profileRepository.listProfiles(settings.folderUri)
@@ -112,8 +100,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var rmsRoughMin by remember(cal) { mutableStateOf(cal.rmsRoughMin.toString()) }
     var peakRatioRoughMin by remember(cal) { mutableStateOf((cal.peakRatioRoughMin * 100f).toString()) }
     var stdDevRoughMin by remember(cal) { mutableStateOf(cal.stdDevRoughMin.toString()) }
-    var magMaxSpeedBumpMin by remember(cal) { mutableStateOf(cal.magMaxSpeedBumpMin.toString()) }
-    var magMaxSpeedBumpMax by remember(cal) { mutableStateOf(cal.magMaxSpeedBumpMax.toString()) }
     var magMaxSevereMin by remember(cal) { mutableStateOf(cal.magMaxSevereMin.toString()) }
     var qualityWindowSize by remember(cal) { mutableStateOf(cal.qualityWindowSize.toString()) }
 
@@ -268,8 +254,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     val gravity = captureBaselineFromAccelerometer(context, durationMillis = 500L)
                     if (gravity != null) {
                         withContext(Dispatchers.IO) {
-                            repository.updateCalibration(settings.calibration.copy(baseGravityVector = gravity))
+                            // Note: baseGravityVector is no longer stored in calibration
+                            // Gravity is captured per recording session in TrackingService
                         }
+                        temporaryBaseline = gravity.copyOf()
                         Log.d(TAG, "Baseline capture successful: ${gravity.joinToString(prefix = "[", postfix = "]")}")
                     } else {
                         Toast.makeText(context, "Unable to capture baseline", Toast.LENGTH_SHORT).show()
@@ -290,7 +278,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        settings.calibration.baseGravityVector?.let { g ->
+        // Display temporary baseline values if captured
+        temporaryBaseline?.let { g ->
             if (g.size >= 3) {
                 val magnitude = sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2].toDouble()).toFloat()
                 Text(
@@ -385,8 +374,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             rmsRoughMinText = rmsRoughMin,
             peakRatioRoughMinText = peakRatioRoughMin,
             stdDevRoughMinText = stdDevRoughMin,
-            magMaxSpeedBumpMinText = magMaxSpeedBumpMin,
-            magMaxSpeedBumpMaxText = magMaxSpeedBumpMax,
             magMaxSevereMinText = magMaxSevereMin,
             qualityWindowSizeText = qualityWindowSize,
             onValuesChange = { newVals ->
@@ -397,8 +384,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 rmsRoughMin = newVals.rmsRoughMin
                 peakRatioRoughMin = newVals.peakRatioRoughMin
                 stdDevRoughMin = newVals.stdDevRoughMin
-                magMaxSpeedBumpMin = newVals.magMaxSpeedBumpMin
-                magMaxSpeedBumpMax = newVals.magMaxSpeedBumpMax
                 magMaxSevereMin = newVals.magMaxSevereMin
                 qualityWindowSize = newVals.qualityWindowSize
             },
@@ -411,8 +396,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 rmsRoughMin = defaults.rmsRoughMin.toString()
                 peakRatioRoughMin = (defaults.peakRatioRoughMin * 100f).toString()
                 stdDevRoughMin = defaults.stdDevRoughMin.toString()
-                magMaxSpeedBumpMin = defaults.magMaxSpeedBumpMin.toString()
-                magMaxSpeedBumpMax = defaults.magMaxSpeedBumpMax.toString()
                 magMaxSevereMin = defaults.magMaxSevereMin.toString()
                 qualityWindowSize = defaults.qualityWindowSize.toString()
             },
@@ -424,8 +407,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 rmsRoughMin = profile.calibration.rmsRoughMin.toString()
                 peakRatioRoughMin = (profile.calibration.peakRatioRoughMin * 100f).toString()
                 stdDevRoughMin = profile.calibration.stdDevRoughMin.toString()
-                magMaxSpeedBumpMin = profile.calibration.magMaxSpeedBumpMin.toString()
-                magMaxSpeedBumpMax = profile.calibration.magMaxSpeedBumpMax.toString()
                 magMaxSevereMin = profile.calibration.magMaxSevereMin.toString()
                 qualityWindowSize = profile.calibration.qualityWindowSize.toString()
             },
@@ -449,8 +430,6 @@ private fun CalibrationDialog(
     rmsRoughMinText: String,
     peakRatioRoughMinText: String,
     stdDevRoughMinText: String,
-    magMaxSpeedBumpMinText: String,
-    magMaxSpeedBumpMaxText: String,
     magMaxSevereMinText: String,
     qualityWindowSizeText: String,
     onValuesChange: (CalibrationTextValues) -> Unit,
@@ -472,20 +451,18 @@ private fun CalibrationDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Road Quality Thresholds", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("Peak Threshold", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("StdDev smooth max", stdDevSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, it, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("RMS rough min", rmsRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, it, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("Peak ratio rough min (%)", peakRatioRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, it, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("StdDev rough min", stdDevRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, it, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("MagMax speed bump min", magMaxSpeedBumpMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, it, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("MagMax speed bump max", magMaxSpeedBumpMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, it, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("MagMax severe min", magMaxSevereMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, it, qualityWindowSizeText)) }
+                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("StdDev smooth max", stdDevSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, it, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("RMS rough min", rmsRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, it, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("StdDev rough min", stdDevRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, it, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("Peak Threshold", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("Peak ratio rough min (%)", peakRatioRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, it, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("MagMax severe min", magMaxSevereMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, it, qualityWindowSizeText)) }
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Other Settings", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("Quality window size", qualityWindowSizeText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText, it)) }
+                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
+                CalibrationField("Quality window size", qualityWindowSizeText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, it)) }
             }
         },
         confirmButton = {
@@ -497,7 +474,7 @@ private fun CalibrationDialog(
                             rmsSmoothMaxText, peakThresholdZText,
                             movingAverageWindowText,
                             stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText,
-                            magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText,
+                            magMaxSevereMinText,
                             qualityWindowSizeText
                         )
                         if (parsed == null) {
@@ -546,8 +523,6 @@ private fun CalibrationDialog(
             rmsRoughMinText = rmsRoughMinText,
             peakRatioRoughMinText = peakRatioRoughMinText,
             stdDevRoughMinText = stdDevRoughMinText,
-            magMaxSpeedBumpMinText = magMaxSpeedBumpMinText,
-            magMaxSpeedBumpMaxText = magMaxSpeedBumpMaxText,
             magMaxSevereMinText = magMaxSevereMinText,
             qualityWindowSizeText = qualityWindowSizeText,
             onDismiss = { showSaveAsDialog = false }
@@ -583,8 +558,6 @@ private fun SaveAsDialog(
     rmsRoughMinText: String,
     peakRatioRoughMinText: String,
     stdDevRoughMinText: String,
-    magMaxSpeedBumpMinText: String,
-    magMaxSpeedBumpMaxText: String,
     magMaxSevereMinText: String,
     qualityWindowSizeText: String,
     onDismiss: () -> Unit
@@ -619,7 +592,7 @@ private fun SaveAsDialog(
                         rmsSmoothMaxText, peakThresholdZText,
                         movingAverageWindowText,
                         stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText,
-                        magMaxSpeedBumpMinText, magMaxSpeedBumpMaxText, magMaxSevereMinText,
+                        magMaxSevereMinText,
                         qualityWindowSizeText
                     )
                     if (parsed == null) {
@@ -734,8 +707,6 @@ private data class CalibrationTextValues(
     val rmsRoughMin: String,
     val peakRatioRoughMin: String,
     val stdDevRoughMin: String,
-    val magMaxSpeedBumpMin: String,
-    val magMaxSpeedBumpMax: String,
     val magMaxSevereMin: String,
     val qualityWindowSize: String
 )
@@ -749,8 +720,6 @@ private fun parseCalibration(
     rmsRoughMin: String,
     peakRatioRoughMin: String,
     stdDevRoughMin: String,
-    magMaxSpeedBumpMin: String,
-    magMaxSpeedBumpMax: String,
     magMaxSevereMin: String,
     qualityWindowSize: String
 ): CalibrationSettings? {
@@ -764,26 +733,19 @@ private fun parseCalibration(
     if (peakRoughPercent < 1f || peakRoughPercent > 99f) return null
     val peakRough = peakRoughPercent / 100f
     val stdDevRough = stdDevRoughMin.toFloatOrNull() ?: return null
-    val magSpeedMin = magMaxSpeedBumpMin.toFloatOrNull() ?: return null
-    val magSpeedMax = magMaxSpeedBumpMax.toFloatOrNull() ?: return null
     val magSevereMin = magMaxSevereMin.toFloatOrNull() ?: return null
-    if (!(magSpeedMin.isFinite() && magSpeedMax.isFinite() && magSevereMin.isFinite())) return null
-    if (magSpeedMin <= 0f || magSpeedMax <= 0f || magSevereMin <= 0f) return null
-    if (magSpeedMin > magSpeedMax) return null
-    if (magSevereMin <= magSpeedMax) return null
+    if (!magSevereMin.isFinite()) return null
+    if (magSevereMin <= 0f) return null
     val qWindowSize = qualityWindowSize.toIntOrNull() ?: return null
     if (qWindowSize <= 0) return null
     return CalibrationSettings(
         rmsSmoothMax = rmsSmooth,
         peakThresholdZ = peakThresh,
         movingAverageWindow = maWindow,
-        baseGravityVector = initialValues.baseGravityVector,
         stdDevSmoothMax = stdDevSmooth,
         rmsRoughMin = rmsRough,
         peakRatioRoughMin = peakRough,
         stdDevRoughMin = stdDevRough,
-        magMaxSpeedBumpMin = magSpeedMin,
-        magMaxSpeedBumpMax = magSpeedMax,
         magMaxSevereMin = magSevereMin,
         qualityWindowSize = qWindowSize
     )

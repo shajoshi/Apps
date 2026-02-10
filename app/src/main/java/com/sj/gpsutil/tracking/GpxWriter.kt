@@ -38,11 +38,10 @@ class GpxWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<sj:rmsRoughMin>${"%.3f".format(cal.rmsRoughMin)}</sj:rmsRoughMin>\n")
             writer.write("<sj:peakRatioRoughMin>${"%.3f".format(cal.peakRatioRoughMin)}</sj:peakRatioRoughMin>\n")
             writer.write("<sj:stdDevRoughMin>${"%.3f".format(cal.stdDevRoughMin)}</sj:stdDevRoughMin>\n")
-            writer.write("<sj:magMaxSpeedBumpMin>${"%.3f".format(cal.magMaxSpeedBumpMin)}</sj:magMaxSpeedBumpMin>\n")
-            writer.write("<sj:magMaxSpeedBumpMax>${"%.3f".format(cal.magMaxSpeedBumpMax)}</sj:magMaxSpeedBumpMax>\n")
             writer.write("<sj:magMaxSevereMin>${"%.3f".format(cal.magMaxSevereMin)}</sj:magMaxSevereMin>\n")
             writer.write("<sj:movingAverageWindow>${cal.movingAverageWindow}</sj:movingAverageWindow>\n")
-            cal.baseGravityVector?.let { g ->
+            // Add captured gravity vector from recording start
+            recordingSettings?.baseGravityVector?.let { g ->
                 writer.write("<sj:baseGravityVectorX>${"%.3f".format(g[0])}</sj:baseGravityVectorX>\n")
                 writer.write("<sj:baseGravityVectorY>${"%.3f".format(g[1])}</sj:baseGravityVectorY>\n")
                 writer.write("<sj:baseGravityVectorZ>${"%.3f".format(g[2])}</sj:baseGravityVectorZ>\n")

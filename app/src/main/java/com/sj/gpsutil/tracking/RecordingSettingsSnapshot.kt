@@ -15,5 +15,6 @@ data class RecordingSettingsSnapshot(
     val roadCalibrationMode: Boolean,
     val outputFormat: OutputFormat,
     val calibration: CalibrationSettings,
-    val profileName: String?
+    val profileName: String?,
+    val baseGravityVector: FloatArray? = null
 )

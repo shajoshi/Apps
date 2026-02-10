@@ -72,15 +72,14 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("          \"rmsRoughMin\": ${"%.3f".format(cal.rmsRoughMin)},\n")
                 writer.write("          \"peakRatioRoughMin\": ${"%.3f".format(cal.peakRatioRoughMin)},\n")
                 writer.write("          \"stdDevRoughMin\": ${"%.3f".format(cal.stdDevRoughMin)},\n")
-                writer.write("          \"magMaxSpeedBumpMin\": ${"%.3f".format(cal.magMaxSpeedBumpMin)},\n")
-                writer.write("          \"magMaxSpeedBumpMax\": ${"%.3f".format(cal.magMaxSpeedBumpMax)},\n")
                 writer.write("          \"magMaxSevereMin\": ${"%.3f".format(cal.magMaxSevereMin)}")
-                cal.baseGravityVector?.let { g ->
-                    writer.write(",\n")
+                writer.write(",\n")
+                // Add captured gravity vector from recording start
+                settingsSnapshot?.baseGravityVector?.let { g ->
                     writer.write("          \"baseGravityVector\": { \"x\": ${"%.3f".format(g[0])}, \"y\": ${"%.3f".format(g[1])}, \"z\": ${"%.3f".format(g[2])} }")
                 }
                 writer.write("\n")
-                writer.write("        }\n")
+                writer.write("        }")
                 writer.write("      }\n")
             } else {
                 writer.write("\n")
