@@ -23,5 +23,10 @@ data class AccelMetrics(
     val fwdMean: Float = 0f,
     val latRms: Float = 0f,
     val latMax: Float = 0f,
-    val latMean: Float = 0f
+    val latMean: Float = 0f,
+    val signedFwdRms: Float = 0f,
+    val signedLatRms: Float = 0f,
+    val leanAngleDeg: Float = 0f,
+    val deltaSpeed: Float = 0f,
+    val deltaCourse: Float = 0f
 )

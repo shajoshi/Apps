@@ -216,6 +216,31 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write(",\n")
                 writer.write("          \"latMax\": ${"%.3f".format(it)}")
             }
+            sample.accelSignedFwdRms?.let {
+                writer.write(",\n")
+                writer.write("          \"signedFwdRms\": ${"%.3f".format(it)}")
+            }
+            sample.accelSignedLatRms?.let {
+                writer.write(",\n")
+                writer.write("          \"signedLatRms\": ${"%.3f".format(it)}")
+            }
+            sample.accelLeanAngleDeg?.let {
+                writer.write(",\n")
+                writer.write("          \"leanAngleDeg\": ${"%.3f".format(it)}")
+            }
+            writer.write("\n")
+            writer.write("        },\n")
+            writer.write("        \"driver\": {\n")
+            sample.driverMetrics?.let { dm ->
+                writer.write("          \"events\": [${dm.events.joinToString(", ") { "\"$it\"" }}],\n")
+                writer.write("          \"primaryEvent\": \"${dm.primaryEvent}\",\n")
+                writer.write("          \"smoothnessScore\": ${"%.1f".format(dm.smoothnessScore)},\n")
+                writer.write("          \"jerk\": ${"%.3f".format(dm.jerk)}")
+                dm.reactionTimeMs?.let {
+                    writer.write(",\n")
+                    writer.write("          \"reactionTimeMs\": ${"%.0f".format(it)}")
+                }
+            } ?: writer.write("          \"events\": [],\n          \"primaryEvent\": \"normal\"")
             writer.write("\n")
             writer.write("        }")
         } else {

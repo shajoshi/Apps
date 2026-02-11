@@ -43,7 +43,11 @@ data class TrackingSample(
     val accelFwdRms: Float? = null,
     val accelFwdMax: Float? = null,
     val accelLatRms: Float? = null,
-    val accelLatMax: Float? = null
+    val accelLatMax: Float? = null,
+    val accelSignedFwdRms: Float? = null,
+    val accelSignedLatRms: Float? = null,
+    val accelLeanAngleDeg: Float? = null,
+    val driverMetrics: DriverMetrics? = null
 )
 
 object TrackingState {
@@ -65,6 +69,7 @@ object TrackingState {
     private val _pendingFeatureLabel = MutableStateFlow<String?>(null)
     private val _pendingFeatureTimestamp = MutableStateFlow<Long?>(null)
     private val _gravityVector = MutableStateFlow<FloatArray?>(null)
+    private val _driverEventCount = MutableStateFlow(0)
 
     val status = _status.asStateFlow()
     val latestSample = _latestSample.asStateFlow()
@@ -82,6 +87,7 @@ object TrackingState {
     val pendingFeatureLabel = _pendingFeatureLabel.asStateFlow()
     val pendingFeatureTimestamp = _pendingFeatureTimestamp.asStateFlow()
     val gravityVector = _gravityVector.asStateFlow()
+    val driverEventCount = _driverEventCount.asStateFlow()
 
     fun updateStatus(status: TrackingStatus) {
         _status.value = status
@@ -214,5 +220,13 @@ object TrackingState {
 
     fun setGravityVector(vector: FloatArray?) {
         _gravityVector.value = vector
+    }
+
+    fun incrementDriverEventCount() {
+        _driverEventCount.value = _driverEventCount.value + 1
+    }
+
+    fun resetDriverEventCount() {
+        _driverEventCount.value = 0
     }
 }

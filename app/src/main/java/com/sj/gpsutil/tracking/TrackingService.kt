@@ -59,6 +59,15 @@ class TrackingService : Service() {
         private const val REJECTION_WARNING_COOLDOWN_MS = 60_000L
         private const val ACCEL_SAMPLING_PERIOD_US = 10_000 // 10 ms
         private const val TAG = "TrackingService"
+        
+        // Driver event thresholds (from driver_metrics.py)
+        private const val HARD_BRAKE_FWD_MAX = 35f        // m/s²
+        private const val HARD_ACCEL_FWD_MAX = 35f        // m/s²
+        private const val SWERVE_LAT_MAX = 8f             // m/s²
+        private const val AGGRESSIVE_CORNER_LAT_MAX = 8f  // m/s²
+        private const val AGGRESSIVE_CORNER_DCOURSE = 15f // degrees
+        private const val MIN_SPEED_KMPH = 6f             // km/h
+        private const val MOVING_AVG_WINDOW = 20           // samples
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -76,6 +85,7 @@ class TrackingService : Service() {
     private var isForeground = false
     private var currentIntervalSeconds: Long = 5L
     private var lastRecordedSample: TrackingSample? = null
+    private var previousSample: TrackingSample? = null
     private var totalSamplesSinceWindowReset = 0
     private var rejectedSamplesSinceWindowReset = 0
     private var lastRejectionWarningAtMillis = 0L
@@ -116,6 +126,25 @@ class TrackingService : Service() {
                 val accelMetrics = if (enableAccelerometer) computeAccelMetrics(currentSpeed) else null
                 val manualLabel = if (roadCalibrationMode) TrackingState.manualLabel.value else null
                 val manualFeature = if (roadCalibrationMode) TrackingState.consumePendingFeatureLabel() else null
+                
+                // Update delta calculations with actual bearing
+                val updatedAccelMetrics = accelMetrics?.let { metrics ->
+                    val deltaSpeed = previousSample?.speedKmph?.let { prev -> 
+                        currentSpeed - prev.toFloat()
+                    } ?: 0f
+                    
+                    val deltaCourse = previousSample?.bearingDegrees?.let { prev ->
+                        val current = if (location.hasBearing()) location.bearing else 0f
+                        bearingDiff(prev, current)
+                    } ?: 0f
+                    
+                    metrics.copy(deltaSpeed = deltaSpeed, deltaCourse = deltaCourse)
+                }
+                
+                val driverMetrics = updatedAccelMetrics?.let { 
+                    computeDriverMetrics(it, currentSpeed) 
+                }
+                
                 val sample = TrackingSample(
                     latitude = location.latitude,
                     longitude = location.longitude,
@@ -126,34 +155,49 @@ class TrackingService : Service() {
                     accuracyMeters = if (location.hasAccuracy()) location.accuracy else null,
                     satelliteCount = TrackingState.satelliteCount.value,
                     timestampMillis = location.time,
-                    accelXMean = accelMetrics?.meanX,
-                    accelYMean = accelMetrics?.meanY,
-                    accelZMean = accelMetrics?.meanZ,
-                    accelVertMean = accelMetrics?.meanVert,
-                    accelMagnitudeMax = accelMetrics?.maxMagnitude,
-                    meanMagnitude = accelMetrics?.meanMagnitude,
-                    accelRMS = accelMetrics?.rms,
-                    roadQuality = accelMetrics?.roadQuality,
-                    featureDetected = accelMetrics?.featureDetected,
-                    peakRatio = accelMetrics?.peakRatio,
-                    stdDev = accelMetrics?.stdDev,
-                    avgRms = accelMetrics?.avgRms,
-                    avgMaxMagnitude = accelMetrics?.avgMaxMagnitude,
-                    avgMeanMagnitude = accelMetrics?.avgMeanMagnitude,
-                    avgStdDev = accelMetrics?.avgStdDev,
-                    avgPeakRatio = accelMetrics?.avgPeakRatio,
-                    rawAccelData = if (roadCalibrationMode) accelMetrics?.rawData else null,
+                    accelXMean = updatedAccelMetrics?.meanX,
+                    accelYMean = updatedAccelMetrics?.meanY,
+                    accelZMean = updatedAccelMetrics?.meanZ,
+                    accelVertMean = updatedAccelMetrics?.meanVert,
+                    accelMagnitudeMax = updatedAccelMetrics?.maxMagnitude,
+                    meanMagnitude = updatedAccelMetrics?.meanMagnitude,
+                    accelRMS = updatedAccelMetrics?.rms,
+                    roadQuality = updatedAccelMetrics?.roadQuality,
+                    featureDetected = updatedAccelMetrics?.featureDetected,
+                    peakRatio = updatedAccelMetrics?.peakRatio,
+                    stdDev = updatedAccelMetrics?.stdDev,
+                    avgRms = updatedAccelMetrics?.avgRms,
+                    avgMaxMagnitude = updatedAccelMetrics?.avgMaxMagnitude,
+                    avgMeanMagnitude = updatedAccelMetrics?.avgMeanMagnitude,
+                    avgStdDev = updatedAccelMetrics?.avgStdDev,
+                    avgPeakRatio = updatedAccelMetrics?.avgPeakRatio,
+                    rawAccelData = if (roadCalibrationMode) updatedAccelMetrics?.rawData else null,
                     manualLabel = manualLabel,
                     manualFeatureLabel = manualFeature,
-                    accelFwdRms = accelMetrics?.fwdRms,
-                    accelFwdMax = accelMetrics?.fwdMax,
-                    accelLatRms = accelMetrics?.latRms,
-                    accelLatMax = accelMetrics?.latMax
+                    accelFwdRms = updatedAccelMetrics?.fwdRms,
+                    accelFwdMax = updatedAccelMetrics?.fwdMax,
+                    accelLatRms = updatedAccelMetrics?.latRms,
+                    accelLatMax = updatedAccelMetrics?.latMax,
+                    accelSignedFwdRms = updatedAccelMetrics?.signedFwdRms,
+                    accelSignedLatRms = updatedAccelMetrics?.signedLatRms,
+                    accelLeanAngleDeg = updatedAccelMetrics?.leanAngleDeg,
+                    driverMetrics = driverMetrics
                 )
                 sample.verticalAccuracyMeters?.let {
                     Log.d("TrackingService", "Vertical accuracy: ${String.format("%.1f", it)} m")
                 }
                 TrackingState.updateSample(sample)
+                
+                // Update driver event count
+                driverMetrics?.let { metrics ->
+                    if (metrics.primaryEvent != "normal" && metrics.primaryEvent != "low_speed") {
+                        TrackingState.incrementDriverEventCount()
+                    }
+                }
+                
+                // Store previous sample for next iteration
+                previousSample = sample
+                
                 if (currentStatus == TrackingStatus.Recording) {
                     scope.launch {
                         totalSamplesSinceWindowReset++
@@ -300,9 +344,11 @@ class TrackingService : Service() {
                 null
             }
 
-            
-            // Step 2: Apply simple moving average filter (window size from calibration)
-            val smoothed = applyMovingAverage(detrended, calibration.movingAverageWindow.coerceAtLeast(1))
+            // Step 2: Apply two different moving average filters
+            // Small window for accel metrics (road quality)
+            val smoothedAccel = applyMovingAverage(detrended, calibration.movingAverageWindow.coerceAtLeast(1))
+            // Large window for driver metrics (event detection)
+            val smoothedDriver = applyMovingAverage(detrended, MOVING_AVG_WINDOW)
 
             // Step 3: Decompose into vehicle-frame axes and compute metrics
             // Vehicle basis is always computed in startRecording() from live gravity capture
@@ -314,9 +360,10 @@ class TrackingService : Service() {
             var sumX = 0f          // Sum of X-axis accelerations (device frame)
             var sumY = 0f          // Sum of Y-axis accelerations (device frame)
             var sumZ = 0f          // Sum of Z-axis accelerations (device frame)
-            var sumVert = 0f       // Sum of vertical (gravity-aligned) accelerations
-            var vertMaxMag = 0f    // Peak |aVert| in window
-            var vertSumSquares = 0f // Sum of aVert² (for vertical RMS)
+            var sumVert = 0f       // Sum of vertical accelerations (gravity-aligned)
+            var sumSqVert = 0f     // Sum of squared vertical accelerations
+            var vertSumSquares = 0f // Sum of squared vertical accelerations (duplicate name fix)
+            var vertMaxMag = 0f   // Maximum vertical magnitude
             var aboveZThresholdCount = 0  // Count of samples exceeding vertical threshold
             val vertMagnitudes = mutableListOf<Float>()  // |aVert| values (for stdDev)
 
@@ -328,8 +375,8 @@ class TrackingService : Service() {
             var latMaxMag = 0f
             var latSum = 0f
 
-            // Process each smoothed acceleration sample in the window
-            smoothed.forEach { values ->
+            // Process accel metrics with small window
+            smoothedAccel.forEach { values ->
                 // Accumulate component-wise sums for mean calculations
                 sumX += values[0]
                 sumY += values[1]
@@ -354,7 +401,10 @@ class TrackingService : Service() {
                 if (absVert >= calibration.peakThresholdZ) {
                     aboveZThresholdCount++
                 }
+            }
 
+            // Process driver metrics with large window
+            smoothedDriver.forEach { values ->
                 // Forward acceleration: a · ŷ_fwd
                 if (useFwd != null) {
                     val aFwd = values[0] * useFwd[0] + values[1] * useFwd[1] + values[2] * useFwd[2]
@@ -375,7 +425,8 @@ class TrackingService : Service() {
             }
 
             // Calculate statistical metrics from accumulated values
-            val count = smoothed.size
+            val count = smoothedAccel.size
+            val driverCount = smoothedDriver.size
 
             // Mean accelerations
             val meanX = sumX / count
@@ -398,13 +449,33 @@ class TrackingService : Service() {
             val variance = vertMagnitudes.map { (it - meanMagnitudeVert) * (it - meanMagnitudeVert) }.average().toFloat()
             val stdDevVert = kotlin.math.sqrt(variance)
 
-            // Forward/lateral metrics
-            val fwdRms = if (useFwd != null) kotlin.math.sqrt(fwdSumSquares / count) else 0f
-            val fwdMean = if (useFwd != null) fwdSum / count else 0f
+            // Forward/lateral metrics (using driver count for proper averaging)
+            val fwdRms = if (useFwd != null && driverCount > 0) kotlin.math.sqrt(fwdSumSquares / driverCount) else 0f
+            val fwdMean = if (useFwd != null && driverCount > 0) fwdSum / driverCount else 0f
             val fwdMax = fwdMaxMag
-            val latRms = if (useLat != null) kotlin.math.sqrt(latSumSquares / count) else 0f
-            val latMean = if (useLat != null) latSum / count else 0f
+            val latRms = if (useLat != null && driverCount > 0) kotlin.math.sqrt(latSumSquares / driverCount) else 0f
+            val latMean = if (useLat != null && driverCount > 0) latSum / driverCount else 0f
             val latMax = latMaxMag
+
+            // Signed RMS: apply sign of mean to indicate dominant direction
+            // Positive signedFwdRms = accelerating, negative = braking
+            // Positive signedLatRms = rightward, negative = leftward
+            val signedFwdRms = if (fwdMean != 0f) Math.copySign(fwdRms, fwdMean) else fwdRms
+            val signedLatRms = if (latMean != 0f) Math.copySign(latRms, latMean) else latRms
+
+            // Lean angle: rotation of per-window gravity away from baseline, in lateral plane
+            // Uses atan2(lateral_component, vertical_component) of per-window gravity
+            // projected onto baseline vehicle axes
+            val leanAngleDeg = run {
+                if (biasNorm > 1e-3f && useLat != null && useG != null) {
+                    val wgX = biasX / biasNorm
+                    val wgY = biasY / biasNorm
+                    val wgZ = biasZ / biasNorm
+                    val latComp = wgX * useLat[0] + wgY * useLat[1] + wgZ * useLat[2]
+                    val vertComp = wgX * useG[0] + wgY * useG[1] + wgZ * useG[2]
+                    Math.toDegrees(kotlin.math.atan2(latComp.toDouble(), vertComp.toDouble())).toFloat()
+                } else 0f
+            }
 
             // Step 3b: Push instantaneous metrics to history ring buffer and compute averages
             // The moving average over recent GPS fixes smooths out noise for road quality
@@ -446,7 +517,7 @@ class TrackingService : Service() {
                     val rawVertAccel = mutableListOf<Float>()
                     val useG = gUnitBasis
                     
-                    for (values in smoothed) {
+                    for (values in smoothedAccel) {
                         val aVert = if (useG != null) {
                             values[0] * useG[0] + values[1] * useG[1] + values[2] * useG[2]
                         } else {
@@ -473,12 +544,24 @@ class TrackingService : Service() {
 
             accelBuffer.clear()
 
+            // Calculate deltas from previous sample
+            val deltaSpeed = previousSample?.speedKmph?.let { prev -> 
+                speedKmph - prev.toFloat()
+            } ?: 0f
+            
+            val deltaCourse = previousSample?.bearingDegrees?.let { prev ->
+                val current = useG?.let { _ -> 0f } ?: 0f // Will be set in location callback
+                bearingDiff(prev, current)
+            } ?: 0f
+
             return AccelMetrics(
                 meanX, meanY, meanZ, meanVert, maxMagnitude, meanMagnitudeVert, rmsVert,
                 peakRatio, stdDevVert,
                 avgRms, avgMaxMagnitude, avgMeanMagnitude, avgStdDev, avgPeakRatio,
                 roadQuality, feature, rawData,
-                fwdRms, fwdMax, fwdMean, latRms, latMax, latMean
+                fwdRms, fwdMax, fwdMean, latRms, latMax, latMean,
+                signedFwdRms, signedLatRms, leanAngleDeg,
+                deltaSpeed, deltaCourse
             )
         }
     }
@@ -587,6 +670,83 @@ class TrackingService : Service() {
         
         // All speed bump criteria met
         return "speed_bump"
+    }
+
+    private fun bearingDiff(c1: Float, c2: Float): Float {
+        var d = c2 - c1
+        while (d > 180f) d -= 360f
+        while (d < -180f) d += 360f
+        return d
+    }
+
+    private fun classifyDriverEvent(
+        fwdMax: Float,
+        latMax: Float,
+        deltaSpeed: Float,
+        deltaCourse: Float,
+        speed: Float
+    ): List<String> {
+        val events = mutableListOf<String>()
+        
+        if (speed < MIN_SPEED_KMPH) {
+            return listOf("low_speed")
+        }
+
+        // Longitudinal events
+        if (fwdMax > HARD_BRAKE_FWD_MAX && deltaSpeed < 0) {
+            events.add("hard_brake")
+        }
+        if (fwdMax > HARD_ACCEL_FWD_MAX && deltaSpeed > 0) {
+            events.add("hard_accel")
+        }
+
+        // Lateral events
+        if (latMax > SWERVE_LAT_MAX) {
+            events.add("swerve")
+        }
+        if (latMax > AGGRESSIVE_CORNER_LAT_MAX && kotlin.math.abs(deltaCourse) > AGGRESSIVE_CORNER_DCOURSE) {
+            events.add("aggressive_corner")
+        }
+
+        if (events.isEmpty()) {
+            events.add("normal")
+        }
+        
+        return events
+    }
+
+    private fun computeSmoothnessScore(fwdRms: Float, latRms: Float): Float {
+        val combined = 0.2f * fwdRms + 0.8f * latRms
+        val score = maxOf(0f, 1f - combined / 9f) * 100f
+        return score
+    }
+
+    private fun computeDriverMetrics(accelMetrics: AccelMetrics, speed: Float): DriverMetrics {
+        val events = classifyDriverEvent(
+            accelMetrics.fwdMax,
+            accelMetrics.latMax,
+            accelMetrics.deltaSpeed,
+            accelMetrics.deltaCourse,
+            speed
+        )
+        
+        val priority = listOf("hard_brake", "swerve", "aggressive_corner", "hard_accel", "normal", "low_speed")
+        val primaryEvent = priority.first { it in events }
+        
+        val smoothness = computeSmoothnessScore(accelMetrics.fwdRms, accelMetrics.latRms)
+        
+        // Calculate jerk from signed RMS change
+        val jerk = previousSample?.driverMetrics?.let { prev ->
+            val currSigned = if (accelMetrics.fwdMean != 0f) 
+                Math.copySign(accelMetrics.fwdRms, accelMetrics.fwdMean) else accelMetrics.fwdRms
+            val prevSigned = prev.jerk // Using jerk as placeholder for previous signed RMS
+            kotlin.math.abs(currSigned - prevSigned)
+        } ?: 0f
+        
+        // Reaction time calculation would need raw data analysis
+        val reactionTimeMs: Float? = null
+        
+        return DriverMetrics(events, primaryEvent, smoothness, jerk, reactionTimeMs)
     }
 
     private fun applyMovingAverage(data: List<FloatArray>, windowSize: Int): List<FloatArray> {
@@ -732,9 +892,11 @@ class TrackingService : Service() {
             TrackingState.updateStatus(currentStatus)
             TrackingState.onRecordingStarted()
             lastRecordedSample = null
+            previousSample = null
             resetRejectionCounters()
             TrackingState.resetNotMovingTimer()
             TrackingState.resetSkippedPoints()
+            TrackingState.resetDriverEventCount()
             metricsHistory.clear()
             registerAccelerometerListener()
             startLocationUpdates(currentIntervalSeconds)

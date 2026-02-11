@@ -73,6 +73,7 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
     val skippedPoints by TrackingState.skippedPoints.collectAsState()
     var pendingStart by remember { mutableStateOf(false) }
     var showTrackNameDialog by remember { mutableStateOf(false) }
+    var showDrivingView by remember { mutableStateOf(false) }
     var trackNameInput by remember { mutableStateOf("") }
     val requiredPermissions = remember {
         buildList {
@@ -366,6 +367,15 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        Button(
+            onClick = { showDrivingView = true },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Driving View")
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 onClick = {
@@ -426,6 +436,11 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
         Text("Satellites: $satelliteCount")
         val fileLabel = currentFileName ?: "--"
         Text("Current file: $fileLabel")
+    }
+
+    // Driving View dialog
+    if (showDrivingView) {
+        DrivingViewDialog(onDismiss = { showDrivingView = false })
     }
 
     // Track name dialog for calibration mode
