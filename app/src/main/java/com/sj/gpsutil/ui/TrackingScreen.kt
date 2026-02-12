@@ -386,7 +386,7 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
                     if (missing.isNotEmpty()) {
                         pendingStart = true
                         permissionsLauncher.launch(missing.toTypedArray())
-                    } else if (settingsState.roadCalibrationMode) {
+                    } else if (settingsState.roadCalibrationMode && status == TrackingStatus.Idle) {
                         trackNameInput = ""
                         showTrackNameDialog = true
                     } else {

@@ -29,10 +29,12 @@ from typing import Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # THRESHOLDS — tune these with real data
 # ---------------------------------------------------------------------------
-HARD_BRAKE_FWD_MAX = 35        # m/s² — forward accel threshold for hard braking
-HARD_ACCEL_FWD_MAX = 35.0        # m/s² — forward accel threshold for hard acceleration
-SWERVE_LAT_MAX = 8.0            # m/s² — lateral accel threshold for swerve event
-AGGRESSIVE_CORNER_LAT_MAX = 8.0 # m/s² — lateral threshold during cornering
+HARD_BRAKE_FWD_MAX = 35      # m/s² — forward accel threshold for hard braking
+HARD_ACCEL_FWD_MAX = 35     # m/s² — forward accel threshold for hard acceleration
+REACTION_TIME_BRAKE_MAX = 20
+REACTION_TIME_LAT_MAX = 15
+SWERVE_LAT_MAX = 15            # m/s² — lateral accel threshold for swerve event
+AGGRESSIVE_CORNER_LAT_MAX = 15 # m/s² — lateral threshold during cornering
 AGGRESSIVE_CORNER_DCOURSE = 15.0 # degrees — minimum bearing change for cornering
 MIN_SPEED_KMPH = 6.0            # km/h — ignore events below this speed
 SAMPLING_RATE = 100.0           # Hz — raw accelerometer sampling rate
@@ -40,9 +42,9 @@ SAMPLING_RATE = 100.0           # Hz — raw accelerometer sampling rate
 # Smoothness score parameters (maps RMS to 0-100 scale)
 SMOOTHNESS_FWD_WEIGHT = 0.2
 SMOOTHNESS_LAT_WEIGHT = 0.8
-SMOOTHNESS_RMS_MAX = 9.0  # RMS at or above this → score 0
+SMOOTHNESS_RMS_MAX = 10  # RMS at or above this → score 0
 
-MOVING_AVG_WINDOW = 20  # Moving average window for smoothing raw accel data before fwd/lat projection
+MOVING_AVG_WINDOW = 10  # Moving average window for smoothing raw accel data before fwd/lat projection
 # ---------------------------------------------------------------------------
 # Vehicle-frame basis computation (mirrors computeVehicleBasis in Kotlin)
 # ---------------------------------------------------------------------------
@@ -304,15 +306,15 @@ def compute_raw_deep_metrics(
     fwd_spike_idx = None
     lat_spike_idx = None
     for i, v in enumerate(fwd_values):
-        if abs(v) > HARD_BRAKE_FWD_MAX:
+        if abs(v) > REACTION_TIME_BRAKE_MAX:
             fwd_spike_idx = i
             break
     for i, v in enumerate(lat_values):
-        if abs(v) > SWERVE_LAT_MAX:
+        if abs(v) > REACTION_TIME_LAT_MAX:
             lat_spike_idx = i
             break
     if fwd_spike_idx is not None and lat_spike_idx is not None:
-        reaction_samples = abs(lat_spike_idx - fwd_spike_idx)
+        reaction_samples = lat_spike_idx - fwd_spike_idx
         if reaction_samples >= 10:  # Ignore < 100ms as humanly impossible
             metrics["reaction_time_ms"] = (reaction_samples / SAMPLING_RATE) * 1000.0
 
@@ -688,43 +690,32 @@ def main():
 
         accel = point.get("accel", {})
 
-        # Try pre-computed summary metrics first
-        fwd_rms = accel.get("fwdRms")
-        fwd_max = accel.get("fwdMax")
-        fwd_mean = accel.get("fwdMean")
-        lat_rms = accel.get("latRms")
-        lat_max = accel.get("latMax")
-        lat_mean = accel.get("latMean")
-        lean_angle = accel.get("leanAngleDeg")
+        # Always recompute from raw data so threshold changes in this file take effect
+        fwd_rms = None
+        fwd_max = None
+        fwd_mean = None
+        lat_rms = None
+        lat_max = None
+        lat_mean = None
+        lean_angle = None
 
         fwd_values = []
         lat_values = []
         has_raw = False
 
-        # If summary metrics missing, compute from raw data
         raw_data = accel.get("raw", [])
-        if raw_data and (fwd_rms is None or fwd_max is None or lat_rms is None or lat_max is None or lean_angle is None or fwd_mean is None or lat_mean is None):
+        if raw_data:
             computed = compute_fwd_lat_from_raw(raw_data, g_unit, fwd_unit, lat_unit, ma_window)
             if computed:
-                fwd_rms = fwd_rms if fwd_rms is not None else computed.get("fwdRms", 0)
-                fwd_max = fwd_max if fwd_max is not None else computed.get("fwdMax", 0)
-                fwd_mean = fwd_mean if fwd_mean is not None else computed.get("fwdMean", 0)
-                lat_rms = lat_rms if lat_rms is not None else computed.get("latRms", 0)
-                lat_max = lat_max if lat_max is not None else computed.get("latMax", 0)
-                lat_mean = lat_mean if lat_mean is not None else computed.get("latMean", 0)
-                lean_angle = lean_angle if lean_angle is not None else computed.get("leanAngleDeg", 0)
+                fwd_rms = computed.get("fwdRms", 0)
+                fwd_max = computed.get("fwdMax", 0)
+                fwd_mean = computed.get("fwdMean", 0)
+                lat_rms = computed.get("latRms", 0)
+                lat_max = computed.get("latMax", 0)
+                lat_mean = computed.get("latMean", 0)
+                lean_angle = computed.get("leanAngleDeg", 0)
                 fwd_values = computed.get("fwd_values", [])
                 lat_values = computed.get("lat_values", [])
-                has_raw = True
-        elif raw_data:
-            # Summary metrics exist but we still want raw values for deep analysis
-            computed = compute_fwd_lat_from_raw(raw_data, g_unit, fwd_unit, lat_unit, ma_window)
-            if computed:
-                fwd_values = computed.get("fwd_values", [])
-                lat_values = computed.get("lat_values", [])
-                lean_angle = lean_angle if lean_angle is not None else computed.get("leanAngleDeg", 0)
-                fwd_mean = fwd_mean if fwd_mean is not None else computed.get("fwdMean", 0)
-                lat_mean = lat_mean if lat_mean is not None else computed.get("latMean", 0)
                 has_raw = True
 
         # Skip lean angle at low speeds to keep averages accurate

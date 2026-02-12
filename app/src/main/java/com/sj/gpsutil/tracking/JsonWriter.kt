@@ -73,13 +73,13 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("          \"peakRatioRoughMin\": ${"%.3f".format(cal.peakRatioRoughMin)},\n")
                 writer.write("          \"stdDevRoughMin\": ${"%.3f".format(cal.stdDevRoughMin)},\n")
                 writer.write("          \"magMaxSevereMin\": ${"%.3f".format(cal.magMaxSevereMin)}")
-                writer.write(",\n")
                 // Add captured gravity vector from recording start
                 settingsSnapshot?.baseGravityVector?.let { g ->
+                    writer.write(",\n")
                     writer.write("          \"baseGravityVector\": { \"x\": ${"%.3f".format(g[0])}, \"y\": ${"%.3f".format(g[1])}, \"z\": ${"%.3f".format(g[2])} }")
                 }
                 writer.write("\n")
-                writer.write("        }")
+                writer.write("        }\n")
                 writer.write("      }\n")
             } else {
                 writer.write("\n")
@@ -231,7 +231,8 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("\n")
             writer.write("        },\n")
             writer.write("        \"driver\": {\n")
-            sample.driverMetrics?.let { dm ->
+            val dm = sample.driverMetrics
+            if (dm != null) {
                 writer.write("          \"events\": [${dm.events.joinToString(", ") { "\"$it\"" }}],\n")
                 writer.write("          \"primaryEvent\": \"${dm.primaryEvent}\",\n")
                 writer.write("          \"smoothnessScore\": ${"%.1f".format(dm.smoothnessScore)},\n")
@@ -240,7 +241,9 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                     writer.write(",\n")
                     writer.write("          \"reactionTimeMs\": ${"%.0f".format(it)}")
                 }
-            } ?: writer.write("          \"events\": [],\n          \"primaryEvent\": \"normal\"")
+            } else {
+                writer.write("          \"events\": [],\n          \"primaryEvent\": \"normal\"")
+            }
             writer.write("\n")
             writer.write("        }")
         } else {

@@ -63,11 +63,14 @@ class TrackingService : Service() {
         // Driver event thresholds (from driver_metrics.py)
         private const val HARD_BRAKE_FWD_MAX = 35f        // m/s²
         private const val HARD_ACCEL_FWD_MAX = 35f        // m/s²
-        private const val SWERVE_LAT_MAX = 8f             // m/s²
-        private const val AGGRESSIVE_CORNER_LAT_MAX = 8f  // m/s²
+        private const val SWERVE_LAT_MAX = 15f            // m/s²
+        private const val AGGRESSIVE_CORNER_LAT_MAX = 15f // m/s²
         private const val AGGRESSIVE_CORNER_DCOURSE = 15f // degrees
         private const val MIN_SPEED_KMPH = 6f             // km/h
-        private const val MOVING_AVG_WINDOW = 20           // samples
+        private const val MOVING_AVG_WINDOW = 10           // samples
+        private const val REACTION_TIME_BRAKE_MAX = 20f   // m/s² — fwd spike threshold for reaction time
+        private const val REACTION_TIME_LAT_MAX = 15f     // m/s² — lat spike threshold for reaction time
+        private const val SMOOTHNESS_RMS_MAX = 10f        // RMS at or above this → score 0
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -404,6 +407,8 @@ class TrackingService : Service() {
             }
 
             // Process driver metrics with large window
+            val fwdValuesList = mutableListOf<Float>()
+            val latValuesList = mutableListOf<Float>()
             smoothedDriver.forEach { values ->
                 // Forward acceleration: a · ŷ_fwd
                 if (useFwd != null) {
@@ -412,6 +417,7 @@ class TrackingService : Service() {
                     fwdSumSquares += aFwd * aFwd
                     val absFwd = kotlin.math.abs(aFwd)
                     if (absFwd > fwdMaxMag) fwdMaxMag = absFwd
+                    fwdValuesList.add(aFwd)
                 }
 
                 // Lateral acceleration: a · x̂_lat
@@ -421,6 +427,7 @@ class TrackingService : Service() {
                     latSumSquares += aLat * aLat
                     val absLat = kotlin.math.abs(aLat)
                     if (absLat > latMaxMag) latMaxMag = absLat
+                    latValuesList.add(aLat)
                 }
             }
 
@@ -561,7 +568,8 @@ class TrackingService : Service() {
                 roadQuality, feature, rawData,
                 fwdRms, fwdMax, fwdMean, latRms, latMax, latMean,
                 signedFwdRms, signedLatRms, leanAngleDeg,
-                deltaSpeed, deltaCourse
+                deltaSpeed, deltaCourse,
+                fwdValuesList, latValuesList
             )
         }
     }
@@ -717,7 +725,7 @@ class TrackingService : Service() {
 
     private fun computeSmoothnessScore(fwdRms: Float, latRms: Float): Float {
         val combined = 0.2f * fwdRms + 0.8f * latRms
-        val score = maxOf(0f, 1f - combined / 9f) * 100f
+        val score = maxOf(0f, 1f - combined / SMOOTHNESS_RMS_MAX) * 100f
         return score
     }
 
@@ -743,8 +751,26 @@ class TrackingService : Service() {
             kotlin.math.abs(currSigned - prevSigned)
         } ?: 0f
         
-        // Reaction time calculation would need raw data analysis
-        val reactionTimeMs: Float? = null
+        // Reaction time: time between first fwd spike and first lat spike (lat must follow fwd)
+        val reactionTimeMs: Float? = run {
+            val fwdValues = accelMetrics.fwdValues
+            val latValues = accelMetrics.latValues
+            if (fwdValues.isEmpty() || latValues.isEmpty()) return@run null
+            
+            val fwdSpikeIdx = fwdValues.indexOfFirst { kotlin.math.abs(it) > REACTION_TIME_BRAKE_MAX }
+            if (fwdSpikeIdx < 0) return@run null
+            
+            val latSpikeIdx = latValues.indexOfFirst { kotlin.math.abs(it) > REACTION_TIME_LAT_MAX }
+            if (latSpikeIdx < 0) return@run null
+            
+            val reactionSamples = latSpikeIdx - fwdSpikeIdx
+            // Only count if lat follows fwd, >= 100ms, and <= 3s
+            val samplingRate = 100f
+            val maxSamples = (3.0f * samplingRate).toInt()
+            if (reactionSamples in 10..maxSamples) {
+                (reactionSamples / samplingRate) * 1000f
+            } else null
+        }
         
         return DriverMetrics(events, primaryEvent, smoothness, jerk, reactionTimeMs)
     }

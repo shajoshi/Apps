@@ -75,6 +75,20 @@ object TrackingState {
     val latestSample = _latestSample.asStateFlow()
     val elapsedMillis = _elapsedMillis.asStateFlow()
     val recordingStartMillis = _recordingStartMillis.asStateFlow()
+    
+    /**
+     * Get the current elapsed time including the active recording session.
+     * During active recording, this includes the elapsed time plus the current session time.
+     */
+    fun getCurrentElapsedMillis(): Long {
+        val baseElapsed = _elapsedMillis.value
+        val sessionStart = _recordingStartMillis.value
+        return if (sessionStart != null) {
+            baseElapsed + (System.currentTimeMillis() - sessionStart)
+        } else {
+            baseElapsed
+        }
+    }
     val pointCount = _pointCount.asStateFlow()
     val satelliteCount = _satelliteCount.asStateFlow()
     val currentFileName = _currentFileName.asStateFlow()
