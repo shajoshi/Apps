@@ -79,6 +79,20 @@ class JsonWriter(outputStream: OutputStream) : TrackWriter {
                     writer.write("          \"baseGravityVector\": { \"x\": ${"%.3f".format(g[0])}, \"y\": ${"%.3f".format(g[1])}, \"z\": ${"%.3f".format(g[2])} }")
                 }
                 writer.write("\n")
+                writer.write("        },\n")
+                val dt = settingsSnapshot.driverThresholds
+                writer.write("        \"driverThresholds\": {\n")
+                writer.write("          \"hardBrakeFwdMax\": ${"%.3f".format(dt.hardBrakeFwdMax)},\n")
+                writer.write("          \"hardAccelFwdMax\": ${"%.3f".format(dt.hardAccelFwdMax)},\n")
+                writer.write("          \"swerveLatMax\": ${"%.3f".format(dt.swerveLatMax)},\n")
+                writer.write("          \"aggressiveCornerLatMax\": ${"%.3f".format(dt.aggressiveCornerLatMax)},\n")
+                writer.write("          \"aggressiveCornerDCourse\": ${"%.3f".format(dt.aggressiveCornerDCourse)},\n")
+                writer.write("          \"minSpeedKmph\": ${"%.3f".format(dt.minSpeedKmph)},\n")
+                writer.write("          \"movingAvgWindow\": ${dt.movingAvgWindow},\n")
+                writer.write("          \"reactionTimeBrakeMax\": ${"%.3f".format(dt.reactionTimeBrakeMax)},\n")
+                writer.write("          \"reactionTimeLatMax\": ${"%.3f".format(dt.reactionTimeLatMax)},\n")
+                writer.write("          \"smoothnessRmsMax\": ${"%.3f".format(dt.smoothnessRmsMax)},\n")
+                writer.write("          \"fallLeanAngle\": ${"%.3f".format(dt.fallLeanAngle)}\n")
                 writer.write("        }\n")
                 writer.write("      }\n")
             } else {

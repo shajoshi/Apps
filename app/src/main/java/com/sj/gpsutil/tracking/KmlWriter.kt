@@ -49,6 +49,18 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
                 writer.write("<Data name=\"calibration.baseGravityVectorY\"><value>${"%.3f".format(g[1])}</value></Data>\n")
                 writer.write("<Data name=\"calibration.baseGravityVectorZ\"><value>${"%.3f".format(g[2])}</value></Data>\n")
             }
+            val dt = settings.driverThresholds
+            writer.write("<Data name=\"driverThresholds.hardBrakeFwdMax\"><value>${"%.3f".format(dt.hardBrakeFwdMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.hardAccelFwdMax\"><value>${"%.3f".format(dt.hardAccelFwdMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.swerveLatMax\"><value>${"%.3f".format(dt.swerveLatMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.aggressiveCornerLatMax\"><value>${"%.3f".format(dt.aggressiveCornerLatMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.aggressiveCornerDCourse\"><value>${"%.3f".format(dt.aggressiveCornerDCourse)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.minSpeedKmph\"><value>${"%.3f".format(dt.minSpeedKmph)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.movingAvgWindow\"><value>${dt.movingAvgWindow}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.reactionTimeBrakeMax\"><value>${"%.3f".format(dt.reactionTimeBrakeMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.reactionTimeLatMax\"><value>${"%.3f".format(dt.reactionTimeLatMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.smoothnessRmsMax\"><value>${"%.3f".format(dt.smoothnessRmsMax)}</value></Data>\n")
+            writer.write("<Data name=\"driverThresholds.fallLeanAngle\"><value>${"%.3f".format(dt.fallLeanAngle)}</value></Data>\n")
             writer.write("</ExtendedData>\n")
         }
         // Styles for point coloring by road quality

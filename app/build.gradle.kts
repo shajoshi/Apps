@@ -55,6 +55,8 @@ dependencies {
     implementation(libs.play.services.location)
     implementation("com.google.code.gson:gson:2.10.1")
     testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("com.google.code.gson:gson:2.10.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

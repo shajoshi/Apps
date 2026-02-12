@@ -208,28 +208,10 @@ fun TrackingScreen(modifier: Modifier = Modifier) {
             val avgPeakRatioText = latestSample?.avgPeakRatio?.let { "%.3f".format(it) } ?: "--"
             Text("Peak ratio: $peakRatioText (avg: $avgPeakRatioText)")
             
-            // Forward (Y) and Lateral (X) metrics
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
                 color = androidx.compose.ui.graphics.Color.Gray
             )
-            val fwdRmsText = latestSample?.accelFwdRms?.let { "%.3f".format(it) } ?: "--"
-            Text("RMS Y: $fwdRmsText")
-
-             val fwdMaxText = latestSample?.accelFwdMax?.let { "%.3f".format(it) } ?: "--"
-            Text("Peak Y: $fwdMaxText")
-            
-            val latRmsText = latestSample?.accelLatRms?.let { "%.3f".format(it) } ?: "--"
-            Text("RMS X: $latRmsText")
-            
-            val latMaxText = latestSample?.accelLatMax?.let { "%.3f".format(it) } ?: "--"
-            Text("Peak X: $latMaxText")
-            
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 8.dp),
-                color = androidx.compose.ui.graphics.Color.Gray
-            )
-           
             
             // Road quality and feature detection
             val roadQualityText = latestSample?.roadQuality?.let { quality ->

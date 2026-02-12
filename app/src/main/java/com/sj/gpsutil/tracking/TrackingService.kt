@@ -59,18 +59,6 @@ class TrackingService : Service() {
         private const val REJECTION_WARNING_COOLDOWN_MS = 60_000L
         private const val ACCEL_SAMPLING_PERIOD_US = 10_000 // 10 ms
         private const val TAG = "TrackingService"
-        
-        // Driver event thresholds (from driver_metrics.py)
-        private const val HARD_BRAKE_FWD_MAX = 35f        // m/s²
-        private const val HARD_ACCEL_FWD_MAX = 35f        // m/s²
-        private const val SWERVE_LAT_MAX = 15f            // m/s²
-        private const val AGGRESSIVE_CORNER_LAT_MAX = 15f // m/s²
-        private const val AGGRESSIVE_CORNER_DCOURSE = 15f // degrees
-        private const val MIN_SPEED_KMPH = 6f             // km/h
-        private const val MOVING_AVG_WINDOW = 10           // samples
-        private const val REACTION_TIME_BRAKE_MAX = 20f   // m/s² — fwd spike threshold for reaction time
-        private const val REACTION_TIME_LAT_MAX = 15f     // m/s² — lat spike threshold for reaction time
-        private const val SMOOTHNESS_RMS_MAX = 10f        // RMS at or above this → score 0
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -100,16 +88,14 @@ class TrackingService : Service() {
     private val accelBuffer = mutableListOf<FloatArray>()
     private val accelLock = Any()
 
-    // Vehicle-frame orthonormal basis (computed once at recording start from calibration baseline)
-    private var gUnitBasis: FloatArray? = null   // Vertical axis (gravity direction)
-    private var fwdUnit: FloatArray? = null       // Forward/longitudinal axis (device-Y projected horizontal)
-    private var latUnit: FloatArray? = null        // Lateral axis (cross product of ĝ × fwd)
+    // MetricsEngine for pure computation (created at recording start)
+    private var metricsEngine: MetricsEngine? = null
+    private var vehicleBasis: MetricsEngine.VehicleBasis? = null
     
     // Raw gravity vector captured at recording start (for export to tracking files)
     private var capturedGravityVector: FloatArray? = null
 
-    private data class FixMetrics(val rmsVert: Float, val maxMagnitude: Float, val meanMagnitudeVert: Float, val stdDevVert: Float, val peakRatio: Float)
-    private val metricsHistory = ArrayDeque<FixMetrics>()
+    private val metricsHistory = ArrayDeque<MetricsEngine.FixMetrics>()
     
     fun getCapturedGravityVector(): FloatArray? = capturedGravityVector?.copyOf()
 
@@ -260,534 +246,39 @@ class TrackingService : Service() {
         Log.d(TAG, "Accelerometer listener unregistered")
     }
 
-    /**
-     * Build vehicle-frame orthonormal basis from a gravity vector.
-     * ĝ = normalized gravity (vertical axis)
-     * ŷ_fwd = device-Y [0,1,0] projected onto horizontal plane (⊥ ĝ), normalized (forward axis)
-     * x̂_lat = ĝ × ŷ_fwd (lateral axis)
-     *
-     * If device-Y is nearly parallel to gravity (degenerate), falls back to device-X.
-     */
     private fun computeVehicleBasis(gravity: FloatArray) {
-        val norm = sqrt(gravity[0] * gravity[0] + gravity[1] * gravity[1] + gravity[2] * gravity[2])
-        if (norm < 1e-3f) {
-            Log.w(TAG, "computeVehicleBasis: gravity vector too small, skipping")
-            gUnitBasis = null; fwdUnit = null; latUnit = null
-            return
+        val engine = metricsEngine ?: return
+        val basis = engine.computeVehicleBasis(gravity)
+        vehicleBasis = basis
+        if (basis != null) {
+            val g = basis.gUnit; val fwd = basis.fwd; val lat = basis.lat
+            Log.d(TAG, "Vehicle basis: ĝ=[%.3f,%.3f,%.3f] fwd=[%.3f,%.3f,%.3f] lat=[%.3f,%.3f,%.3f]".format(
+                g[0], g[1], g[2], fwd[0], fwd[1], fwd[2], lat[0], lat[1], lat[2]
+            ))
+        } else {
+            Log.w(TAG, "computeVehicleBasis: could not compute basis from gravity")
         }
-        val g = floatArrayOf(gravity[0] / norm, gravity[1] / norm, gravity[2] / norm)
-
-        // Project device-Y [0,1,0] onto horizontal plane: y_horiz = y - (y·ĝ)ĝ
-        val yDotG = g[1] // dot([0,1,0], g) = g[1]
-        var fwdX = 0f - yDotG * g[0]
-        var fwdY = 1f - yDotG * g[1]
-        var fwdZ = 0f - yDotG * g[2]
-        var fwdNorm = sqrt(fwdX * fwdX + fwdY * fwdY + fwdZ * fwdZ)
-
-        // Degenerate case: device-Y nearly parallel to gravity → use device-X instead
-        if (fwdNorm < 1e-3f) {
-            Log.d(TAG, "computeVehicleBasis: device-Y parallel to gravity, using device-X as forward")
-            val xDotG = g[0]
-            fwdX = 1f - xDotG * g[0]
-            fwdY = 0f - xDotG * g[1]
-            fwdZ = 0f - xDotG * g[2]
-            fwdNorm = sqrt(fwdX * fwdX + fwdY * fwdY + fwdZ * fwdZ)
-        }
-
-        if (fwdNorm < 1e-3f) {
-            Log.w(TAG, "computeVehicleBasis: could not compute forward axis")
-            gUnitBasis = null; fwdUnit = null; latUnit = null
-            return
-        }
-
-        val fwd = floatArrayOf(fwdX / fwdNorm, fwdY / fwdNorm, fwdZ / fwdNorm)
-
-        // Lateral = ĝ × fwd (cross product)
-        val lat = floatArrayOf(
-            g[1] * fwd[2] - g[2] * fwd[1],
-            g[2] * fwd[0] - g[0] * fwd[2],
-            g[0] * fwd[1] - g[1] * fwd[0]
-        )
-
-        gUnitBasis = g
-        fwdUnit = fwd
-        latUnit = lat
-        Log.d(TAG, "Vehicle basis: ĝ=[%.3f,%.3f,%.3f] fwd=[%.3f,%.3f,%.3f] lat=[%.3f,%.3f,%.3f]".format(
-            g[0], g[1], g[2], fwd[0], fwd[1], fwd[2], lat[0], lat[1], lat[2]
-        ))
     }
 
     private fun computeAccelMetrics(speedKmph: Float = 0f): AccelMetrics? {
+        val engine = metricsEngine ?: return null
         synchronized(accelLock) {
             if (accelBuffer.isEmpty()) return null
-
-            // Capture raw data (copy of current buffer)
-            val rawData = accelBuffer.toList()
-
-            // Step 1: Remove gravity/static offset from ALL axes (detrend)
-            // Physics: The mean acceleration over a window approximates the gravity vector,
-            // since transient vehicle motion averages out over many samples.
-            // Subtracting this bias removes the static gravity component and mount-angle
-            // dependency, so RMS/magnitude metrics reflect only dynamic road vibration.
-            val biasX = accelBuffer.map { it[0] }.average().toFloat()
-            val biasY = accelBuffer.map { it[1] }.average().toFloat()
-            val biasZ = accelBuffer.map { it[2] }.average().toFloat()
-
-            val detrended = accelBuffer.map {
-                floatArrayOf(it[0] - biasX, it[1] - biasY, it[2] - biasZ)
-            }
-
-            // Compute gravity unit vector from per-window bias (estimated gravity direction)
-            // Physics: bias ≈ gravity vector in device frame; normalizing gives vertical axis
-            // This adapts automatically to any phone orientation without manual calibration
-            val biasNorm = sqrt(biasX * biasX + biasY * biasY + biasZ * biasZ)
-            val gUnit = if (biasNorm > 1e-3f) {
-                floatArrayOf(biasX / biasNorm, biasY / biasNorm, biasZ / biasNorm)
-            } else {
-                null
-            }
-
-            // Step 2: Apply two different moving average filters
-            // Small window for accel metrics (road quality)
-            val smoothedAccel = applyMovingAverage(detrended, calibration.movingAverageWindow.coerceAtLeast(1))
-            // Large window for driver metrics (event detection)
-            val smoothedDriver = applyMovingAverage(detrended, MOVING_AVG_WINDOW)
-
-            // Step 3: Decompose into vehicle-frame axes and compute metrics
-            // Vehicle basis is always computed in startRecording() from live gravity capture
-            val useG = gUnitBasis
-            val useFwd = fwdUnit
-            val useLat = latUnit
-
-            // Accumulator variables — vertical-only for classification metrics
-            var sumX = 0f          // Sum of X-axis accelerations (device frame)
-            var sumY = 0f          // Sum of Y-axis accelerations (device frame)
-            var sumZ = 0f          // Sum of Z-axis accelerations (device frame)
-            var sumVert = 0f       // Sum of vertical accelerations (gravity-aligned)
-            var sumSqVert = 0f     // Sum of squared vertical accelerations
-            var vertSumSquares = 0f // Sum of squared vertical accelerations (duplicate name fix)
-            var vertMaxMag = 0f   // Maximum vertical magnitude
-            var aboveZThresholdCount = 0  // Count of samples exceeding vertical threshold
-            val vertMagnitudes = mutableListOf<Float>()  // |aVert| values (for stdDev)
-
-            // Forward/lateral accumulators
-            var fwdSumSquares = 0f
-            var fwdMaxMag = 0f
-            var fwdSum = 0f
-            var latSumSquares = 0f
-            var latMaxMag = 0f
-            var latSum = 0f
-
-            // Process accel metrics with small window
-            smoothedAccel.forEach { values ->
-                // Accumulate component-wise sums for mean calculations
-                sumX += values[0]
-                sumY += values[1]
-                sumZ += values[2]
-
-                // Vertical acceleration: Project 3D acceleration onto gravity direction
-                // Physics: aVert = a · ĝ (dot product) isolates motion along vertical axis
-                val aVert = if (useG != null) {
-                    values[0] * useG[0] + values[1] * useG[1] + values[2] * useG[2]
-                } else {
-                    values[2]
-                }
-                sumVert += aVert
-
-                // Vertical magnitude for RMS/max/stdDev (replaces 3D magnitude)
-                val absVert = kotlin.math.abs(aVert)
-                vertMagnitudes.add(absVert)
-                if (absVert > vertMaxMag) vertMaxMag = absVert
-                vertSumSquares += aVert * aVert
-
-                // Peak ratio: Count samples where vertical acceleration exceeds threshold
-                if (absVert >= calibration.peakThresholdZ) {
-                    aboveZThresholdCount++
-                }
-            }
-
-            // Process driver metrics with large window
-            val fwdValuesList = mutableListOf<Float>()
-            val latValuesList = mutableListOf<Float>()
-            smoothedDriver.forEach { values ->
-                // Forward acceleration: a · ŷ_fwd
-                if (useFwd != null) {
-                    val aFwd = values[0] * useFwd[0] + values[1] * useFwd[1] + values[2] * useFwd[2]
-                    fwdSum += aFwd
-                    fwdSumSquares += aFwd * aFwd
-                    val absFwd = kotlin.math.abs(aFwd)
-                    if (absFwd > fwdMaxMag) fwdMaxMag = absFwd
-                    fwdValuesList.add(aFwd)
-                }
-
-                // Lateral acceleration: a · x̂_lat
-                if (useLat != null) {
-                    val aLat = values[0] * useLat[0] + values[1] * useLat[1] + values[2] * useLat[2]
-                    latSum += aLat
-                    latSumSquares += aLat * aLat
-                    val absLat = kotlin.math.abs(aLat)
-                    if (absLat > latMaxMag) latMaxMag = absLat
-                    latValuesList.add(aLat)
-                }
-            }
-
-            // Calculate statistical metrics from accumulated values
-            val count = smoothedAccel.size
-            val driverCount = smoothedDriver.size
-
-            // Mean accelerations
-            val meanX = sumX / count
-            val meanY = sumY / count
-            val meanZ = sumZ / count
-            val meanVert = sumVert / count
-
-            // Vertical RMS (replaces 3D RMS): sqrt(mean(aVert²))
-            // Now immune to longitudinal accel/decel
-            val rmsVert = kotlin.math.sqrt(vertSumSquares / count)
-
-            // maxMagnitude is now vertical-only peak
-            val maxMagnitude = vertMaxMag
-
-            // Peak ratio: Fraction of samples exceeding vertical threshold
-            val peakRatio = aboveZThresholdCount.toFloat() / count.toFloat()
-
-            // Standard deviation of vertical magnitude
-            val meanMagnitudeVert = vertMagnitudes.average().toFloat()
-            val variance = vertMagnitudes.map { (it - meanMagnitudeVert) * (it - meanMagnitudeVert) }.average().toFloat()
-            val stdDevVert = kotlin.math.sqrt(variance)
-
-            // Forward/lateral metrics (using driver count for proper averaging)
-            val fwdRms = if (useFwd != null && driverCount > 0) kotlin.math.sqrt(fwdSumSquares / driverCount) else 0f
-            val fwdMean = if (useFwd != null && driverCount > 0) fwdSum / driverCount else 0f
-            val fwdMax = fwdMaxMag
-            val latRms = if (useLat != null && driverCount > 0) kotlin.math.sqrt(latSumSquares / driverCount) else 0f
-            val latMean = if (useLat != null && driverCount > 0) latSum / driverCount else 0f
-            val latMax = latMaxMag
-
-            // Signed RMS: apply sign of mean to indicate dominant direction
-            // Positive signedFwdRms = accelerating, negative = braking
-            // Positive signedLatRms = rightward, negative = leftward
-            val signedFwdRms = if (fwdMean != 0f) Math.copySign(fwdRms, fwdMean) else fwdRms
-            val signedLatRms = if (latMean != 0f) Math.copySign(latRms, latMean) else latRms
-
-            // Lean angle: rotation of per-window gravity away from baseline, in lateral plane
-            // Uses atan2(lateral_component, vertical_component) of per-window gravity
-            // projected onto baseline vehicle axes
-            val leanAngleDeg = run {
-                if (biasNorm > 1e-3f && useLat != null && useG != null) {
-                    val wgX = biasX / biasNorm
-                    val wgY = biasY / biasNorm
-                    val wgZ = biasZ / biasNorm
-                    val latComp = wgX * useLat[0] + wgY * useLat[1] + wgZ * useLat[2]
-                    val vertComp = wgX * useG[0] + wgY * useG[1] + wgZ * useG[2]
-                    Math.toDegrees(kotlin.math.atan2(latComp.toDouble(), vertComp.toDouble())).toFloat()
-                } else 0f
-            }
-
-            // Step 3b: Push instantaneous metrics to history ring buffer and compute averages
-            // The moving average over recent GPS fixes smooths out noise for road quality
-            metricsHistory.addLast(FixMetrics(rmsVert, maxMagnitude, meanMagnitudeVert, stdDevVert, peakRatio))
-            val windowSize = calibration.qualityWindowSize.coerceAtLeast(1)
-            while (metricsHistory.size > windowSize) metricsHistory.removeFirst()
-
-            val avgRms = metricsHistory.map { it.rmsVert }.average().toFloat()
-            val avgMaxMagnitude = metricsHistory.map { it.maxMagnitude }.average().toFloat()
-            val avgMeanMagnitude = metricsHistory.map { it.meanMagnitudeVert }.average().toFloat()
-            val avgStdDev = metricsHistory.map { it.stdDevVert }.average().toFloat()
-            val avgPeakRatio = metricsHistory.map { it.peakRatio }.average().toFloat()
-
-            // Step 4 & 5: Skip road quality classification and feature detection at very low speeds
-            // to prevent false positives from walking, idling, or handling the device
-            val MIN_SPEED_FOR_DETECTION = 6f // km/h
-
-            val roadQuality: String?
-            val feature: String?
-
-            if (speedKmph < MIN_SPEED_FOR_DETECTION) {
-                roadQuality = null
-                feature = null
-            } else {
-                // Classify road quality using AVERAGED vertical metrics (smooth/average/rough)
-                roadQuality = when {
-                    avgRms < calibration.rmsSmoothMax &&
-                    avgStdDev < calibration.stdDevSmoothMax -> "smooth"
-
-                    avgRms >= calibration.rmsRoughMin &&
-                    avgStdDev >= calibration.stdDevRoughMin -> "rough"
-
-                    else -> "average"
-                }
-
-                // Detect features using INSTANTANEOUS vertical metrics
-                // First check for speed hump pattern (before general severe detection)
-                val speedHumpFeature = if (rawData.isNotEmpty()) {
-                    val rawVertAccel = mutableListOf<Float>()
-                    val useG = gUnitBasis
-                    
-                    for (values in smoothedAccel) {
-                        val aVert = if (useG != null) {
-                            values[0] * useG[0] + values[1] * useG[1] + values[2] * useG[2]
-                        } else {
-                            values[2] // Fallback to Z-axis
-                        }
-                        rawVertAccel.add(aVert)
-                    }
-                    
-                    detectSpeedHumpPattern(
-                        rawVertAccel = rawVertAccel,
-                        fwdMax = fwdMax,
-                        speed = speedKmph,
-                        samplingRate = 100f // 10ms intervals = 100 Hz
-                    )
-                } else null
-                
-                // If speed hump detected, use that; otherwise fall back to general detection
-                feature = speedHumpFeature ?: detectFeatureFromMetrics(
-                    rms = rmsVert,
-                    magMax = maxMagnitude,
-                    peakRatio = peakRatio
-                )
-            }
-
+            val bufferCopy = accelBuffer.toList()
             accelBuffer.clear()
-
-            // Calculate deltas from previous sample
-            val deltaSpeed = previousSample?.speedKmph?.let { prev -> 
-                speedKmph - prev.toFloat()
-            } ?: 0f
-            
-            val deltaCourse = previousSample?.bearingDegrees?.let { prev ->
-                val current = useG?.let { _ -> 0f } ?: 0f // Will be set in location callback
-                bearingDiff(prev, current)
-            } ?: 0f
-
-            return AccelMetrics(
-                meanX, meanY, meanZ, meanVert, maxMagnitude, meanMagnitudeVert, rmsVert,
-                peakRatio, stdDevVert,
-                avgRms, avgMaxMagnitude, avgMeanMagnitude, avgStdDev, avgPeakRatio,
-                roadQuality, feature, rawData,
-                fwdRms, fwdMax, fwdMean, latRms, latMax, latMean,
-                signedFwdRms, signedLatRms, leanAngleDeg,
-                deltaSpeed, deltaCourse,
-                fwdValuesList, latValuesList
-            )
+            val result = engine.computeAccelMetrics(bufferCopy, speedKmph, vehicleBasis, metricsHistory)
+            return result
         }
-    }
-
-    private fun detectFeatureFromMetrics(
-        rms: Float,
-        magMax: Float,
-        peakRatio: Float
-    ): String? {
-        // Step 1: Gate on roughness to decide whether we even attempt feature detection.
-        if (rms <= calibration.rmsRoughMin) return null
-
-        // Step 2: Severity by MagMax (3D magnitude)
-        if (magMax > calibration.magMaxSevereMin) {
-            // Step 3: Severe refinement (pothole vs bump)
-            return if (peakRatio < calibration.peakRatioRoughMin) "pothole" else "bump"
-        }
-
-        
-        // No event
-        return null
-    }
-
-    private fun detectSpeedHumpPattern(
-        rawVertAccel: List<Float>,
-        fwdMax: Float,
-        speed: Float, // Current speed in km/h
-        samplingRate: Float = 100f // Updated to 100 Hz (10ms intervals)
-    ): String? {
-        // Data-driven thresholds based on Python analysis
-        val LOW_SPEED_THRESHOLD = 20.0f
-        
-        // Low speed thresholds (< 20 km/h) - from 75th percentile analysis
-        val LOW_SPEED_AMPLITUDE = 10.0f
-        val LOW_SPEED_MIN_PEAKS = 8
-        
-        // High speed thresholds (≥ 20 km/h) - from 75th percentile analysis
-        val HIGH_SPEED_AMPLITUDE = 12.0f
-        val HIGH_SPEED_MIN_PEAKS = 12
-        
-        // Common thresholds
-        val MAX_DURATION = 8.0f // seconds (for actual 6-7 second raw data windows)
-        val DECAY_RATIO_THRESHOLD = 0.7f
-        val MIN_ZERO_CROSSINGS = 20
-        
-        // Choose appropriate thresholds based on speed
-        val (minAmplitude, minPeaks) = if (speed < LOW_SPEED_THRESHOLD) {
-            Pair(LOW_SPEED_AMPLITUDE, LOW_SPEED_MIN_PEAKS)
-        } else {
-            Pair(HIGH_SPEED_AMPLITUDE, HIGH_SPEED_MIN_PEAKS)
-        }
-        
-        // Gate 1: Minimum number of peaks (removed fwdMax and RMS gates)
-        val peaks = mutableListOf<Float>()
-        
-        for (i in 1 until rawVertAccel.size - 1) {
-            val current = rawVertAccel[i]
-            val prev = rawVertAccel[i - 1]
-            val next = rawVertAccel[i + 1]
-            
-            // Peak detection: current > prev and current > next and above threshold
-            if (current > prev && current > next && kotlin.math.abs(current) > 5.0f) {
-                peaks.add(current)
-            }
-        }
-        
-        if (peaks.size < minPeaks) return null
-        
-        // Gate 2: Zero crossings (must have oscillations)
-        var zeroCrossings = 0
-        for (i in 1 until rawVertAccel.size) {
-            if (rawVertAccel[i - 1] * rawVertAccel[i] < 0) { // Sign change
-                zeroCrossings++
-            }
-        }
-        
-        if (zeroCrossings < MIN_ZERO_CROSSINGS) return null
-        
-        // Gate 3: Duration check
-        val duration = (rawVertAccel.size / samplingRate)
-        if (duration > MAX_DURATION) return null
-        
-        // Gate 4: Peak-to-peak amplitude
-        if (peaks.isEmpty()) return null
-        
-        val maxPeak = peaks.maxOrNull() ?: return null
-        val minPeak = peaks.minOrNull() ?: return null
-        val peakToPeakAmplitude = maxPeak - minPeak
-        
-        if (peakToPeakAmplitude < minAmplitude) return null
-        
-        // Gate 5: Amplitude decay (characteristic of speed humps)
-        if (peaks.size >= 4) {
-            val midPoint = peaks.size / 2
-            val firstHalfPeaks = peaks.take(midPoint)
-            val secondHalfPeaks = peaks.drop(midPoint)
-            
-            if (firstHalfPeaks.isNotEmpty() && secondHalfPeaks.isNotEmpty()) {
-                val firstHalfAvg = firstHalfPeaks.map { kotlin.math.abs(it) }.average()
-                val secondHalfAvg = secondHalfPeaks.map { kotlin.math.abs(it) }.average()
-                val decayRatio = if (firstHalfAvg > 0) secondHalfAvg / firstHalfAvg else 1.0
-                
-                if (decayRatio > DECAY_RATIO_THRESHOLD) return null
-            }
-        }
-        
-        // All speed bump criteria met
-        return "speed_bump"
-    }
-
-    private fun bearingDiff(c1: Float, c2: Float): Float {
-        var d = c2 - c1
-        while (d > 180f) d -= 360f
-        while (d < -180f) d += 360f
-        return d
-    }
-
-    private fun classifyDriverEvent(
-        fwdMax: Float,
-        latMax: Float,
-        deltaSpeed: Float,
-        deltaCourse: Float,
-        speed: Float
-    ): List<String> {
-        val events = mutableListOf<String>()
-        
-        if (speed < MIN_SPEED_KMPH) {
-            return listOf("low_speed")
-        }
-
-        // Longitudinal events
-        if (fwdMax > HARD_BRAKE_FWD_MAX && deltaSpeed < 0) {
-            events.add("hard_brake")
-        }
-        if (fwdMax > HARD_ACCEL_FWD_MAX && deltaSpeed > 0) {
-            events.add("hard_accel")
-        }
-
-        // Lateral events
-        if (latMax > SWERVE_LAT_MAX) {
-            events.add("swerve")
-        }
-        if (latMax > AGGRESSIVE_CORNER_LAT_MAX && kotlin.math.abs(deltaCourse) > AGGRESSIVE_CORNER_DCOURSE) {
-            events.add("aggressive_corner")
-        }
-
-        if (events.isEmpty()) {
-            events.add("normal")
-        }
-        
-        return events
-    }
-
-    private fun computeSmoothnessScore(fwdRms: Float, latRms: Float): Float {
-        val combined = 0.2f * fwdRms + 0.8f * latRms
-        val score = maxOf(0f, 1f - combined / SMOOTHNESS_RMS_MAX) * 100f
-        return score
     }
 
     private fun computeDriverMetrics(accelMetrics: AccelMetrics, speed: Float): DriverMetrics {
-        val events = classifyDriverEvent(
-            accelMetrics.fwdMax,
-            accelMetrics.latMax,
-            accelMetrics.deltaSpeed,
-            accelMetrics.deltaCourse,
-            speed
-        )
-        
-        val priority = listOf("hard_brake", "swerve", "aggressive_corner", "hard_accel", "normal", "low_speed")
-        val primaryEvent = priority.first { it in events }
-        
-        val smoothness = computeSmoothnessScore(accelMetrics.fwdRms, accelMetrics.latRms)
-        
-        // Calculate jerk from signed RMS change
-        val jerk = previousSample?.driverMetrics?.let { prev ->
-            val currSigned = if (accelMetrics.fwdMean != 0f) 
-                Math.copySign(accelMetrics.fwdRms, accelMetrics.fwdMean) else accelMetrics.fwdRms
-            val prevSigned = prev.jerk // Using jerk as placeholder for previous signed RMS
-            kotlin.math.abs(currSigned - prevSigned)
-        } ?: 0f
-        
-        // Reaction time: time between first fwd spike and first lat spike (lat must follow fwd)
-        val reactionTimeMs: Float? = run {
-            val fwdValues = accelMetrics.fwdValues
-            val latValues = accelMetrics.latValues
-            if (fwdValues.isEmpty() || latValues.isEmpty()) return@run null
-            
-            val fwdSpikeIdx = fwdValues.indexOfFirst { kotlin.math.abs(it) > REACTION_TIME_BRAKE_MAX }
-            if (fwdSpikeIdx < 0) return@run null
-            
-            val latSpikeIdx = latValues.indexOfFirst { kotlin.math.abs(it) > REACTION_TIME_LAT_MAX }
-            if (latSpikeIdx < 0) return@run null
-            
-            val reactionSamples = latSpikeIdx - fwdSpikeIdx
-            // Only count if lat follows fwd, >= 100ms, and <= 3s
-            val samplingRate = 100f
-            val maxSamples = (3.0f * samplingRate).toInt()
-            if (reactionSamples in 10..maxSamples) {
-                (reactionSamples / samplingRate) * 1000f
-            } else null
-        }
-        
-        return DriverMetrics(events, primaryEvent, smoothness, jerk, reactionTimeMs)
+        val engine = metricsEngine ?: return DriverMetrics(listOf("normal"), "normal", 100f, 0f, null)
+        return engine.computeDriverMetrics(accelMetrics, speed, previousSample?.driverMetrics)
     }
 
-    private fun applyMovingAverage(data: List<FloatArray>, windowSize: Int): List<FloatArray> {
-        if (data.size < windowSize) return data
-        val result = mutableListOf<FloatArray>()
-        for (i in data.indices) {
-            val start = maxOf(0, i - windowSize / 2)
-            val end = minOf(data.size, i + windowSize / 2 + 1)
-            val window = data.subList(start, end)
-            val avgX = window.map { it[0] }.average().toFloat()
-            val avgY = window.map { it[1] }.average().toFloat()
-            val avgZ = window.map { it[2] }.average().toFloat()
-            result.add(floatArrayOf(avgX, avgY, avgZ))
-        }
-        return result
+    private fun bearingDiff(c1: Float, c2: Float): Float {
+        val engine = metricsEngine ?: return c2 - c1
+        return engine.bearingDiff(c1, c2)
     }
 
     private fun applyDistanceAccuracyConfigFromManifest() {
@@ -838,6 +329,7 @@ class TrackingService : Service() {
                 roadCalibrationMode = settings.roadCalibrationMode
                 currentIntervalSeconds = settings.intervalSeconds
                 calibration = settings.calibration
+                metricsEngine = MetricsEngine(calibration)
 
                 // Force-capture gravity vector from accelerometer (assumes stationary at start)
                 // Temporarily register listener, collect samples, then unregister.
@@ -891,7 +383,8 @@ class TrackingService : Service() {
                     outputFormat = settings.outputFormat,
                     calibration = calibration,  // Use updated calibration with newly captured gravity
                     profileName = settings.currentProfileName,
-                    baseGravityVector = capturedGravityVector?.copyOf()
+                    baseGravityVector = capturedGravityVector?.copyOf(),
+                    driverThresholds = metricsEngine?.thresholds ?: MetricsEngine.DriverThresholds()
                 )
                 val handle = runCatching { fileStore.createTrackOutputStream(settings, pendingTrackName) }.getOrNull()
                     ?: run {

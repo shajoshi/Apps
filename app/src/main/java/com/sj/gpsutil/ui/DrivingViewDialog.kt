@@ -2,6 +2,10 @@ package com.sj.gpsutil.ui
 
 import android.content.Context
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -16,12 +20,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +62,9 @@ import com.sj.gpsutil.tracking.TrackingService
 import com.sj.gpsutil.tracking.TrackingState
 import com.sj.gpsutil.tracking.TrackingStatus
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.min
+import kotlin.math.sqrt
 
 private val AccelGreen = Color(0xFF4CAF50)
 private val BrakeRed = Color(0xFFF44336)
@@ -71,7 +83,43 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
     val latestSample by TrackingState.latestSample.collectAsState()
     val driverEventCount by TrackingState.driverEventCount.collectAsState()
     val trackingStatus by TrackingState.status.collectAsState()
-    
+
+    // --- Live accelerometer lean angle (active even before recording) ---
+    var liveLeanAngle by remember { mutableFloatStateOf(0f) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        // Simple low-pass filter for smooth lean display
+        val alpha = 0.15f
+        var filtX = 0f; var filtY = 0f; var filtZ = 0f; var initialized = false
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
+                val ax = event.values[0]; val ay = event.values[1]; val az = event.values[2]
+                if (!initialized) {
+                    filtX = ax; filtY = ay; filtZ = az; initialized = true
+                } else {
+                    filtX += alpha * (ax - filtX)
+                    filtY += alpha * (ay - filtY)
+                    filtZ += alpha * (az - filtZ)
+                }
+                // Lean angle: angle of gravity vector projected onto X-Z plane from vertical
+                // For a phone mounted upright, Y is forward, X is lateral, Z is vertical-ish
+                // Lean = atan2(gx, gz) gives tilt from vertical in the lateral plane
+                val lean = Math.toDegrees(atan2(filtX.toDouble(), filtZ.toDouble())).toFloat()
+                liveLeanAngle = lean.coerceIn(-MAX_LEAN_ANGLE, MAX_LEAN_ANGLE)
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        accelerometer?.let {
+            sensorManager.registerListener(listener, it, SensorManager.SENSOR_DELAY_UI)
+        }
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+
     // Use a state that updates continuously for elapsed time during active recording
     var currentElapsedMillis by remember { mutableStateOf(0L) }
     
@@ -113,21 +161,22 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
         val steps = 60
         val stepDelay = 30L
 
-        // Phase 1: Sweep needle from 0 → +90 (right)
+        val testDialLimit = 40f
+        // Phase 1: Sweep needle from 0 → +40 (right)
         for (i in 0..steps) {
-            testLean = (i.toFloat() / steps) * MAX_LEAN_ANGLE
+            testLean = (i.toFloat() / steps) * testDialLimit
             testSpeed = (i.toFloat() / steps) * 120.0f
             testAltitude = 500f + (i.toFloat() / steps) * 500f
             delay(stepDelay)
         }
-        // Phase 2: Sweep needle from +90 → -90 (right to left)
+        // Phase 2: Sweep needle from +40 → -40 (right to left)
         for (i in 0..steps * 2) {
-            testLean = MAX_LEAN_ANGLE - (i.toFloat() / steps) * MAX_LEAN_ANGLE
+            testLean = testDialLimit - (i.toFloat() / steps) * testDialLimit
             delay(stepDelay)
         }
-        // Phase 3: Sweep needle from -90 → 0 (settle)
+        // Phase 3: Sweep needle from -40 → 0 (settle)
         for (i in 0..steps) {
-            testLean = -MAX_LEAN_ANGLE + (i.toFloat() / steps) * MAX_LEAN_ANGLE
+            testLean = -testDialLimit + (i.toFloat() / steps) * testDialLimit
             delay(stepDelay)
         }
 
@@ -183,7 +232,7 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
     // --- Effective display values (test overrides real) ---
     val signedFwdRms = if (testMode) testFwd else (latestSample?.accelSignedFwdRms ?: 0f)
     val signedLatRms = if (testMode) testLat else (latestSample?.accelSignedLatRms ?: 0f)
-    val leanAngle = if (testMode) testLean else (latestSample?.accelLeanAngleDeg ?: 0f)
+    val leanAngle = if (testMode) testLean else (latestSample?.accelLeanAngleDeg ?: liveLeanAngle)
     val speed = if (testMode) testSpeed.toDouble() else (latestSample?.speedKmph ?: 0.0)
     val smoothness = if (testMode) testSmoothness else (latestSample?.driverMetrics?.smoothnessScore ?: 0f)
     val displayAltitude: Double? = if (testMode) testAltitude.toDouble() else latestSample?.altitudeMeters
@@ -192,12 +241,22 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
     // Driver event display state (10s timeout or until next event)
     var currentEvent by remember { mutableStateOf<String?>(null) }
     val currentPrimaryEvent = if (testMode) testEvent else latestSample?.driverMetrics?.primaryEvent
+    var eventGeneration by remember { mutableIntStateOf(0) }
     
     LaunchedEffect(currentPrimaryEvent) {
         if (currentPrimaryEvent != null && currentPrimaryEvent != "normal" && currentPrimaryEvent != "low_speed") {
             currentEvent = currentPrimaryEvent
+            eventGeneration++
+        } else {
+            // Non-interesting event arrived — start fade-out if something is showing
+        }
+    }
+    
+    LaunchedEffect(eventGeneration) {
+        if (currentEvent != null) {
+            val gen = eventGeneration
             delay(10_000)
-            if (currentEvent == currentPrimaryEvent) {
+            if (eventGeneration == gen) {
                 currentEvent = null
             }
         }
@@ -206,12 +265,20 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
     // Road feature display state (10s timeout or until next feature)
     var currentFeature by remember { mutableStateOf<String?>(null) }
     val latestFeature = if (testMode) testFeature else latestSample?.featureDetected
+    var featureGeneration by remember { mutableIntStateOf(0) }
     
     LaunchedEffect(latestFeature) {
         if (latestFeature != null) {
             currentFeature = latestFeature
+            featureGeneration++
+        }
+    }
+    
+    LaunchedEffect(featureGeneration) {
+        if (currentFeature != null) {
+            val gen = featureGeneration
             delay(10_000)
-            if (currentFeature == latestFeature) {
+            if (featureGeneration == gen) {
                 currentFeature = null
             }
         }
@@ -253,59 +320,55 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
                     Text("Back", color = TextWhite)
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                Button(
-                    onClick = {
-                        sendDrivingAction(context, TrackingService.ACTION_START)
-                    },
+                IconButton(
+                    onClick = { sendDrivingAction(context, TrackingService.ACTION_START) },
                     enabled = trackingStatus != TrackingStatus.Recording,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CAF50)
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = Color(0xFF4CAF50),
+                        disabledContentColor = Color.Gray
                     )
                 ) {
-                    Text("Start")
+                    Icon(Icons.Filled.PlayArrow, contentDescription = "Start", modifier = Modifier.size(32.dp))
                 }
-                OutlinedButton(
-                    onClick = {
-                        sendDrivingAction(context, TrackingService.ACTION_PAUSE)
-                    },
+                IconButton(
+                    onClick = { sendDrivingAction(context, TrackingService.ACTION_PAUSE) },
                     enabled = trackingStatus == TrackingStatus.Recording,
-                    border = BorderStroke(1.dp, if (trackingStatus == TrackingStatus.Recording) Color(0xFFFF9800) else Color.Gray)
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = Color(0xFFFF9800),
+                        disabledContentColor = Color.Gray
+                    )
                 ) {
-                    Text("Pause", color = if (trackingStatus == TrackingStatus.Recording) Color(0xFFFF9800) else Color.Gray)
+                    Icon(Icons.Filled.Pause, contentDescription = "Pause", modifier = Modifier.size(32.dp))
                 }
-                OutlinedButton(
-                    onClick = {
-                        sendDrivingAction(context, TrackingService.ACTION_STOP)
-                    },
+                IconButton(
+                    onClick = { sendDrivingAction(context, TrackingService.ACTION_STOP) },
                     enabled = trackingStatus != TrackingStatus.Idle,
-                    border = BorderStroke(1.dp, if (trackingStatus != TrackingStatus.Idle) Color.Red else Color.Gray)
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = Color.Red,
+                        disabledContentColor = Color.Gray
+                    )
                 ) {
-                    Text("Stop", color = if (trackingStatus != TrackingStatus.Idle) Color.Red else Color.Gray)
+                    Icon(Icons.Filled.Stop, contentDescription = "Stop", modifier = Modifier.size(32.dp))
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Speed and altitude display
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.Center
-            ) {
+            // Speed display
+            Text(
+                "${"%.0f".format(speed)} km/h",
+                style = MaterialTheme.typography.headlineMedium,
+                color = TextWhite,
+                fontWeight = FontWeight.Bold
+            )
+            // Altitude display (same font size as speed)
+            displayAltitude?.let { alt ->
                 Text(
-                    "${"%.1f".format(speed)} km/h",
+                    "${"%.0f".format(alt)} m",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = TextWhite,
+                    color = Color(0xFFFF9800),
                     fontWeight = FontWeight.Bold
                 )
-                displayAltitude?.let { alt ->
-                    Text(
-                        "  ${"%.0f".format(alt)}m",
-                        color = Color(0xFFFF9800),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -319,17 +382,18 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 // Semi-circular lean angle gauge (reusable component)
+                val dialLimit = 40f
                 SemiCircularGauge(
                     config = GaugeConfig(
-                        value = leanAngle,
-                        minValue = -MAX_LEAN_ANGLE,
-                        maxValue = MAX_LEAN_ANGLE,
+                        value = leanAngle.coerceIn(-dialLimit, dialLimit),
+                        minValue = -dialLimit,
+                        maxValue = dialLimit,
                         label = "LEAN",
                         unit = "°",
                         centerIsZero = true,
                         scale = 0.75f,
-                        tickInterval = 10,
-                        majorTickInterval = 30
+                        tickInterval = 5,
+                        majorTickInterval = 10
                     ),
                     modifier = Modifier.fillMaxSize()
                 )
@@ -482,6 +546,7 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
                 // Driver event (right)
                 currentEvent?.let { event ->
                     val (label, color) = when (event) {
+                        "fall" -> "FALL!" to Color(0xFFFF0000)
                         "hard_brake" -> "Hard Brake" to Color.Red
                         "hard_accel" -> "Hard Accel" to Color(0xFFFF9800)
                         "swerve" -> "Swerve" to Color(0xFFE91E63)
@@ -514,7 +579,7 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
             ) {
                 MetricLabel("Events", displayEventCount.toFloat(), Color.White, suffix = "", showDecimals = false)
                 MetricLabel("Time", 0f, Color.White, suffix = String.format("%d:%02d", minutes, seconds), showValue = false)
-                MetricLabel("Smooth", smoothness, smoothnessColor, suffix = "")
+                MetricLabel("Smooth", smoothness, smoothnessColor, suffix = "", showDecimals = false)
             }
             
             // Bottom numeric summary
@@ -523,9 +588,12 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                MetricLabel("Fwd RMS", signedFwdRms, if (signedFwdRms >= 0) AccelGreen else BrakeRed)
-                MetricLabel("Lat RMS", signedLatRms, LateralYellow)
-                MetricLabel("Lean", leanAngle, PointerBlue, suffix = "°")
+                val zRms = latestSample?.accelRMS ?: 0f
+                val zPeak = latestSample?.accelMagnitudeMax ?: 0f
+                val zStdDev = latestSample?.stdDev ?: 0f
+                MetricLabel("Z RMS", zRms, Color.Cyan, suffix = "", decimals = 1)
+                MetricLabel("Z Peak", zPeak, Color.Cyan, suffix = "", decimals = 1)
+                MetricLabel("StdDev Z", zStdDev, Color.Cyan, suffix = "", decimals = 1)
             }
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -533,11 +601,17 @@ fun DrivingViewDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun MetricLabel(label: String, value: Float, color: Color, suffix: String = " m/s²", showDecimals: Boolean = true, showValue: Boolean = true) {
+private fun MetricLabel(label: String, value: Float, color: Color, suffix: String = " m/s²", showDecimals: Boolean = true, showValue: Boolean = true, decimals: Int? = null) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, color = Color.Gray, fontSize = 16.sp)
+        val fmt = when {
+            !showValue -> suffix
+            decimals != null -> "${"%.${decimals}f".format(value)}$suffix"
+            showDecimals -> "${"%.2f".format(value)}$suffix"
+            else -> "${"%.0f".format(value)}$suffix"
+        }
         Text(
-            if (showValue) "${if (showDecimals) "%.2f".format(value) else "%.0f".format(value)}$suffix" else suffix,
+            fmt,
             color = color,
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold

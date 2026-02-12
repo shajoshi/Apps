@@ -16,5 +16,6 @@ data class RecordingSettingsSnapshot(
     val outputFormat: OutputFormat,
     val calibration: CalibrationSettings,
     val profileName: String?,
-    val baseGravityVector: FloatArray? = null
+    val baseGravityVector: FloatArray? = null,
+    val driverThresholds: MetricsEngine.DriverThresholds = MetricsEngine.DriverThresholds()
 )

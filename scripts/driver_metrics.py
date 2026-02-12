@@ -29,12 +29,12 @@ from typing import Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 # THRESHOLDS — tune these with real data
 # ---------------------------------------------------------------------------
-HARD_BRAKE_FWD_MAX = 35      # m/s² — forward accel threshold for hard braking
-HARD_ACCEL_FWD_MAX = 35     # m/s² — forward accel threshold for hard acceleration
-REACTION_TIME_BRAKE_MAX = 20
-REACTION_TIME_LAT_MAX = 15
-SWERVE_LAT_MAX = 15            # m/s² — lateral accel threshold for swerve event
-AGGRESSIVE_CORNER_LAT_MAX = 15 # m/s² — lateral threshold during cornering
+HARD_BRAKE_FWD_MAX = 15      # m/s² — forward accel threshold for hard braking
+HARD_ACCEL_FWD_MAX = 15     # m/s² — forward accel threshold for hard acceleration
+REACTION_TIME_BRAKE_MAX = 15
+REACTION_TIME_LAT_MAX = 4
+SWERVE_LAT_MAX = 4          # m/s² — lateral accel threshold for swerve event
+AGGRESSIVE_CORNER_LAT_MAX = 4 # m/s² — lateral threshold during cornering
 AGGRESSIVE_CORNER_DCOURSE = 15.0 # degrees — minimum bearing change for cornering
 MIN_SPEED_KMPH = 6.0            # km/h — ignore events below this speed
 SAMPLING_RATE = 100.0           # Hz — raw accelerometer sampling rate
