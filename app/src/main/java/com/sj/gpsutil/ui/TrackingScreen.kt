@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,34 +83,9 @@ fun TrackingScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
     val distanceMeters by TrackingState.distanceMeters.collectAsState()
     val notMovingMillis by TrackingState.notMovingMillis.collectAsState()
     val skippedPoints by TrackingState.skippedPoints.collectAsState()
-    var pendingStart by remember { mutableStateOf(false) }
     var showTrackNameDialog by remember { mutableStateOf(false) }
     var showDrivingView by rememberSaveable { mutableStateOf(true) }
     var trackNameInput by remember { mutableStateOf("") }
-    val requiredPermissions = remember {
-        buildList {
-            add(Manifest.permission.ACCESS_FINE_LOCATION)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
-
-    val permissionsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        val granted = requiredPermissions.all { permission ->
-            result[permission] == true
-        }
-        if (pendingStart && granted) {
-            if (settingsState.roadCalibrationMode) {
-                showTrackNameDialog = true
-            } else {
-                sendTrackingAction(context, TrackingService.ACTION_START)
-            }
-        }
-        pendingStart = false
-    }
 
     suspend fun <T> Task<T>.awaitOrNull(): T? = suspendCancellableCoroutine { cont ->
         addOnSuccessListener { cont.resume(it) }
@@ -179,10 +152,7 @@ fun TrackingScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
             TrackingDetailsControlBar(
                 trackingStatus = status,
                 settingsState = settingsState,
-                requiredPermissions = requiredPermissions,
                 context = context,
-                permissionsLauncher = permissionsLauncher,
-                onPendingStart = { pendingStart = true },
                 onShowTrackNameDialog = { trackNameInput = ""; showTrackNameDialog = true },
                 onShowDrivingView = { showDrivingView = true },
                 onNavigate = onNavigate
@@ -484,10 +454,7 @@ private fun formatSeconds(totalSeconds: Long): String {
 private fun TrackingDetailsControlBar(
     trackingStatus: TrackingStatus,
     settingsState: TrackingSettings,
-    requiredPermissions: List<String>,
     context: Context,
-    permissionsLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>,
-    onPendingStart: () -> Unit,
     onShowTrackNameDialog: () -> Unit,
     onShowDrivingView: () -> Unit,
     onNavigate: (AppDestinations) -> Unit
@@ -531,14 +498,7 @@ private fun TrackingDetailsControlBar(
         ) {
             IconButton(
                 onClick = {
-                    val missing = requiredPermissions.filterNot { permission ->
-                        ContextCompat.checkSelfPermission(context, permission) ==
-                            PackageManager.PERMISSION_GRANTED
-                    }
-                    if (missing.isNotEmpty()) {
-                        onPendingStart()
-                        permissionsLauncher.launch(missing.toTypedArray())
-                    } else if (settingsState.roadCalibrationMode && trackingStatus == TrackingStatus.Idle) {
+                    if (settingsState.roadCalibrationMode && trackingStatus == TrackingStatus.Idle) {
                         onShowTrackNameDialog()
                     } else {
                         sendTrackingAction(context, TrackingService.ACTION_START)

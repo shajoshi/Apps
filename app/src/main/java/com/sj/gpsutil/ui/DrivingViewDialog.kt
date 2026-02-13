@@ -88,10 +88,10 @@ fun DrivingView(onShowDetails: () -> Unit, onNavigate: (AppDestinations) -> Unit
     val latestSample by TrackingState.latestSample.collectAsState()
     val driverEventCount by TrackingState.driverEventCount.collectAsState()
     val trackingStatus by TrackingState.status.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // --- Live accelerometer lean angle (active even before recording) ---
     var liveLeanAngle by remember { mutableFloatStateOf(0f) }
-    val context = androidx.compose.ui.platform.LocalContext.current
     DisposableEffect(Unit) {
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -338,6 +338,7 @@ fun DrivingView(onShowDetails: () -> Unit, onNavigate: (AppDestinations) -> Unit
                         testMode = testMode,
                         trackingStatus = trackingStatus,
                         onTest = { testMode = true },
+                        onStart = { sendDrivingAction(context, TrackingService.ACTION_START) },
                         onShowDetails = onShowDetails,
                         onNavigate = onNavigate
                     )
@@ -389,6 +390,7 @@ fun DrivingView(onShowDetails: () -> Unit, onNavigate: (AppDestinations) -> Unit
                         testMode = testMode,
                         trackingStatus = trackingStatus,
                         onTest = { testMode = true },
+                        onStart = { sendDrivingAction(context, TrackingService.ACTION_START) },
                         onShowDetails = onShowDetails,
                         onNavigate = onNavigate
                     )
@@ -463,6 +465,7 @@ private fun ControlBar(
     testMode: Boolean,
     trackingStatus: TrackingStatus,
     onTest: () -> Unit,
+    onStart: () -> Unit,
     onShowDetails: () -> Unit,
     onNavigate: (AppDestinations) -> Unit
 ) {
@@ -511,7 +514,7 @@ private fun ControlBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { sendDrivingAction(context, TrackingService.ACTION_START) },
+                onClick = onStart,
                 enabled = trackingStatus != TrackingStatus.Recording,
                 modifier = Modifier.size(36.dp),
                 colors = IconButtonDefaults.iconButtonColors(

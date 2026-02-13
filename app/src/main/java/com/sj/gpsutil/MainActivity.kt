@@ -1,23 +1,38 @@
 package com.sj.gpsutil
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.sj.gpsutil.tracking.TrackingState
 import com.sj.gpsutil.tracking.TrackingStatus
 import com.sj.gpsutil.ui.SettingsScreen
@@ -40,6 +55,62 @@ class MainActivity : ComponentActivity() {
 @PreviewScreenSizes
 @Composable
 fun SJGpsUtilApp() {
+    val context = LocalContext.current
+    val requiredPermissions = remember {
+        buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    var permissionsGranted by rememberSaveable {
+        mutableStateOf(
+            requiredPermissions.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }
+        )
+    }
+
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        permissionsGranted = requiredPermissions.all { result[it] == true }
+    }
+
+    // Request permissions on first launch if not already granted
+    LaunchedEffect(Unit) {
+        if (!permissionsGranted) {
+            permissionsLauncher.launch(requiredPermissions.toTypedArray())
+        }
+    }
+
+    if (!permissionsGranted) {
+        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "SJ GPS Util needs location and notification permissions to function.",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Button(
+                    onClick = { permissionsLauncher.launch(requiredPermissions.toTypedArray()) },
+                    modifier = Modifier.padding(top = 16.dp)
+                ) {
+                    Text("Grant Permissions")
+                }
+            }
+        }
+        return
+    }
+
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.TRACKING) }
     val trackingStatus by TrackingState.status.collectAsState()
     val canOpenSettings = trackingStatus == TrackingStatus.Idle
