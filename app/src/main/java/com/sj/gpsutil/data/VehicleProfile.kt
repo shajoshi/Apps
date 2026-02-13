@@ -6,6 +6,7 @@ import com.google.gson.JsonSyntaxException
 data class VehicleProfile(
     val name: String,
     val calibration: CalibrationSettings,
+    val driverThresholds: DriverThresholdSettings = DriverThresholdSettings(),
     val createdAt: Long = System.currentTimeMillis(),
     val lastModified: Long = System.currentTimeMillis()
 ) {

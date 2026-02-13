@@ -13,6 +13,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -49,7 +51,9 @@ import com.sj.gpsutil.data.OutputFormat
 import com.sj.gpsutil.data.SettingsRepository
 import com.sj.gpsutil.data.TrackingSettings
 import com.sj.gpsutil.data.CalibrationSettings
+import com.sj.gpsutil.data.DriverThresholdSettings
 import com.sj.gpsutil.data.VehicleProfile
+import com.sj.gpsutil.AppDestinations
 import com.sj.gpsutil.data.VehicleProfileRepository
 import com.sj.gpsutil.data.MIN_INTERVAL_SECONDS
 import com.sj.gpsutil.tracking.TrackingState
@@ -63,7 +67,7 @@ import kotlin.math.sqrt
 private const val TAG = "SettingsScreen"
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val repository = remember { SettingsRepository(context) }
     val profileRepository = remember { VehicleProfileRepository(context) }
@@ -102,6 +106,17 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var stdDevRoughMin by remember(cal) { mutableStateOf(cal.stdDevRoughMin.toString()) }
     var magMaxSevereMin by remember(cal) { mutableStateOf(cal.magMaxSevereMin.toString()) }
     var qualityWindowSize by remember(cal) { mutableStateOf(cal.qualityWindowSize.toString()) }
+
+    // Driver threshold state (as strings for TextFields)
+    val dt = settings.driverThresholds
+    var dtHardBrakeFwdMax by remember(dt) { mutableStateOf(dt.hardBrakeFwdMax.toString()) }
+    var dtHardAccelFwdMax by remember(dt) { mutableStateOf(dt.hardAccelFwdMax.toString()) }
+    var dtSwerveLatMax by remember(dt) { mutableStateOf(dt.swerveLatMax.toString()) }
+    var dtAggressiveCornerLatMax by remember(dt) { mutableStateOf(dt.aggressiveCornerLatMax.toString()) }
+    var dtAggressiveCornerDCourse by remember(dt) { mutableStateOf(dt.aggressiveCornerDCourse.toString()) }
+    var dtMinSpeedKmph by remember(dt) { mutableStateOf(dt.minSpeedKmph.toString()) }
+    var dtSmoothnessRmsMax by remember(dt) { mutableStateOf(dt.smoothnessRmsMax.toString()) }
+    var dtFallLeanAngle by remember(dt) { mutableStateOf(dt.fallLeanAngle.toString()) }
 
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -163,7 +178,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         }
         val presetOptions = listOf(5L, 10L, 15L, 30L)
         Text("Quick select:")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        @OptIn(ExperimentalLayoutApi::class)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             presetOptions.forEach { seconds ->
                 OutlinedButton(onClick = {
                     intervalText = seconds.toString()
@@ -303,43 +319,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text("Output format:")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val currentFormat = settings.outputFormat
-            OutlinedButton(
-                onClick = {
-                    scope.launch(Dispatchers.IO) {
-                        repository.updateOutputFormat(OutputFormat.KML)
-                    }
-                    Toast.makeText(context, "Output format: KML", Toast.LENGTH_LONG).show()
-                },
-                enabled = currentFormat != OutputFormat.KML
-            ) {
-                Text("KML")
-            }
-            OutlinedButton(
-                onClick = {
-                    scope.launch(Dispatchers.IO) {
-                        repository.updateOutputFormat(OutputFormat.GPX)
-                    }
-                    Toast.makeText(context, "Output format: GPX", Toast.LENGTH_LONG).show()
-                },
-                enabled = currentFormat != OutputFormat.GPX
-            ) {
-                Text("GPX")
-            }
-            OutlinedButton(
-                onClick = {
-                    scope.launch(Dispatchers.IO) {
-                        repository.updateOutputFormat(OutputFormat.JSON)
-                    }
-                    Toast.makeText(context, "Output format: JSON", Toast.LENGTH_LONG).show()
-                },
-                enabled = currentFormat != OutputFormat.JSON
-            ) {
-                Text("JSON")
-            }
-        }
+        Text("Output format: JSON")
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -367,6 +347,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             currentProfileName = settings.currentProfileName,
             folderUri = settings.folderUri,
             initialValues = settings.calibration,
+            initialDriverThresholds = settings.driverThresholds,
             rmsSmoothMaxText = rmsSmoothMax,
             peakThresholdZText = peakThresholdZ,
             movingAverageWindowText = movingAverageWindow,
@@ -376,6 +357,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             stdDevRoughMinText = stdDevRoughMin,
             magMaxSevereMinText = magMaxSevereMin,
             qualityWindowSizeText = qualityWindowSize,
+            dtHardBrakeFwdMaxText = dtHardBrakeFwdMax,
+            dtHardAccelFwdMaxText = dtHardAccelFwdMax,
+            dtSwerveLatMaxText = dtSwerveLatMax,
+            dtAggressiveCornerLatMaxText = dtAggressiveCornerLatMax,
+            dtAggressiveCornerDCourseText = dtAggressiveCornerDCourse,
+            dtMinSpeedKmphText = dtMinSpeedKmph,
+            dtSmoothnessRmsMaxText = dtSmoothnessRmsMax,
+            dtFallLeanAngleText = dtFallLeanAngle,
             onValuesChange = { newVals ->
                 rmsSmoothMax = newVals.rmsSmoothMax
                 peakThresholdZ = newVals.peakThresholdZ
@@ -386,6 +375,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 stdDevRoughMin = newVals.stdDevRoughMin
                 magMaxSevereMin = newVals.magMaxSevereMin
                 qualityWindowSize = newVals.qualityWindowSize
+                dtHardBrakeFwdMax = newVals.dtHardBrakeFwdMax
+                dtHardAccelFwdMax = newVals.dtHardAccelFwdMax
+                dtSwerveLatMax = newVals.dtSwerveLatMax
+                dtAggressiveCornerLatMax = newVals.dtAggressiveCornerLatMax
+                dtAggressiveCornerDCourse = newVals.dtAggressiveCornerDCourse
+                dtMinSpeedKmph = newVals.dtMinSpeedKmph
+                dtSmoothnessRmsMax = newVals.dtSmoothnessRmsMax
+                dtFallLeanAngle = newVals.dtFallLeanAngle
             },
             onResetDefaults = {
                 val defaults = CalibrationSettings()
@@ -398,6 +395,15 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 stdDevRoughMin = defaults.stdDevRoughMin.toString()
                 magMaxSevereMin = defaults.magMaxSevereMin.toString()
                 qualityWindowSize = defaults.qualityWindowSize.toString()
+                val dtDefaults = DriverThresholdSettings()
+                dtHardBrakeFwdMax = dtDefaults.hardBrakeFwdMax.toString()
+                dtHardAccelFwdMax = dtDefaults.hardAccelFwdMax.toString()
+                dtSwerveLatMax = dtDefaults.swerveLatMax.toString()
+                dtAggressiveCornerLatMax = dtDefaults.aggressiveCornerLatMax.toString()
+                dtAggressiveCornerDCourse = dtDefaults.aggressiveCornerDCourse.toString()
+                dtMinSpeedKmph = dtDefaults.minSpeedKmph.toString()
+                dtSmoothnessRmsMax = dtDefaults.smoothnessRmsMax.toString()
+                dtFallLeanAngle = dtDefaults.fallLeanAngle.toString()
             },
             onLoadProfile = { profile ->
                 rmsSmoothMax = profile.calibration.rmsSmoothMax.toString()
@@ -409,6 +415,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 stdDevRoughMin = profile.calibration.stdDevRoughMin.toString()
                 magMaxSevereMin = profile.calibration.magMaxSevereMin.toString()
                 qualityWindowSize = profile.calibration.qualityWindowSize.toString()
+                dtHardBrakeFwdMax = profile.driverThresholds.hardBrakeFwdMax.toString()
+                dtHardAccelFwdMax = profile.driverThresholds.hardAccelFwdMax.toString()
+                dtSwerveLatMax = profile.driverThresholds.swerveLatMax.toString()
+                dtAggressiveCornerLatMax = profile.driverThresholds.aggressiveCornerLatMax.toString()
+                dtAggressiveCornerDCourse = profile.driverThresholds.aggressiveCornerDCourse.toString()
+                dtMinSpeedKmph = profile.driverThresholds.minSpeedKmph.toString()
+                dtSmoothnessRmsMax = profile.driverThresholds.smoothnessRmsMax.toString()
+                dtFallLeanAngle = profile.driverThresholds.fallLeanAngle.toString()
             },
             onDismiss = { showCalibration = false }
         )
@@ -423,6 +437,7 @@ private fun CalibrationDialog(
     currentProfileName: String?,
     folderUri: String?,
     initialValues: CalibrationSettings,
+    initialDriverThresholds: DriverThresholdSettings,
     rmsSmoothMaxText: String,
     peakThresholdZText: String,
     movingAverageWindowText: String,
@@ -432,6 +447,14 @@ private fun CalibrationDialog(
     stdDevRoughMinText: String,
     magMaxSevereMinText: String,
     qualityWindowSizeText: String,
+    dtHardBrakeFwdMaxText: String,
+    dtHardAccelFwdMaxText: String,
+    dtSwerveLatMaxText: String,
+    dtAggressiveCornerLatMaxText: String,
+    dtAggressiveCornerDCourseText: String,
+    dtMinSpeedKmphText: String,
+    dtSmoothnessRmsMaxText: String,
+    dtFallLeanAngleText: String,
     onValuesChange: (CalibrationTextValues) -> Unit,
     onResetDefaults: () -> Unit,
     onLoadProfile: (VehicleProfile) -> Unit,
@@ -442,6 +465,20 @@ private fun CalibrationDialog(
     var showLoadDialog by remember { mutableStateOf(false) }
     val profileDisplayName = currentProfileName ?: "Default"
 
+    // Helper to build CalibrationTextValues with current state, overriding one field
+    fun currentVals(
+        rms: String = rmsSmoothMaxText, peak: String = peakThresholdZText,
+        maWin: String = movingAverageWindowText, stdSmooth: String = stdDevSmoothMaxText,
+        rmsR: String = rmsRoughMinText, peakR: String = peakRatioRoughMinText,
+        stdR: String = stdDevRoughMinText, magMax: String = magMaxSevereMinText,
+        qWin: String = qualityWindowSizeText,
+        hBrake: String = dtHardBrakeFwdMaxText, hAccel: String = dtHardAccelFwdMaxText,
+        swerve: String = dtSwerveLatMaxText, aggLat: String = dtAggressiveCornerLatMaxText,
+        aggDC: String = dtAggressiveCornerDCourseText, minSpd: String = dtMinSpeedKmphText,
+        smRms: String = dtSmoothnessRmsMaxText, fallLean: String = dtFallLeanAngleText
+    ) = CalibrationTextValues(rms, peak, maWin, stdSmooth, rmsR, peakR, stdR, magMax, qWin,
+        hBrake, hAccel, swerve, aggLat, aggDC, minSpd, smRms, fallLean)
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Calibration - Profile: $profileDisplayName") },
@@ -451,18 +488,29 @@ private fun CalibrationDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text("Road Quality Thresholds", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(CalibrationTextValues(it, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("StdDev smooth max", stdDevSmoothMaxText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, it, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("RMS rough min", rmsRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, it, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("StdDev rough min", stdDevRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, it, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("Peak Threshold", peakThresholdZText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, it, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("Peak ratio rough min (%)", peakRatioRoughMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, it, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("MagMax severe min", magMaxSevereMinText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, it, qualityWindowSizeText)) }
+                CalibrationField("RMS smooth max", rmsSmoothMaxText) { onValuesChange(currentVals(rms = it)) }
+                CalibrationField("StdDev smooth max", stdDevSmoothMaxText) { onValuesChange(currentVals(stdSmooth = it)) }
+                CalibrationField("RMS rough min", rmsRoughMinText) { onValuesChange(currentVals(rmsR = it)) }
+                CalibrationField("StdDev rough min", stdDevRoughMinText) { onValuesChange(currentVals(stdR = it)) }
+                CalibrationField("Peak Threshold", peakThresholdZText) { onValuesChange(currentVals(peak = it)) }
+                CalibrationField("Peak ratio rough min (%)", peakRatioRoughMinText) { onValuesChange(currentVals(peakR = it)) }
+                CalibrationField("MagMax severe min", magMaxSevereMinText) { onValuesChange(currentVals(magMax = it)) }
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Other Settings", style = MaterialTheme.typography.titleSmall)
-                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, it, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, qualityWindowSizeText)) }
-                CalibrationField("Quality window size", qualityWindowSizeText) { onValuesChange(CalibrationTextValues(rmsSmoothMaxText, peakThresholdZText, movingAverageWindowText, stdDevSmoothMaxText, rmsRoughMinText, peakRatioRoughMinText, stdDevRoughMinText, magMaxSevereMinText, it)) }
+                CalibrationField("Moving average window", movingAverageWindowText) { onValuesChange(currentVals(maWin = it)) }
+                CalibrationField("Quality window size", qualityWindowSizeText) { onValuesChange(currentVals(qWin = it)) }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Driver Metric Thresholds", style = MaterialTheme.typography.titleSmall)
+                CalibrationField("Hard brake fwd max (m/s²)", dtHardBrakeFwdMaxText) { onValuesChange(currentVals(hBrake = it)) }
+                CalibrationField("Hard accel fwd max (m/s²)", dtHardAccelFwdMaxText) { onValuesChange(currentVals(hAccel = it)) }
+                CalibrationField("Swerve lat max (m/s²)", dtSwerveLatMaxText) { onValuesChange(currentVals(swerve = it)) }
+                CalibrationField("Aggressive corner lat max (m/s²)", dtAggressiveCornerLatMaxText) { onValuesChange(currentVals(aggLat = it)) }
+                CalibrationField("Aggressive corner Δcourse (°)", dtAggressiveCornerDCourseText) { onValuesChange(currentVals(aggDC = it)) }
+                CalibrationField("Min speed (km/h)", dtMinSpeedKmphText) { onValuesChange(currentVals(minSpd = it)) }
+                CalibrationField("Smoothness RMS max", dtSmoothnessRmsMaxText) { onValuesChange(currentVals(smRms = it)) }
+                CalibrationField("Fall lean angle (°)", dtFallLeanAngleText) { onValuesChange(currentVals(fallLean = it)) }
             }
         },
         confirmButton = {
@@ -477,7 +525,14 @@ private fun CalibrationDialog(
                             magMaxSevereMinText,
                             qualityWindowSizeText
                         )
-                        if (parsed == null) {
+                        val parsedDt = parseDriverThresholds(
+                            initialDriverThresholds,
+                            dtHardBrakeFwdMaxText, dtHardAccelFwdMaxText,
+                            dtSwerveLatMaxText, dtAggressiveCornerLatMaxText,
+                            dtAggressiveCornerDCourseText, dtMinSpeedKmphText,
+                            dtSmoothnessRmsMaxText, dtFallLeanAngleText
+                        )
+                        if (parsed == null || parsedDt == null) {
                             Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
                             return@TextButton
                         }
@@ -487,7 +542,8 @@ private fun CalibrationDialog(
                         }
                         scope.launch(Dispatchers.IO) {
                             repository.updateCalibration(parsed)
-                            val profile = VehicleProfile(currentProfileName, parsed)
+                            repository.updateDriverThresholds(parsedDt)
+                            val profile = VehicleProfile(currentProfileName, parsed, parsedDt)
                             profileRepository.saveProfile(profile, folderUri)
                             withContext(Dispatchers.Main) {
                                 Toast.makeText(context, "Profile '$currentProfileName' saved", Toast.LENGTH_LONG).show()
@@ -516,6 +572,7 @@ private fun CalibrationDialog(
             profileRepository = profileRepository,
             folderUri = folderUri,
             initialValues = initialValues,
+            initialDriverThresholds = initialDriverThresholds,
             rmsSmoothMaxText = rmsSmoothMaxText,
             peakThresholdZText = peakThresholdZText,
             movingAverageWindowText = movingAverageWindowText,
@@ -525,6 +582,14 @@ private fun CalibrationDialog(
             stdDevRoughMinText = stdDevRoughMinText,
             magMaxSevereMinText = magMaxSevereMinText,
             qualityWindowSizeText = qualityWindowSizeText,
+            dtHardBrakeFwdMaxText = dtHardBrakeFwdMaxText,
+            dtHardAccelFwdMaxText = dtHardAccelFwdMaxText,
+            dtSwerveLatMaxText = dtSwerveLatMaxText,
+            dtAggressiveCornerLatMaxText = dtAggressiveCornerLatMaxText,
+            dtAggressiveCornerDCourseText = dtAggressiveCornerDCourseText,
+            dtMinSpeedKmphText = dtMinSpeedKmphText,
+            dtSmoothnessRmsMaxText = dtSmoothnessRmsMaxText,
+            dtFallLeanAngleText = dtFallLeanAngleText,
             onDismiss = { showSaveAsDialog = false }
         )
     }
@@ -551,6 +616,7 @@ private fun SaveAsDialog(
     profileRepository: VehicleProfileRepository,
     folderUri: String?,
     initialValues: CalibrationSettings,
+    initialDriverThresholds: DriverThresholdSettings,
     rmsSmoothMaxText: String,
     peakThresholdZText: String,
     movingAverageWindowText: String,
@@ -560,6 +626,14 @@ private fun SaveAsDialog(
     stdDevRoughMinText: String,
     magMaxSevereMinText: String,
     qualityWindowSizeText: String,
+    dtHardBrakeFwdMaxText: String,
+    dtHardAccelFwdMaxText: String,
+    dtSwerveLatMaxText: String,
+    dtAggressiveCornerLatMaxText: String,
+    dtAggressiveCornerDCourseText: String,
+    dtMinSpeedKmphText: String,
+    dtSmoothnessRmsMaxText: String,
+    dtFallLeanAngleText: String,
     onDismiss: () -> Unit
 ) {
     var profileName by remember { mutableStateOf("") }
@@ -595,14 +669,22 @@ private fun SaveAsDialog(
                         magMaxSevereMinText,
                         qualityWindowSizeText
                     )
-                    if (parsed == null) {
+                    val parsedDt = parseDriverThresholds(
+                        initialDriverThresholds,
+                        dtHardBrakeFwdMaxText, dtHardAccelFwdMaxText,
+                        dtSwerveLatMaxText, dtAggressiveCornerLatMaxText,
+                        dtAggressiveCornerDCourseText, dtMinSpeedKmphText,
+                        dtSmoothnessRmsMaxText, dtFallLeanAngleText
+                    )
+                    if (parsed == null || parsedDt == null) {
                         Toast.makeText(context, "Enter valid calibration numbers", Toast.LENGTH_LONG).show()
                         return@TextButton
                     }
                     scope.launch(Dispatchers.IO) {
                         repository.updateCalibration(parsed)
+                        repository.updateDriverThresholds(parsedDt)
                         repository.updateCurrentProfileName(profileName)
-                        val profile = VehicleProfile(profileName, parsed)
+                        val profile = VehicleProfile(profileName, parsed, parsedDt)
                         profileRepository.saveProfile(profile, folderUri)
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "Profile '$profileName' saved", Toast.LENGTH_LONG).show()
@@ -664,6 +746,7 @@ private fun LoadProfileDialog(
                             onClick = {
                                 scope.launch(Dispatchers.IO) {
                                     repository.updateCalibration(profile.calibration)
+                                    repository.updateDriverThresholds(profile.driverThresholds)
                                     repository.updateCurrentProfileName(profile.name)
                                     withContext(Dispatchers.Main) {
                                         onProfileSelected(profile)
@@ -708,7 +791,15 @@ private data class CalibrationTextValues(
     val peakRatioRoughMin: String,
     val stdDevRoughMin: String,
     val magMaxSevereMin: String,
-    val qualityWindowSize: String
+    val qualityWindowSize: String,
+    val dtHardBrakeFwdMax: String = "",
+    val dtHardAccelFwdMax: String = "",
+    val dtSwerveLatMax: String = "",
+    val dtAggressiveCornerLatMax: String = "",
+    val dtAggressiveCornerDCourse: String = "",
+    val dtMinSpeedKmph: String = "",
+    val dtSmoothnessRmsMax: String = "",
+    val dtFallLeanAngle: String = ""
 )
 
 private fun parseCalibration(
@@ -748,6 +839,38 @@ private fun parseCalibration(
         stdDevRoughMin = stdDevRough,
         magMaxSevereMin = magSevereMin,
         qualityWindowSize = qWindowSize
+    )
+}
+
+private fun parseDriverThresholds(
+    initialValues: DriverThresholdSettings,
+    hardBrakeFwdMax: String,
+    hardAccelFwdMax: String,
+    swerveLatMax: String,
+    aggressiveCornerLatMax: String,
+    aggressiveCornerDCourse: String,
+    minSpeedKmph: String,
+    smoothnessRmsMax: String,
+    fallLeanAngle: String
+): DriverThresholdSettings? {
+    val hBrake = hardBrakeFwdMax.toFloatOrNull() ?: return null
+    val hAccel = hardAccelFwdMax.toFloatOrNull() ?: return null
+    val swerve = swerveLatMax.toFloatOrNull() ?: return null
+    val aggLat = aggressiveCornerLatMax.toFloatOrNull() ?: return null
+    val aggDC = aggressiveCornerDCourse.toFloatOrNull() ?: return null
+    val minSpd = minSpeedKmph.toFloatOrNull() ?: return null
+    val smRms = smoothnessRmsMax.toFloatOrNull() ?: return null
+    val fLean = fallLeanAngle.toFloatOrNull() ?: return null
+    if (hBrake <= 0f || hAccel <= 0f || swerve <= 0f || aggLat <= 0f || aggDC <= 0f || minSpd < 0f || smRms <= 0f || fLean <= 0f) return null
+    return DriverThresholdSettings(
+        hardBrakeFwdMax = hBrake,
+        hardAccelFwdMax = hAccel,
+        swerveLatMax = swerve,
+        aggressiveCornerLatMax = aggLat,
+        aggressiveCornerDCourse = aggDC,
+        minSpeedKmph = minSpd,
+        smoothnessRmsMax = smRms,
+        fallLeanAngle = fLean
     )
 }
 

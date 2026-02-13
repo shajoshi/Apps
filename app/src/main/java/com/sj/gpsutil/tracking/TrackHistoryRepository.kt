@@ -9,6 +9,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.sj.gpsutil.data.TrackingSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
@@ -120,14 +121,165 @@ class TrackHistoryRepository(private val context: Context) {
         val endMillis = parsed.points.lastOrNull()?.timestampMillis
         val durationMillis = if (startMillis != null && endMillis != null) (endMillis - startMillis).coerceAtLeast(0) else null
 
+        // Parse metric summaries for JSON files
+        var trackingMetrics: TrackingMetricsSummary? = null
+        var driverMetricsSummary: DriverMetricsSummary? = null
+        if (entry.extension.lowercase() == "json") {
+            val text = entry.readText(context)
+            if (text != null) {
+                val pair = parseMetricSummaries(text)
+                trackingMetrics = pair.first
+                driverMetricsSummary = pair.second
+            }
+        }
+
         TrackDetails(
             name = entry.name,
             distanceMeters = distanceMeters,
             pointCount = if (parsed.points.isNotEmpty()) parsed.points.size else null,
             startMillis = startMillis,
             endMillis = endMillis,
-            durationMillis = durationMillis
+            durationMillis = durationMillis,
+            trackingMetrics = trackingMetrics,
+            driverMetrics = driverMetricsSummary
         )
+    }
+
+    private fun parseMetricSummaries(jsonText: String): Pair<TrackingMetricsSummary?, DriverMetricsSummary?> {
+        return runCatching {
+            val root = JSONObject(jsonText)
+            val obj = root.optJSONObject("gpslogger2path") ?: return@runCatching Pair(null, null)
+            val dataArray = obj.optJSONArray("data") ?: return@runCatching Pair(null, null)
+
+            // Read minSpeed from file's recording settings if available, else default
+            val meta = obj.optJSONObject("meta")
+            val recSettings = meta?.optJSONObject("recordingSettings")
+            val dtObj = recSettings?.optJSONObject("driverThresholds")
+            val minSpeedForDetection = dtObj?.optDouble("minSpeedKmph", 6.0) ?: 6.0
+
+            // Accumulators for tracking metrics
+            val roadQualityCounts = mutableMapOf<String, Int>()
+            val featureCounts = mutableMapOf<String, Int>()
+            val rmsVals = mutableListOf<Double>()
+            val peakVals = mutableListOf<Double>()
+            val stdDevVals = mutableListOf<Double>()
+            val peakRatioVals = mutableListOf<Double>()
+            var accelPoints = 0
+
+            // Accumulators for driver metrics
+            val eventCounts = mutableMapOf<String, Int>()
+            val smoothnessVals = mutableListOf<Double>()
+            val fwdRmsVals = mutableListOf<Double>()
+            val fwdMaxVals = mutableListOf<Double>()
+            val latRmsVals = mutableListOf<Double>()
+            val latMaxVals = mutableListOf<Double>()
+            val frictionVals = mutableListOf<Double>()
+            val leanVals = mutableListOf<Double>()
+            var movingFixes = 0
+
+            for (i in 0 until dataArray.length()) {
+                val point = dataArray.optJSONObject(i) ?: continue
+                val gps = point.optJSONObject("gps")
+                val speed = gps?.optDouble("speed", 0.0) ?: 0.0
+                val accel = point.optJSONObject("accel")
+                val driver = point.optJSONObject("driver")
+
+                // Tracking metrics from accel
+                if (accel != null) {
+                    accelPoints++
+                    val rms = accel.optDouble("rms", Double.NaN)
+                    val magMax = accel.optDouble("magMax", Double.NaN)
+                    val stdDev = accel.optDouble("stdDev", Double.NaN)
+                    val peakRatio = accel.optDouble("peakRatio", Double.NaN)
+
+                    if (!rms.isNaN()) rmsVals.add(rms)
+                    if (!magMax.isNaN()) peakVals.add(magMax)
+                    if (!stdDev.isNaN()) stdDevVals.add(stdDev)
+                    if (!peakRatio.isNaN()) peakRatioVals.add(peakRatio)
+
+                    val rq = accel.optString("roadQuality", "")
+                    if (rq.isNotEmpty()) {
+                        roadQualityCounts[rq] = (roadQualityCounts[rq] ?: 0) + 1
+                    } else if (speed < minSpeedForDetection) {
+                        roadQualityCounts["below_speed"] = (roadQualityCounts["below_speed"] ?: 0) + 1
+                    }
+
+                    val feat = accel.optString("featureDetected", "")
+                    if (feat.isNotEmpty()) {
+                        featureCounts[feat] = (featureCounts[feat] ?: 0) + 1
+                    }
+
+                    // Driver fwd/lat metrics from accel object
+                    val fwdRms = accel.optDouble("fwdRms", Double.NaN)
+                    val fwdMax = accel.optDouble("fwdMax", Double.NaN)
+                    val latRms = accel.optDouble("latRms", Double.NaN)
+                    val latMax = accel.optDouble("latMax", Double.NaN)
+                    val lean = accel.optDouble("leanAngleDeg", Double.NaN)
+
+                    if (speed >= minSpeedForDetection) {
+                        movingFixes++
+                        if (!fwdRms.isNaN()) fwdRmsVals.add(fwdRms)
+                        if (!fwdMax.isNaN()) fwdMaxVals.add(fwdMax)
+                        if (!latRms.isNaN()) latRmsVals.add(latRms)
+                        if (!latMax.isNaN()) latMaxVals.add(latMax)
+                        if (!lean.isNaN()) leanVals.add(kotlin.math.abs(lean))
+                        if (!fwdMax.isNaN() && !latMax.isNaN()) {
+                            frictionVals.add(kotlin.math.sqrt(fwdMax * fwdMax + latMax * latMax))
+                        }
+                    }
+                }
+
+                // Driver metrics from driver object
+                if (driver != null) {
+                    val primaryEvent = driver.optString("primaryEvent", "normal")
+                    eventCounts[primaryEvent] = (eventCounts[primaryEvent] ?: 0) + 1
+
+                    val sm = driver.optDouble("smoothnessScore", Double.NaN)
+                    if (!sm.isNaN() && speed >= minSpeedForDetection) smoothnessVals.add(sm)
+                }
+            }
+
+            val totalPoints = dataArray.length()
+
+            val trackingSummary = if (accelPoints > 0 && rmsVals.isNotEmpty()) {
+                TrackingMetricsSummary(
+                    totalPoints = totalPoints,
+                    accelPoints = accelPoints,
+                    roadQualityCounts = roadQualityCounts,
+                    featureCounts = featureCounts,
+                    rmsVertMin = rmsVals.min(), rmsVertMax = rmsVals.max(), rmsVertMean = rmsVals.average(),
+                    peakZMin = if (peakVals.isNotEmpty()) peakVals.min() else 0.0,
+                    peakZMax = if (peakVals.isNotEmpty()) peakVals.max() else 0.0,
+                    peakZMean = if (peakVals.isNotEmpty()) peakVals.average() else 0.0,
+                    stdDevMin = if (stdDevVals.isNotEmpty()) stdDevVals.min() else 0.0,
+                    stdDevMax = if (stdDevVals.isNotEmpty()) stdDevVals.max() else 0.0,
+                    stdDevMean = if (stdDevVals.isNotEmpty()) stdDevVals.average() else 0.0,
+                    peakRatioMin = if (peakRatioVals.isNotEmpty()) peakRatioVals.min() else 0.0,
+                    peakRatioMax = if (peakRatioVals.isNotEmpty()) peakRatioVals.max() else 0.0,
+                    peakRatioMean = if (peakRatioVals.isNotEmpty()) peakRatioVals.average() else 0.0,
+                )
+            } else null
+
+            val driverSummary = if (eventCounts.isNotEmpty()) {
+                DriverMetricsSummary(
+                    totalFixes = totalPoints,
+                    movingFixes = movingFixes,
+                    eventCounts = eventCounts,
+                    avgSmoothnessScore = if (smoothnessVals.isNotEmpty()) smoothnessVals.average() else 0.0,
+                    avgFwdRms = if (fwdRmsVals.isNotEmpty()) fwdRmsVals.average() else 0.0,
+                    avgFwdMax = if (fwdMaxVals.isNotEmpty()) fwdMaxVals.average() else 0.0,
+                    maxFwdMax = if (fwdMaxVals.isNotEmpty()) fwdMaxVals.max() else 0.0,
+                    avgLatRms = if (latRmsVals.isNotEmpty()) latRmsVals.average() else 0.0,
+                    avgLatMax = if (latMaxVals.isNotEmpty()) latMaxVals.average() else 0.0,
+                    maxLatMax = if (latMaxVals.isNotEmpty()) latMaxVals.max() else 0.0,
+                    maxFrictionCircle = if (frictionVals.isNotEmpty()) frictionVals.max() else 0.0,
+                    avgLeanAngle = if (leanVals.isNotEmpty()) leanVals.average() else 0.0,
+                    maxLeanAngle = if (leanVals.isNotEmpty()) leanVals.max() else 0.0,
+                )
+            } else null
+
+            Pair(trackingSummary, driverSummary)
+        }.getOrElse { Pair(null, null) }
     }
 
     private fun computeDistanceMeters(points: List<TrackPoint>): Double? {
@@ -243,6 +395,30 @@ class TrackHistoryRepository(private val context: Context) {
         val startMillis: Long?,
         val endMillis: Long?,
         val durationMillis: Long?,
+        val trackingMetrics: TrackingMetricsSummary? = null,
+        val driverMetrics: DriverMetricsSummary? = null,
+    )
+
+    data class TrackingMetricsSummary(
+        val totalPoints: Int,
+        val accelPoints: Int,
+        val roadQualityCounts: Map<String, Int>,  // smooth, average, rough, below_speed
+        val featureCounts: Map<String, Int>,       // speed_bump, pothole, bump
+        val rmsVertMin: Double, val rmsVertMax: Double, val rmsVertMean: Double,
+        val peakZMin: Double, val peakZMax: Double, val peakZMean: Double,
+        val stdDevMin: Double, val stdDevMax: Double, val stdDevMean: Double,
+        val peakRatioMin: Double, val peakRatioMax: Double, val peakRatioMean: Double,
+    )
+
+    data class DriverMetricsSummary(
+        val totalFixes: Int,
+        val movingFixes: Int,
+        val eventCounts: Map<String, Int>,  // hard_brake, hard_accel, swerve, aggressive_corner, normal, low_speed
+        val avgSmoothnessScore: Double,
+        val avgFwdRms: Double, val avgFwdMax: Double, val maxFwdMax: Double,
+        val avgLatRms: Double, val avgLatMax: Double, val maxLatMax: Double,
+        val maxFrictionCircle: Double,
+        val avgLeanAngle: Double, val maxLeanAngle: Double,
     )
 
     private data class FileEntry(

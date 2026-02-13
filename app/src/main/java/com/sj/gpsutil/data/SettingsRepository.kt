@@ -31,6 +31,7 @@ data class TrackingSettings(
     val enableAccelerometer: Boolean = true,
     val roadCalibrationMode: Boolean = false,
     val calibration: CalibrationSettings = CalibrationSettings(),
+    val driverThresholds: DriverThresholdSettings = DriverThresholdSettings(),
     val currentProfileName: String? = null
 )
 
@@ -44,6 +45,17 @@ data class CalibrationSettings(
     val stdDevRoughMin: Float = 3.0f,
     val magMaxSevereMin: Float = 20.0f,
     val qualityWindowSize: Int = 3
+)
+
+data class DriverThresholdSettings(
+    val hardBrakeFwdMax: Float = 15f,
+    val hardAccelFwdMax: Float = 15f,
+    val swerveLatMax: Float = 4f,
+    val aggressiveCornerLatMax: Float = 4f,
+    val aggressiveCornerDCourse: Float = 15f,
+    val minSpeedKmph: Float = 6f,
+    val smoothnessRmsMax: Float = 10f,
+    val fallLeanAngle: Float = 40f
 )
 
 class SettingsRepository(private val context: Context) {
@@ -63,6 +75,14 @@ class SettingsRepository(private val context: Context) {
     private val magMaxSevereMinKey = floatPreferencesKey("cal_magmax_severe_min")
     private val qualityWindowSizeKey = longPreferencesKey("cal_quality_window_size")
     private val currentProfileNameKey = stringPreferencesKey("current_profile_name")
+    private val dtHardBrakeFwdMaxKey = floatPreferencesKey("dt_hard_brake_fwd_max")
+    private val dtHardAccelFwdMaxKey = floatPreferencesKey("dt_hard_accel_fwd_max")
+    private val dtSwerveLatMaxKey = floatPreferencesKey("dt_swerve_lat_max")
+    private val dtAggressiveCornerLatMaxKey = floatPreferencesKey("dt_aggressive_corner_lat_max")
+    private val dtAggressiveCornerDCourseKey = floatPreferencesKey("dt_aggressive_corner_dcourse")
+    private val dtMinSpeedKmphKey = floatPreferencesKey("dt_min_speed_kmph")
+    private val dtSmoothnessRmsMaxKey = floatPreferencesKey("dt_smoothness_rms_max")
+    private val dtFallLeanAngleKey = floatPreferencesKey("dt_fall_lean_angle")
 
     
     val settingsFlow: Flow<TrackingSettings> = context.settingsDataStore.data.map { prefs ->
@@ -85,6 +105,16 @@ class SettingsRepository(private val context: Context) {
                 stdDevRoughMin = prefs[stdDevRoughMinKey] ?: 3.0f,
                 magMaxSevereMin = prefs[magMaxSevereMinKey] ?: 20.0f,
                 qualityWindowSize = (prefs[qualityWindowSizeKey] ?: 3L).toInt()
+            ),
+            driverThresholds = DriverThresholdSettings(
+                hardBrakeFwdMax = prefs[dtHardBrakeFwdMaxKey] ?: 15f,
+                hardAccelFwdMax = prefs[dtHardAccelFwdMaxKey] ?: 15f,
+                swerveLatMax = prefs[dtSwerveLatMaxKey] ?: 4f,
+                aggressiveCornerLatMax = prefs[dtAggressiveCornerLatMaxKey] ?: 4f,
+                aggressiveCornerDCourse = prefs[dtAggressiveCornerDCourseKey] ?: 15f,
+                minSpeedKmph = prefs[dtMinSpeedKmphKey] ?: 6f,
+                smoothnessRmsMax = prefs[dtSmoothnessRmsMaxKey] ?: 10f,
+                fallLeanAngle = prefs[dtFallLeanAngleKey] ?: 40f
             ),
             currentProfileName = prefs[currentProfileNameKey]
         )
@@ -167,6 +197,19 @@ class SettingsRepository(private val context: Context) {
                 prefs[magMaxSevereMinKey] = calibration.magMaxSevereMin
                 prefs[qualityWindowSizeKey] = calibration.qualityWindowSize.toLong()
             }
+        }
+    }
+
+    suspend fun updateDriverThresholds(dt: DriverThresholdSettings) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[dtHardBrakeFwdMaxKey] = dt.hardBrakeFwdMax
+            prefs[dtHardAccelFwdMaxKey] = dt.hardAccelFwdMax
+            prefs[dtSwerveLatMaxKey] = dt.swerveLatMax
+            prefs[dtAggressiveCornerLatMaxKey] = dt.aggressiveCornerLatMax
+            prefs[dtAggressiveCornerDCourseKey] = dt.aggressiveCornerDCourse
+            prefs[dtMinSpeedKmphKey] = dt.minSpeedKmph
+            prefs[dtSmoothnessRmsMaxKey] = dt.smoothnessRmsMax
+            prefs[dtFallLeanAngleKey] = dt.fallLeanAngle
         }
     }
 

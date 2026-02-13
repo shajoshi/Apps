@@ -4,12 +4,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -33,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.util.Log
+import com.sj.gpsutil.AppDestinations
 import com.sj.gpsutil.data.SettingsRepository
 import com.sj.gpsutil.data.TrackingSettings
 import com.sj.gpsutil.tracking.TrackHistoryRepository
@@ -43,7 +49,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun TrackHistoryScreen(modifier: Modifier = Modifier) {
+fun TrackHistoryScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val settingsRepository = remember { SettingsRepository(context) }
     val trackHistoryRepository = remember { TrackHistoryRepository(context) }
@@ -238,13 +244,75 @@ private fun DetailContent(detail: TrackHistoryRepository.TrackDetails?) {
         String.format(locale, "%02d:%02d:%02d", h, m, s)
     } ?: "N/A"
     fun fmtTime(ts: Long?): String = ts?.let { dateFmt.format(Instant.ofEpochMilli(it)) } ?: "N/A"
+    fun fmtD(v: Double): String = "%.3f".format(locale, v)
+    fun fmtD1(v: Double): String = "%.1f".format(locale, v)
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         Text("File Name: ${detail?.name ?: "N/A"}")
         Text("Distance: ${fmtDistanceMeters(detail?.distanceMeters)}")
         Text("Points: ${fmtPoints(detail?.pointCount)}")
         Text("Tracking Duration: ${fmtDuration(detail?.durationMillis)}")
-        Text("File start time: ${fmtTime(detail?.startMillis)}")
-        Text("File end time: ${fmtTime(detail?.endMillis)}")
+        Text("Start: ${fmtTime(detail?.startMillis)}")
+        Text("End: ${fmtTime(detail?.endMillis)}")
+
+        // --- Tracking Metrics ---
+        detail?.trackingMetrics?.let { tm ->
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+            Text("Tracking Metrics", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text("Accel points: ${tm.accelPoints} / ${tm.totalPoints}")
+
+            if (tm.roadQualityCounts.isNotEmpty()) {
+                Text("Road Quality:", fontWeight = FontWeight.SemiBold)
+                for (q in listOf("smooth", "average", "rough", "below_speed")) {
+                    val cnt = tm.roadQualityCounts[q] ?: continue
+                    val pct = if (tm.accelPoints > 0) "%.1f".format(locale, 100.0 * cnt / tm.accelPoints) else "0"
+                    Text("  $q: $cnt ($pct%)")
+                }
+            }
+
+            if (tm.featureCounts.isNotEmpty()) {
+                Text("Features:", fontWeight = FontWeight.SemiBold)
+                for ((feat, cnt) in tm.featureCounts) {
+                    Text("  $feat: $cnt")
+                }
+            } else {
+                Text("No features detected")
+            }
+
+            Text("Metric Ranges:", fontWeight = FontWeight.SemiBold)
+            Text("  RMS Z: ${fmtD(tm.rmsVertMin)} – ${fmtD(tm.rmsVertMax)} (avg ${fmtD(tm.rmsVertMean)})")
+            Text("  Peak Z: ${fmtD(tm.peakZMin)} – ${fmtD(tm.peakZMax)} (avg ${fmtD(tm.peakZMean)})")
+            Text("  StdDev Z: ${fmtD(tm.stdDevMin)} – ${fmtD(tm.stdDevMax)} (avg ${fmtD(tm.stdDevMean)})")
+            Text("  Peak Ratio: ${fmtD(tm.peakRatioMin)} – ${fmtD(tm.peakRatioMax)} (avg ${fmtD(tm.peakRatioMean)})")
+        }
+
+        // --- Driver Metrics ---
+        detail?.driverMetrics?.let { dm ->
+            Spacer(modifier = Modifier.height(4.dp))
+            HorizontalDivider()
+            Text("Driver Metrics", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text("Fixes: ${dm.totalFixes} (${dm.movingFixes} moving)")
+
+            if (dm.eventCounts.isNotEmpty()) {
+                Text("Events:", fontWeight = FontWeight.SemiBold)
+                for (evt in listOf("hard_brake", "hard_accel", "swerve", "aggressive_corner", "normal", "low_speed")) {
+                    val cnt = dm.eventCounts[evt] ?: continue
+                    val pct = if (dm.totalFixes > 0) "%.1f".format(locale, 100.0 * cnt / dm.totalFixes) else "0"
+                    Text("  $evt: $cnt ($pct%)")
+                }
+            }
+
+            Text("Smoothness: ${fmtD1(dm.avgSmoothnessScore)} / 100", fontWeight = FontWeight.SemiBold)
+            Text("Forward Accel:", fontWeight = FontWeight.SemiBold)
+            Text("  Avg RMS: ${fmtD(dm.avgFwdRms)}  Avg Max: ${fmtD(dm.avgFwdMax)}  Peak: ${fmtD(dm.maxFwdMax)}")
+            Text("Lateral Accel:", fontWeight = FontWeight.SemiBold)
+            Text("  Avg RMS: ${fmtD(dm.avgLatRms)}  Avg Max: ${fmtD(dm.avgLatMax)}  Peak: ${fmtD(dm.maxLatMax)}")
+            Text("Max Friction Circle: ${fmtD(dm.maxFrictionCircle)}")
+            Text("Lean Angle: avg ${fmtD1(dm.avgLeanAngle)}° max ${fmtD1(dm.maxLeanAngle)}°")
+        }
     }
 }

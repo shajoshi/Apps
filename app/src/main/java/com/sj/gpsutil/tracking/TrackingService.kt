@@ -329,7 +329,20 @@ class TrackingService : Service() {
                 roadCalibrationMode = settings.roadCalibrationMode
                 currentIntervalSeconds = settings.intervalSeconds
                 calibration = settings.calibration
-                metricsEngine = MetricsEngine(calibration)
+                val dt = settings.driverThresholds
+                metricsEngine = MetricsEngine(
+                    calibration,
+                    MetricsEngine.DriverThresholds(
+                        hardBrakeFwdMax = dt.hardBrakeFwdMax,
+                        hardAccelFwdMax = dt.hardAccelFwdMax,
+                        swerveLatMax = dt.swerveLatMax,
+                        aggressiveCornerLatMax = dt.aggressiveCornerLatMax,
+                        aggressiveCornerDCourse = dt.aggressiveCornerDCourse,
+                        minSpeedKmph = dt.minSpeedKmph,
+                        smoothnessRmsMax = dt.smoothnessRmsMax,
+                        fallLeanAngle = dt.fallLeanAngle
+                    )
+                )
 
                 // Force-capture gravity vector from accelerometer (assumes stationary at start)
                 // Temporarily register listener, collect samples, then unregister.

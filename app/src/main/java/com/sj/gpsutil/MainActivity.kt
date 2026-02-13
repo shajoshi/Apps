@@ -7,14 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,7 +16,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import com.sj.gpsutil.tracking.TrackingState
@@ -62,45 +54,36 @@ fun SJGpsUtilApp() {
         currentDestination = AppDestinations.TRACKING
     }
 
-    NavigationSuiteScaffold(
-        navigationSuiteItems = {
-            AppDestinations.entries.forEach {
-                val isSettings = it == AppDestinations.SETTINGS
-                item(
-                    icon = {
-                        Icon(
-                            it.icon,
-                            contentDescription = it.label
-                        )
-                    },
-                    label = { Text(it.label) },
-                    selected = it == currentDestination,
-                    onClick = {
-                        if (!isSettings || canOpenSettings) {
-                            currentDestination = it
-                        }
-                    }
-                )
-            }
+    val onNavigate: (AppDestinations) -> Unit = { dest ->
+        if (dest != AppDestinations.SETTINGS || canOpenSettings) {
+            currentDestination = dest
         }
-    ) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-            when (currentDestination) {
-                AppDestinations.TRACKING -> TrackingScreen(modifier = Modifier.padding(innerPadding))
-                AppDestinations.HISTORY -> TrackHistoryScreen(modifier = Modifier.padding(innerPadding))
-                AppDestinations.SETTINGS -> SettingsScreen(modifier = Modifier.padding(innerPadding))
-            }
+    }
+
+    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        when (currentDestination) {
+            AppDestinations.TRACKING -> TrackingScreen(
+                onNavigate = onNavigate,
+                modifier = Modifier.padding(innerPadding)
+            )
+            AppDestinations.HISTORY -> TrackHistoryScreen(
+                onNavigate = onNavigate,
+                modifier = Modifier.padding(innerPadding)
+            )
+            AppDestinations.SETTINGS -> SettingsScreen(
+                onNavigate = onNavigate,
+                modifier = Modifier.padding(innerPadding)
+            )
         }
     }
 }
 
 enum class AppDestinations(
     val label: String,
-    val icon: ImageVector,
 ) {
-    TRACKING("Tracking", Icons.Default.Home),
-    HISTORY("Tracks", Icons.Default.History),
-    SETTINGS("Settings", Icons.Default.Settings),
+    TRACKING("Tracking"),
+    HISTORY("Tracks"),
+    SETTINGS("Settings"),
 }
 
 @Preview(showBackground = true)
