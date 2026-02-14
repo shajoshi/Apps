@@ -1,6 +1,6 @@
 # SJ GPS Util — User Guide
 
-SJ GPS Util is an Android app for GPS tracking with real-time road quality monitoring. It records your route along with accelerometer data to classify road surface conditions (smooth, average, rough) and detect features like speed bumps, potholes, and jolts. A live Driving View displays lean angle, speed, altitude, acceleration forces, and a driver smoothness score on a responsive gauge. Tracks are saved as JSON files and can be reviewed in the built-in track history browser.
+SJ GPS Util is an Android app for GPS tracking with real-time road quality monitoring. It records your route along with accelerometer data to classify road surface conditions (smooth, average, rough) and detect features like speed bumps, potholes, and jolts. A live Driving View displays lean angle, speed, altitude, acceleration forces, and a driver smoothness score on a responsive gauge. Tracks can be saved as JSON, KML, or GPX files and reviewed in the built-in track history browser.
 
 ---
 
@@ -30,7 +30,7 @@ At the top of the Driving View:
 
 ### Tracking Details
 
-Select "Show Details" from the Driving View menu to see detailed tracking information:
+Select "Show Details" from the Driving View menu to see detailed tracking information. Press the **Back** button to return to the Driving View.
 
 - **GPS Data** — Coordinates, altitude, speed, bearing (with cardinal direction), accuracy.
 - **Acceleration Metrics** — RMS Z, Peak Z, StdDev Z, Peak ratio (current and running averages).
@@ -65,14 +65,41 @@ Browse and inspect saved track files:
 
 ### Settings
 
-- **Recording Interval** — Set GPS sampling interval in seconds (quick presets: 5s, 10s, 15s, 30s).
 - **Disable Point Filtering** — Toggle to record all GPS points regardless of movement.
 - **Record Acceleration** — Enable/disable accelerometer data collection.
 - **Road Calibration Run** — Enable calibration mode for ground-truth labeling.
 - **Capture Mount Baseline** — Capture the phone's stationary accelerometer baseline (must be stopped).
-- **Calibration Profiles** — Create, load, save, and manage vehicle-specific calibration profiles with thresholds for RMS, peak, StdDev, and road quality classification.
-- **Output Format** — JSON.
+- **Allow Profile Save** — Toggle (default: off). When off, the Save, Save As, and Reset buttons in the Calibration screen are disabled to prevent accidental profile changes. Only Load is available. Turn on to enable saving and resetting profiles.
+- **Calibration (Profile: _name_)** — Opens the Calibration dialog to view and edit thresholds for the active profile.
+- **Output Format** — Choose between KML, GPX, or JSON output for recorded tracks.
 - **Save Folder** — Choose a custom folder or use the default Downloads directory.
+
+#### Calibration Dialog
+
+The Calibration dialog contains all tunable thresholds organized into sections:
+
+**Road Quality Thresholds:**
+- RMS smooth max, StdDev smooth max, RMS rough min, StdDev rough min
+- Peak threshold, Peak ratio rough min (%), MagMax severe min
+
+**Other Settings:**
+- Moving average window, Quality window size
+
+**Driver Metric Thresholds:**
+- Hard brake fwd max (m/s²), Hard accel fwd max (m/s²)
+- Swerve lat max (m/s²), Aggressive corner lat max (m/s²), Aggressive corner Δcourse (°)
+- Min speed (km/h), Smoothness RMS max, Fall lean angle (°)
+
+**Buttons:**
+- **Save** — Save current values to the active profile file (requires Allow Profile Save = on and a named profile).
+- **Save As** — Save current values as a new named profile (requires Allow Profile Save = on).
+- **Load** — Load a profile from the save folder. Always available.
+- **Reset** — Reset all values to app defaults (requires Allow Profile Save = on).
+- **Back** — Close the dialog without saving.
+
+#### Default Profiles
+
+On first launch, the app creates three default profiles in the save folder if none exist: **Motorcycle**, **Car**, and **Bicycle**. Each has vehicle-appropriate calibration thresholds. These can be loaded, modified, and saved as needed.
 
 ---
 
@@ -81,7 +108,7 @@ Browse and inspect saved track files:
 1. **Launch the app** — The Driving View appears immediately.
 2. **Tap ▶ (Play)** to start recording. Grant location (and notification) permissions when prompted.
 3. **Drive** — Watch real-time speed, lean angle, road quality, and acceleration metrics.
-4. **Tap ■ (Stop)** to end the recording. The track is saved as a JSON file.
+4. **Tap ■ (Stop)** to end the recording. The track is saved in the selected output format.
 5. **Review tracks** — Open ⋮ → Tracks to browse saved recordings.
 
 ## Tips
@@ -90,3 +117,4 @@ Browse and inspect saved track files:
 - **Settings is locked** while recording to prevent accidental changes. Stop recording first.
 - **Mount the phone securely** before capturing the accelerometer baseline for best road quality accuracy.
 - Use **Calibration Profiles** to tune detection thresholds for different vehicles (e.g., car vs. motorcycle).
+- **Enable "Allow profile save"** only when you intend to modify profiles — this prevents accidental overwrites during normal use.

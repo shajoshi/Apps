@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -135,6 +136,11 @@ fun TrackingScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
         onDispose {
             view.keepScreenOn = false
         }
+    }
+
+    // Back from Details returns to Driving View
+    BackHandler(enabled = !showDrivingView) {
+        showDrivingView = true
     }
 
     if (showDrivingView) {

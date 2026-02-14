@@ -1,6 +1,7 @@
 package com.sj.gpsutil.ui
 
 import android.content.Context
+import kotlinx.coroutines.flow.first
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -55,7 +55,6 @@ import com.sj.gpsutil.data.DriverThresholdSettings
 import com.sj.gpsutil.data.VehicleProfile
 import com.sj.gpsutil.AppDestinations
 import com.sj.gpsutil.data.VehicleProfileRepository
-import com.sj.gpsutil.data.MIN_INTERVAL_SECONDS
 import com.sj.gpsutil.tracking.TrackingState
 import com.sj.gpsutil.tracking.TrackingStatus
 import kotlinx.coroutines.Dispatchers
@@ -79,16 +78,22 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
     var temporaryBaseline by remember { mutableStateOf<FloatArray?>(null) }
 
         
-    LaunchedEffect(Unit) {
-        scope.launch(Dispatchers.IO) {
-            val existingProfiles = profileRepository.listProfiles(settings.folderUri)
-            if (existingProfiles.isEmpty()) {
-                profileRepository.createDefaultProfiles(settings.folderUri)
+    // Wait for real settings before checking profiles — the initial TrackingSettings()
+    // has folderUri=null which would look in Downloads instead of the configured folder.
+    val folderUri = settings.folderUri
+    var defaultProfilesChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(folderUri) {
+        if (!defaultProfilesChecked || folderUri != null) {
+            scope.launch(Dispatchers.IO) {
+                // Re-read from DataStore to ensure we have the actual persisted value
+                val realSettings = repository.settingsFlow.first()
+                val existingProfiles = profileRepository.listProfiles(realSettings.folderUri)
+                if (existingProfiles.isEmpty()) {
+                    profileRepository.createDefaultProfiles(realSettings.folderUri)
+                }
+                defaultProfilesChecked = true
             }
         }
-    }
-    var intervalText by remember(settings.intervalSeconds) {
-        mutableStateOf(settings.intervalSeconds.toString())
     }
     var folderLabel by remember(settings.folderUri) {
         mutableStateOf(folderPathFromUri(context, settings.folderUri))
@@ -138,62 +143,6 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Interval (sec)")
-            TextField(
-                modifier = Modifier.width(80.dp),
-                value = intervalText,
-                onValueChange = { newValue ->
-                    val digitsOnly = newValue.filter { it.isDigit() }.take(2)
-                    intervalText = digitsOnly
-                },
-                singleLine = true
-            )
-            Button(
-                modifier = Modifier.width(88.dp),
-                onClick = {
-                    val parsed = intervalText.toLongOrNull()
-                    if (parsed == null) {
-                        Toast.makeText(context, "Enter a valid number of seconds", Toast.LENGTH_LONG).show()
-                        return@Button
-                    }
-                    if (parsed < MIN_INTERVAL_SECONDS) {
-                        Toast.makeText(context, "Minimum ${MIN_INTERVAL_SECONDS}s", Toast.LENGTH_LONG).show()
-                    }
-                    val seconds = parsed.coerceAtLeast(MIN_INTERVAL_SECONDS)
-                    intervalText = seconds.toString()
-                    scope.launch(Dispatchers.IO) {
-                        repository.updateIntervalSeconds(seconds)
-                    }
-                    Toast.makeText(context, "Interval set to ${seconds}s", Toast.LENGTH_LONG).show()
-                }
-            ) {
-                Text("Save")
-            }
-        }
-        val presetOptions = listOf(5L, 10L, 15L, 30L)
-        Text("Quick select:")
-        @OptIn(ExperimentalLayoutApi::class)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            presetOptions.forEach { seconds ->
-                OutlinedButton(onClick = {
-                    intervalText = seconds.toString()
-                    scope.launch(Dispatchers.IO) {
-                        repository.updateIntervalSeconds(seconds)
-                    }
-                    Toast.makeText(context, "Interval set to ${seconds}s", Toast.LENGTH_LONG).show()
-                }) {
-                    Text("${seconds}s")
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -311,6 +260,23 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Allow profile save")
+            val allowSaveState = rememberUpdatedState(settings.allowProfileSave)
+            Switch(
+                checked = allowSaveState.value,
+                onCheckedChange = { checked ->
+                    scope.launch(Dispatchers.IO) {
+                        repository.updateAllowProfileSave(checked)
+                    }
+                }
+            )
+        }
+
         // Calibration entry point
         val profileName = settings.currentProfileName ?: "Default"
         Button(onClick = { showCalibration = true }) {
@@ -319,7 +285,27 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        Text("Output format: JSON")
+        Text("Output format:")
+        @OptIn(ExperimentalLayoutApi::class)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutputFormat.entries.forEach { fmt ->
+                val isSelected = settings.outputFormat == fmt
+                if (isSelected) {
+                    Button(onClick = {}) {
+                        Text(fmt.name)
+                    }
+                } else {
+                    OutlinedButton(onClick = {
+                        scope.launch(Dispatchers.IO) {
+                            repository.updateOutputFormat(fmt)
+                        }
+                        Toast.makeText(context, "Output format: ${fmt.name}", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text(fmt.name)
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -346,6 +332,7 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
             profileRepository = remember { VehicleProfileRepository(context) },
             currentProfileName = settings.currentProfileName,
             folderUri = settings.folderUri,
+            allowProfileSave = settings.allowProfileSave,
             initialValues = settings.calibration,
             initialDriverThresholds = settings.driverThresholds,
             rmsSmoothMaxText = rmsSmoothMax,
@@ -436,6 +423,7 @@ private fun CalibrationDialog(
     profileRepository: VehicleProfileRepository,
     currentProfileName: String?,
     folderUri: String?,
+    allowProfileSave: Boolean,
     initialValues: CalibrationSettings,
     initialDriverThresholds: DriverThresholdSettings,
     rmsSmoothMaxText: String,
@@ -550,16 +538,22 @@ private fun CalibrationDialog(
                             }
                         }
                     },
-                    enabled = currentProfileName != null
+                    enabled = allowProfileSave && currentProfileName != null
                 ) { Text("Save") }
                 
-                TextButton(onClick = { showSaveAsDialog = true }) { Text("Save As") }
+                TextButton(
+                    onClick = { showSaveAsDialog = true },
+                    enabled = allowProfileSave
+                ) { Text("Save As") }
                 TextButton(onClick = { showLoadDialog = true }) { Text("Load") }
             }
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onResetDefaults) { Text("Reset") }
+                TextButton(
+                    onClick = onResetDefaults,
+                    enabled = allowProfileSave
+                ) { Text("Reset") }
                 TextButton(onClick = onDismiss) { Text("Back") }
             }
         }

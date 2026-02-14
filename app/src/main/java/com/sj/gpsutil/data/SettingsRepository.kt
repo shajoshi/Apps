@@ -11,7 +11,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-const val MIN_INTERVAL_SECONDS = 1L
+/** Default GPS fix interval in seconds. Change this value to adjust the app-wide recording rate. */
+const val GPS_FIX_INTERVAL_SECONDS = 1L
 
 enum class OutputFormat {
     KML,
@@ -24,15 +25,16 @@ private const val SETTINGS_STORE_NAME = "tracking_settings"
 val Context.settingsDataStore by preferencesDataStore(SETTINGS_STORE_NAME)
 
 data class TrackingSettings(
-    val intervalSeconds: Long = MIN_INTERVAL_SECONDS,
+    val intervalSeconds: Long = GPS_FIX_INTERVAL_SECONDS,
     val folderUri: String? = null,
-    val outputFormat: OutputFormat = OutputFormat.KML,
+    val outputFormat: OutputFormat = OutputFormat.JSON,
     val disablePointFiltering: Boolean = false,
     val enableAccelerometer: Boolean = true,
     val roadCalibrationMode: Boolean = false,
     val calibration: CalibrationSettings = CalibrationSettings(),
     val driverThresholds: DriverThresholdSettings = DriverThresholdSettings(),
-    val currentProfileName: String? = null
+    val currentProfileName: String? = null,
+    val allowProfileSave: Boolean = false
 )
 
 data class CalibrationSettings(
@@ -83,15 +85,16 @@ class SettingsRepository(private val context: Context) {
     private val dtMinSpeedKmphKey = floatPreferencesKey("dt_min_speed_kmph")
     private val dtSmoothnessRmsMaxKey = floatPreferencesKey("dt_smoothness_rms_max")
     private val dtFallLeanAngleKey = floatPreferencesKey("dt_fall_lean_angle")
+    private val allowProfileSaveKey = booleanPreferencesKey("allow_profile_save")
 
     
     val settingsFlow: Flow<TrackingSettings> = context.settingsDataStore.data.map { prefs ->
         TrackingSettings(
-            intervalSeconds = (prefs[intervalKey] ?: MIN_INTERVAL_SECONDS).coerceAtLeast(MIN_INTERVAL_SECONDS),
+            intervalSeconds = (prefs[intervalKey] ?: GPS_FIX_INTERVAL_SECONDS).coerceAtLeast(GPS_FIX_INTERVAL_SECONDS),
             folderUri = prefs[folderUriKey],
             outputFormat = runCatching {
                 prefs[outputFormatKey]?.let { OutputFormat.valueOf(it) }
-            }.getOrNull() ?: OutputFormat.KML,
+            }.getOrNull() ?: OutputFormat.JSON,
             disablePointFiltering = prefs[disableFilteringKey] ?: false,
             enableAccelerometer = prefs[enableAccelerometerKey] ?: true,
             roadCalibrationMode = prefs[roadCalibrationModeKey] ?: false,
@@ -116,13 +119,14 @@ class SettingsRepository(private val context: Context) {
                 smoothnessRmsMax = prefs[dtSmoothnessRmsMaxKey] ?: 10f,
                 fallLeanAngle = prefs[dtFallLeanAngleKey] ?: 40f
             ),
-            currentProfileName = prefs[currentProfileNameKey]
+            currentProfileName = prefs[currentProfileNameKey],
+            allowProfileSave = prefs[allowProfileSaveKey] ?: false
         )
     }
 
     suspend fun updateIntervalSeconds(seconds: Long) {
         context.settingsDataStore.edit { prefs ->
-            prefs[intervalKey] = seconds.coerceAtLeast(MIN_INTERVAL_SECONDS)
+            prefs[intervalKey] = seconds.coerceAtLeast(GPS_FIX_INTERVAL_SECONDS)
         }
     }
 
@@ -210,6 +214,12 @@ class SettingsRepository(private val context: Context) {
             prefs[dtMinSpeedKmphKey] = dt.minSpeedKmph
             prefs[dtSmoothnessRmsMaxKey] = dt.smoothnessRmsMax
             prefs[dtFallLeanAngleKey] = dt.fallLeanAngle
+        }
+    }
+
+    suspend fun updateAllowProfileSave(allow: Boolean) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[allowProfileSaveKey] = allow
         }
     }
 

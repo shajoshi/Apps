@@ -175,29 +175,7 @@ fun DrivingView(onShowDetails: () -> Unit, onNavigate: (AppDestinations) -> Unit
     // Test mode animation sequence
     LaunchedEffect(testMode) {
         if (!testMode) return@LaunchedEffect
-        val steps = 60
-        val stepDelay = 30L
-
-        val testDialLimit = 40f
-        // Phase 1: Sweep needle from 0 → +40 (right)
-        for (i in 0..steps) {
-            testLean = (i.toFloat() / steps) * testDialLimit
-            testSpeed = (i.toFloat() / steps) * 120.0f
-            testAltitude = 500f + (i.toFloat() / steps) * 500f
-            delay(stepDelay)
-        }
-        // Phase 2: Sweep needle from +40 → -40 (right to left)
-        for (i in 0..steps * 2) {
-            testLean = testDialLimit - (i.toFloat() / steps) * testDialLimit
-            delay(stepDelay)
-        }
-        // Phase 3: Sweep needle from -40 → 0 (settle)
-        for (i in 0..steps) {
-            testLean = -testDialLimit + (i.toFloat() / steps) * testDialLimit
-            delay(stepDelay)
-        }
-
-        // Phase 4: 5-second cycle — accel ramps 2→10→0, rotate through all states
+        // 5-second cycle — accel ramps 2→10→0, rotate through all states
         val events = listOf("hard_brake", "hard_accel", "swerve", "aggressive_corner")
         val features = listOf("speed_bump", "pothole", "bump")
         val qualities = listOf("smooth", "average", "rough")

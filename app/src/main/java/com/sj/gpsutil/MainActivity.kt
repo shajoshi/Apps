@@ -21,11 +21,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -111,23 +114,33 @@ fun SJGpsUtilApp() {
         return
     }
 
-    var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.TRACKING) }
+    val navStack = rememberSaveable(
+        saver = androidx.compose.runtime.saveable.listSaver(
+            save = { it.map { d -> d.name } },
+            restore = { it.map { n -> AppDestinations.valueOf(n) }.toMutableStateList() }
+        )
+    ) { mutableStateListOf(AppDestinations.TRACKING) }
+    val currentDestination = navStack.last()
     val trackingStatus by TrackingState.status.collectAsState()
     val canOpenSettings = trackingStatus == TrackingStatus.Idle
 
     LaunchedEffect(canOpenSettings) {
         if (!canOpenSettings && currentDestination == AppDestinations.SETTINGS) {
-            currentDestination = AppDestinations.TRACKING
+            navStack.removeLastOrNull()
+            if (navStack.isEmpty()) navStack.add(AppDestinations.TRACKING)
         }
     }
 
-    BackHandler(enabled = currentDestination != AppDestinations.TRACKING) {
-        currentDestination = AppDestinations.TRACKING
+    BackHandler(enabled = navStack.size > 1) {
+        navStack.removeLastOrNull()
+        if (navStack.isEmpty()) navStack.add(AppDestinations.TRACKING)
     }
 
     val onNavigate: (AppDestinations) -> Unit = { dest ->
         if (dest != AppDestinations.SETTINGS || canOpenSettings) {
-            currentDestination = dest
+            if (dest != currentDestination) {
+                navStack.add(dest)
+            }
         }
     }
 
