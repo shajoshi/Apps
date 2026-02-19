@@ -84,7 +84,9 @@ Analyzes a recorded track and recommends calibration and driver threshold settin
 
 **Usage:**
 ```
-python recommend_thresholds.py <track.json> [--smooth 60] [--rough 10] [--hardbrake 5] [--hardaccel 5] [--norawdata]
+python recommend_thresholds.py <track.json> [--smooth 60] [--rough 10] [--hardbrake 5] [--hardaccel 5]
+                               [--swerves 10] [--aggcorner 6] [--bumps 8] [--potholes 4]
+                               [--norawdata] [--recommendPeakZ] [--peakThresholdZ 6.9]
 ```
 
 **Arguments:**
@@ -95,7 +97,13 @@ python recommend_thresholds.py <track.json> [--smooth 60] [--rough 10] [--hardbr
 | `--rough` | No | — | Target % of moving fixes classified as "rough" road. If specified, `rmsRoughMin` and `stdDevRoughMin` will also be recommended. |
 | `--hardbrake` | No | `5` | Target number of hard braking events |
 | `--hardaccel` | No | `5` | Target number of hard acceleration events |
+| `--swerves` | No | — | Target number of swerve events (requires raw accel data) |
+| `--aggcorner` | No | — | Target number of aggressive corner events (requires raw accel data) |
+| `--bumps` | No | — | Target number of bump features (requires raw accel data) |
+| `--potholes` | No | — | Target number of pothole features (requires raw accel data) |
 | `--norawdata` | No | off | Use pre-computed accel metrics (no `accel.raw[]` needed). Only road quality calibration is recommended in this mode. |
+| `--recommendPeakZ` | No | — | Analyze raw acceleration data and recommend optimal `peakThresholdZ` with visualization plots. |
+| `--peakThresholdZ` | No | — | Override `peakThresholdZ` value for feature detection (e.g., `--peakThresholdZ 6.9`). Use with output from `--recommendPeakZ`. |
 
 **What it does:**
 1. Reads calibration, driver thresholds, and gravity vector from the track file's `recordingSettings`
@@ -104,18 +112,20 @@ python recommend_thresholds.py <track.json> [--smooth 60] [--rough 10] [--hardbr
 4. Uses binary search on `rmsSmoothMax`/`stdDevSmoothMax` to hit the target smooth %
 5. If `--rough` is specified, uses binary search on `rmsRoughMin`/`stdDevRoughMin` to hit the target rough %
 6. Uses percentile selection on `fwdMax` values to yield target hard brake/accel counts
-7. Prints current vs recommended values with verification
+7. Uses percentile selection on `latMax`/`deltaCourse` to yield target swerve/aggressive corner counts
+8. Uses peak-threshold + vertical sign tuning to hit bump/pothole targets
+9. Prints current vs recommended values with verification
 
 **Outputs:**
 - `<track>_recommendations.json` — recommended calibration + driver threshold settings
-- `<track>_road_quality.kml` — Google Earth KML with colour-coded road quality (green=smooth, orange=average, red=rough) using recommended thresholds. Includes point placemarks with info balloons and colour-coded line segments.
+- `<track>_road_quality.kml` — Google Earth KML with colour-coded road quality (green=smooth, orange=average, red=rough) using recommended thresholds. Includes colour-coded line segments. When raw data is available (not `--norawdata`), also includes driver event placemarks (red=hard brake, green=hard accel, blue=swerve, yellow=aggressive corner).
 - `<track>_recommendations.png` — 6-panel figure (or 4-panel with `--norawdata`): RMS histogram, StdDev histogram, road quality comparison, brake CDF, accel CDF, speed+quality timeline
 
 ---
 
 ### `validate_calc_for_profile.py`
 
-Validates accelerometer computation against a recorded track using a given calibration profile. Replicates the exact `computeAccelMetrics()`, `detectFeatureFromMetrics()`, and `detectSpeedHumpPattern()` logic from the app.
+Validates accelerometer computation against a recorded track using a given calibration profile. Replicates the exact `computeAccelMetrics()` and `detectFeatureFromMetrics()` logic from the app.
 
 **Usage:**
 ```
@@ -130,7 +140,7 @@ python validate_calc_for_profile.py <calibration_profile.json> <recording_track.
 
 **What it does:**
 - Loads a calibration profile and applies it to a recorded track
-- Computes per-GPS-fix: `rmsVert`, `maxMagnitude`, `stdDevVert`, `peakRatio`, windowed averages, road quality, feature detection (pothole, bump, speed_bump)
+- Computes per-GPS-fix: `rmsVert`, `maxMagnitude`, `stdDevVert`, windowed averages, road quality, feature detection (pothole, bump)
 - Projects raw accel onto vehicle-frame axes (vertical, forward, lateral) using the track's gravity vector
 
 **Outputs:**
@@ -240,57 +250,8 @@ python extract_test_points.py <input_file> <output_file> [--max-per-category N]
 | `--max-per-category` | No | — | Maximum number of points to keep per category |
 
 **What it does:**
-- Selects representative points from each category: driver events (`hard_brake`, `hard_accel`, `swerve`, `aggressive_corner`), road quality (`rough`, `average`), features (`speed_bump`, `pothole`, `bump`), low speed, smooth+normal baseline, first/last points
+- Selects representative points from each category: driver events (`hard_brake`, `hard_accel`, `swerve`, `aggressive_corner`), road quality (`rough`, `average`), features (`pothole`, `bump`), low speed, smooth+normal baseline, first/last points
 - Preserves the full JSON structure (meta + selected data points)
 
 ---
 
-## Speed Hump Detection
-
-### `detect_speed_humps.py`
-
-Detects speed humps/breakers in track data using a 5-gate data-driven algorithm based on oscillation pattern analysis.
-
-**Usage:**
-```
-python detect_speed_humps.py <track.json>
-```
-
-**Arguments:**
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `track.json` | Yes | SJGpsUtil JSON track file with `accel.raw[]` data |
-
-**What it does:**
-- Applies 5 detection gates per GPS fix: minimum peak count, zero crossings (oscillations), duration check, peak-to-peak amplitude, amplitude decay pattern
-- Uses speed-adaptive thresholds: low speed (<20 km/h) vs high speed (>=20 km/h)
-- Based on speed breaker physics: high forward accel + oscillation + decay
-
-**Outputs:**
-- Console: detection results with coordinates and metrics
-- `<track>_speed_humps.gpx` — GPX file with detected speed hump locations for mapping
-
----
-
-### `test_speed_hump_detection.py`
-
-Test/analysis script for speed hump detection. Runs pattern analysis on all GPS fixes and exports detailed metrics for threshold tuning.
-
-**Usage:**
-```
-python test_speed_hump_detection.py <track.json>
-```
-
-**Arguments:**
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `track.json` | Yes | SJGpsUtil JSON track file with `accel.raw[]` data |
-
-**What it does:**
-- Runs speed hump detection on every GPS fix and collects detailed pattern metrics
-- Computes per-fix: peak count, zero crossings, peak-to-peak amplitude, duration, peak density
-- Provides threshold recommendations based on 75th percentile analysis (low speed vs high speed)
-
-**Outputs:**
-- `<track>_pattern_analysis.csv` — per-fix CSV with all pattern metrics for threshold tuning
-- Console: detection statistics and recommended thresholds

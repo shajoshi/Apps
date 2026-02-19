@@ -121,17 +121,27 @@ def main():
             f.write('</ExtendedData>\n')
 
         # --- Styles ---
-        f.write('<Style id="smoothStyle"><IconStyle><color>ff00ff00</color>'
-                '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href>'
+        # Road quality line styles (colored path)
+        f.write('<Style id="smoothLineStyle"><LineStyle><color>ff00ff00</color><width>4</width></LineStyle></Style>\n')
+        f.write('<Style id="averageLineStyle"><LineStyle><color>ff00aaff</color><width>4</width></LineStyle></Style>\n')
+        f.write('<Style id="roughLineStyle"><LineStyle><color>ff0000cc</color><width>4</width></LineStyle></Style>\n')
+        
+        # Feature point styles (only for bumps/potholes)
+        f.write('<Style id="bumpStyle"><IconStyle><color>ffffff00</color><scale>0.8</scale>'
+                '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/triangle.png</href>'
                 '</Icon></IconStyle></Style>\n')
-        f.write('<Style id="roughStyle"><IconStyle><color>ff0000ff</color>'
-                '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href>'
+        f.write('<Style id="potholeStyle"><IconStyle><color>ff8b4513</color><scale>0.8</scale>'
+                '<Icon><href>http://maps.google.com/mapfiles/kml/shapes/diamond.png</href>'
                 '</Icon></IconStyle></Style>\n')
 
-        # --- Per-point Placemarks + track entries ---
+        # --- Process points and collect line segments ---
         track_when = []
         track_coords = []
-        line_coords = []
+        line_segments = []
+        feature_points = []
+        
+        current_segment = []
+        current_quality = None
 
         for point in data:
             if isinstance(point, str):
@@ -162,72 +172,97 @@ def main():
             # Track entries for gx:Track
             track_when.append(f"<when>{timestamp}</when>\n")
             track_coords.append(f"<gx:coord>{lon} {lat} {alt}</gx:coord>\n")
-            line_coords.append(f"{lon},{lat},{alt}")
+            
+            # Collect line segments by road quality
+            coord_str = f"{lon},{lat},{alt}"
+            if road_quality != current_quality:
+                # End current segment if it exists
+                if current_segment and current_quality:
+                    line_segments.append({
+                        "quality": current_quality,
+                        "coords": current_segment.copy()
+                    })
+                # Start new segment
+                current_segment = [coord_str]
+                current_quality = road_quality
+            else:
+                current_segment.append(coord_str)
+            
+            # Only create placemarks for road features (bumps/potholes)
+            if feature:
+                feature_points.append({
+                    "feature": feature,
+                    "lat": lat,
+                    "lon": lon,
+                    "alt": alt,
+                    "timestamp": timestamp,
+                    "speed": speed,
+                    "bearing": bearing,
+                    "accel": accel
+                })
 
-            # Placemark
+        # Add the last segment
+        if current_segment and current_quality:
+            line_segments.append({
+                "quality": current_quality,
+                "coords": current_segment
+            })
+        
+        # --- Write road quality line segments ---
+        for segment in line_segments:
+            quality = segment["quality"]
+            coords = " ".join(segment["coords"])
+            
+            style_id = "averageLineStyle"  # default
+            if quality == "smooth":
+                style_id = "smoothLineStyle"
+            elif quality == "rough":
+                style_id = "roughLineStyle"
+            
             f.write('<Placemark>\n')
-            f.write(f'<name>{saxutils.escape(feature)}</name>\n')
-
-            style_id = None
-            if road_quality == "smooth":
-                style_id = "smoothStyle"
-            elif road_quality == "rough":
-                style_id = "roughStyle"
-            if style_id:
-                f.write(f'<styleUrl>#{style_id}</styleUrl>\n')
-
-            f.write(f'<TimeStamp><when>{timestamp}</when></TimeStamp>\n')
+            f.write(f'<name>Road Quality: {quality}</name>\n')
+            f.write(f'<styleUrl>#{style_id}</styleUrl>\n')
+            f.write('<LineString>\n')
+            f.write('<tessellate>1</tessellate>\n')
+            f.write(f'<coordinates>{coords}</coordinates>\n')
+            f.write('</LineString>\n')
+            f.write('</Placemark>\n')
+        
+        # --- Write feature placemarks (only bumps/potholes) ---
+        for fp in feature_points:
+            feature = fp["feature"]
+            style_id = "bumpStyle" if feature == "bump" else "potholeStyle"
+            
+            f.write('<Placemark>\n')
+            f.write(f'<name>{saxutils.escape(feature.capitalize())}</name>\n')
+            f.write(f'<styleUrl>#{style_id}</styleUrl>\n')
+            f.write(f'<TimeStamp><when>{fp["timestamp"]}</when></TimeStamp>\n')
             f.write('<ExtendedData>\n')
-            write_data(f, "timestamp", timestamp)
-            write_data(f, "speedKmph", fmt(speed, 2))
-            write_data(f, "bearingDegrees", fmt(bearing, 1))
-            write_data(f, "accuracyMeters", fmt(acc, 1))
-
-            # Accel metrics
-            x_mean = accel.get("xMean")
-            if x_mean is not None:
-                write_data(f, "accelXMean", fmt(x_mean))
-                write_data(f, "accelYMean", fmt(accel.get("yMean", 0)))
-                write_data(f, "accelZMean", fmt(accel.get("zMean", 0)))
-
-                vert_mean = accel.get("vertMean")
-                if vert_mean is not None:
-                    write_data(f, "accelVertMean", fmt(vert_mean))
-
-                write_data(f, "accelMagnitudeMax", fmt(accel.get("magMax", 0)))
-                write_data(f, "accelRMS", fmt(accel.get("rms", 0)))
-
-                if road_quality:
-                    write_data(f, "roadQuality", road_quality)
-                if feature:
-                    write_data(f, "featureDetected", feature)
-
-                for field in ["peakRatio", "stdDev", "avgRms", "avgMaxMagnitude",
-                              "avgMeanMagnitude", "avgStdDev", "avgPeakRatio",
-                              "fwdRms", "fwdMax", "latRms", "latMax"]:
-                    val = accel.get(field)
-                    if val is not None:
-                        write_data(f, field, fmt(val))
-
+            write_data(f, "timestamp", fp["timestamp"])
+            write_data(f, "speedKmph", fmt(fp["speed"], 2))
+            write_data(f, "bearingDegrees", fmt(fp["bearing"], 1))
+            write_data(f, "featureDetected", feature)
+            
+            # Add key accel metrics for features
+            accel = fp["accel"]
+            write_data(f, "accelMagnitudeMax", fmt(accel.get("magMax", 0)))
+            write_data(f, "accelRMS", fmt(accel.get("rms", 0)))
+            write_data(f, "accelVertMean", fmt(accel.get("vertMean", 0)))
+            
             f.write('</ExtendedData>\n')
-            f.write(f'<Point>\n<coordinates>{lon},{lat},{alt}</coordinates>\n</Point>\n')
+            f.write(f'<Point>\n<coordinates>{fp["lon"]},{fp["lat"]},{fp["alt"]}</coordinates>\n</Point>\n')
             f.write('</Placemark>\n')
 
-        # --- gx:Track + LineString ---
+        # --- gx:Track (optional, for timeline playback) ---
         f.write('<Placemark>\n')
-        f.write('<name>Track</name>\n')
-        f.write('<MultiGeometry>\n')
+        f.write('<name>Track Timeline</name>\n')
+        f.write('<visibility>0</visibility>\n')  # Hidden by default
         f.write('<gx:Track>\n')
         for w in track_when:
             f.write(w)
         for c in track_coords:
             f.write(c)
         f.write('</gx:Track>\n')
-        f.write('<LineString>\n')
-        f.write('<tessellate>1</tessellate>\n')
-        f.write(f'<coordinates>{" ".join(line_coords)}</coordinates>\n')
-        f.write('</LineString>\n')
-        f.write('</MultiGeometry>\n')
         f.write('</Placemark>\n')
 
         # --- Summary ---
@@ -247,8 +282,14 @@ def main():
         f.write('</Document>\n')
         f.write('</kml>\n')
 
-    point_count = len(line_coords)
-    print(f"Converted {point_count} points from JSON to KML")
+    # Count total points processed
+    total_points = len(data)
+    feature_count = len(feature_points)
+    segment_count = len(line_segments)
+    
+    print(f"Converted {total_points} points from JSON to KML")
+    print(f"  Road quality segments: {segment_count}")
+    print(f"  Features detected: {feature_count} ({len([fp for fp in feature_points if fp['feature'] == 'bump'])} bumps, {len([fp for fp in feature_points if fp['feature'] == 'pothole'])} potholes)")
     print(f"  Input:  {args.json_file}")
     print(f"  Output: {output_path}")
 

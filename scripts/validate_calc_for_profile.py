@@ -2,8 +2,8 @@
 """
 Validate accelerometer computation against a recorded track using a given calibration profile.
 
-Replicates the exact computeAccelMetrics(), detectFeatureFromMetrics(), and
-detectSpeedHumpPattern() logic from TrackingService.kt in Python, then writes
+Replicates the exact computeAccelMetrics() and detectFeatureFromMetrics() logic
+from TrackingService.kt in Python, then writes
 a colour-coded KML file that can be loaded into Google Earth or GPSLoggerII.
 
 Usage:
@@ -16,7 +16,6 @@ Calibration profile JSON format (same keys as CalibrationSettings):
     "movingAverageWindow": 7,
     "stdDevSmoothMax": 2.0,
     "rmsRoughMin": 3.3,
-    "peakRatioRoughMin": 0.60,
     "stdDevRoughMin": 2.0,
     "magMaxSevereMin": 20.0,
     "qualityWindowSize": 3
@@ -45,7 +44,6 @@ DEFAULT_CALIBRATION = {
     "movingAverageWindow": 5,
     "stdDevSmoothMax": 2.5,
     "rmsRoughMin": 4.5,
-    "peakRatioRoughMin": 0.6,
     "stdDevRoughMin": 3.0,
     "magMaxSevereMin": 20.0,
     "qualityWindowSize": 3,
@@ -110,78 +108,14 @@ def apply_moving_average(data: List[List[float]], window_size: int) -> List[List
 # Feature detection (mirrors detectFeatureFromMetrics)
 # ---------------------------------------------------------------------------
 def detect_feature_from_metrics(
-    rms: float, mag_max: float, peak_ratio: float, cal: dict
+    rms: float, mag_max: float, mean_vert: float, cal: dict
 ) -> Optional[str]:
     if rms <= cal["rmsRoughMin"]:
         return None
     if mag_max > cal["magMaxSevereMin"]:
-        return "pothole" if peak_ratio < cal["peakRatioRoughMin"] else "bump"
+        # Use net vertical direction: downward impulse -> bump, upward -> pothole.
+        return "pothole" if mean_vert >= 0 else "bump"
     return None
-
-
-# ---------------------------------------------------------------------------
-# Speed-hump pattern detection (mirrors detectSpeedHumpPattern)
-# ---------------------------------------------------------------------------
-def detect_speed_hump_pattern(
-    raw_vert_accel: List[float],
-    fwd_max: float,
-    speed: float,
-    sampling_rate: float = 100.0,
-) -> Optional[str]:
-    LOW_SPEED_THRESHOLD = 20.0
-    LOW_SPEED_AMPLITUDE = 10.0
-    LOW_SPEED_MIN_PEAKS = 8
-    HIGH_SPEED_AMPLITUDE = 12.0
-    HIGH_SPEED_MIN_PEAKS = 12
-    MAX_DURATION = 8.0
-    DECAY_RATIO_THRESHOLD = 0.7
-    MIN_ZERO_CROSSINGS = 20
-
-    if speed < LOW_SPEED_THRESHOLD:
-        min_amplitude, min_peaks = LOW_SPEED_AMPLITUDE, LOW_SPEED_MIN_PEAKS
-    else:
-        min_amplitude, min_peaks = HIGH_SPEED_AMPLITUDE, HIGH_SPEED_MIN_PEAKS
-
-    # Gate 1: peaks
-    peaks = []
-    for i in range(1, len(raw_vert_accel) - 1):
-        cur = raw_vert_accel[i]
-        if cur > raw_vert_accel[i - 1] and cur > raw_vert_accel[i + 1] and abs(cur) > 5.0:
-            peaks.append(cur)
-    if len(peaks) < min_peaks:
-        return None
-
-    # Gate 2: zero crossings
-    zero_crossings = sum(
-        1
-        for i in range(1, len(raw_vert_accel))
-        if raw_vert_accel[i - 1] * raw_vert_accel[i] < 0
-    )
-    if zero_crossings < MIN_ZERO_CROSSINGS:
-        return None
-
-    # Gate 3: duration
-    duration = len(raw_vert_accel) / sampling_rate
-    if duration > MAX_DURATION:
-        return None
-
-    # Gate 4: peak-to-peak amplitude
-    if not peaks:
-        return None
-    p2p = max(peaks) - min(peaks)
-    if p2p < min_amplitude:
-        return None
-
-    # Gate 5: amplitude decay
-    if len(peaks) >= 4:
-        mid = len(peaks) // 2
-        first_avg = sum(abs(p) for p in peaks[:mid]) / mid
-        second_avg = sum(abs(p) for p in peaks[mid:]) / (len(peaks) - mid)
-        decay = second_avg / first_avg if first_avg > 0 else 1.0
-        if decay > DECAY_RATIO_THRESHOLD:
-            return None
-
-    return "speed_bump"
 
 
 # ---------------------------------------------------------------------------
@@ -313,20 +247,8 @@ def compute_accel_metrics(
         else:
             road_quality = "average"
 
-        # Speed hump pattern on vertical acceleration
-        raw_vert_accel = []
-        for v in smoothed:
-            if use_g:
-                a_vert = v[0] * use_g[0] + v[1] * use_g[1] + v[2] * use_g[2]
-            else:
-                a_vert = v[2]
-            raw_vert_accel.append(a_vert)
-
-        speed_hump = detect_speed_hump_pattern(raw_vert_accel, fwd_max, speed_kmph, SAMPLING_RATE)
-        if speed_hump:
-            feature = speed_hump
-        else:
-            feature = detect_feature_from_metrics(rms_vert, max_magnitude, peak_ratio, cal)
+        # Feature detection using vertical sign
+        feature = detect_feature_from_metrics(rms_vert, max_magnitude, mean_vert, cal)
 
     return {
         "rms_vert": rms_vert,
@@ -386,7 +308,6 @@ ROAD_QUALITY_COLORS = {
 }
 
 FEATURE_ICONS = {
-    "speed_bump": "http://maps.google.com/mapfiles/kml/shapes/caution.png",
     "pothole": "http://maps.google.com/mapfiles/kml/shapes/forbidden.png",
     "bump": "http://maps.google.com/mapfiles/kml/shapes/earthquake.png",
 }

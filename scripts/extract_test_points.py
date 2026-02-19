@@ -9,7 +9,7 @@ Usage:
 Categories selected:
   - Driver events: hard_brake, hard_accel, swerve, aggressive_corner
   - Road quality: rough, average
-  - Features: speed_bump, pothole, bump
+  - Features: pothole, bump
   - Low speed (< 6 km/h)
   - Smooth + normal baseline
   - First and last data points
@@ -102,7 +102,6 @@ def extract_test_points(input_path, output_path, max_per_category=3):
         "event:aggressive_corner",
         "road:rough",
         "road:average",
-        "feature:speed_bump",
         "feature:pothole",
         "feature:bump",
         "low_speed",
