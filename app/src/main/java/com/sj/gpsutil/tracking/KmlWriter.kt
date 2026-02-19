@@ -6,11 +6,46 @@ import java.io.OutputStreamWriter
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 
+data class TrackPoint(
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double,
+    val timestamp: String,
+    val speed: Double,
+    val bearing: Double,
+    val accuracy: Double,
+    val verticalAccuracy: Double,
+    val featureDetected: String?,
+    val roadQuality: String?,
+    val accelXMean: Double?,
+    val accelYMean: Double?,
+    val accelZMean: Double?,
+    val accelVertMean: Double?,
+    val accelMagMax: Double?,
+    val accelRMS: Double?,
+    val stdDev: Double?,
+    val avgRms: Double?,
+    val avgMaxMagnitude: Double?,
+    val avgMeanMagnitude: Double?,
+    val avgStdDev: Double?,
+    val avgPeakRatio: Double?,
+    val peakRatio: Double?,
+    val accelFwdRms: Double?,
+    val accelFwdMax: Double?,
+    val accelLatRms: Double?,
+    val accelLatMax: Double?
+)
+
+data class LineSegment(
+    val quality: String,
+    val coordinates: MutableList<String>
+)
+
 class KmlWriter(outputStream: OutputStream) : TrackWriter {
     private val writer = BufferedWriter(OutputStreamWriter(outputStream))
     private var closed = false
     private val trackEntries = StringBuilder()
-    private val lineStringCoordinates = StringBuilder()
+    private val trackPoints = mutableListOf<TrackPoint>()
     private var recordingSettings: RecordingSettingsSnapshot? = null
 
     override fun setRecordingSettings(settings: RecordingSettingsSnapshot) {
@@ -63,10 +98,18 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             writer.write("<Data name=\"driverThresholds.fallLeanAngle\"><value>${"%.3f".format(dt.fallLeanAngle)}</value></Data>\n")
             writer.write("</ExtendedData>\n")
         }
-        // Styles for point coloring by road quality
-        writer.write("<Style id=\"smoothStyle\"><IconStyle><color>ff00ff00</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>")
+        // Styles for road quality lines and feature points
+        writer.write("<Style id=\"smoothLineStyle\"><LineStyle><color>ff00ff00</color><width>4</width></LineStyle></Style>")
         writer.newLine()
-        writer.write("<Style id=\"roughStyle\"><IconStyle><color>ff0000ff</color><Icon><href>http://maps.google.com/mapfiles/kml/shapes/placemark_circle.png</href></Icon></IconStyle></Style>")
+        writer.write("<Style id=\"averageLineStyle\"><LineStyle><color>ff00aaff</color><width>4</width></LineStyle></Style>")
+        writer.newLine()
+        writer.write("<Style id=\"roughLineStyle\"><LineStyle><color>ff0000cc</color><width>4</width></LineStyle></Style>")
+        writer.newLine()
+        
+        // Feature point styles (only for bumps/potholes)
+        writer.write("<Style id=\"bumpStyle\"><IconStyle><color>ffffff00</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/triangle.png</href></Icon></IconStyle></Style>")
+        writer.newLine()
+        writer.write("<Style id=\"potholeStyle\"><IconStyle><color>ff8b4513</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/diamond.png</href></Icon></IconStyle></Style>")
         writer.newLine()
         writer.flush()
     }
@@ -75,162 +118,179 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
         val altitude = sample.altitudeMeters ?: 0.0
         val timestamp = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(sample.timestampMillis))
 
-        val speed = sample.speedKmph?.let { "%.2f".format(it) } ?: ""
-        val bearing = sample.bearingDegrees?.let { "%.1f".format(it) } ?: ""
-        val accuracy = sample.accuracyMeters?.let { "%.1f".format(it) } ?: ""
-        val verticalAccuracy = sample.verticalAccuracyMeters?.let { "%.1f".format(it) } ?: ""
-        val accelXMean = sample.accelXMean?.let { "%.3f".format(it) } ?: ""
-        val accelYMean = sample.accelYMean?.let { "%.3f".format(it) } ?: ""
-        val accelZMean = sample.accelZMean?.let { "%.3f".format(it) } ?: ""
-        val accelVertMean = sample.accelVertMean?.let { "%.3f".format(it) } ?: ""
-        val accelMagMax = sample.accelMagnitudeMax?.let { "%.3f".format(it) } ?: ""
-        val accelRMS = sample.accelRMS?.let { "%.3f".format(it) } ?: ""
-
+        // Collect track point data for later processing
+        val trackPoint = TrackPoint(
+            latitude = sample.latitude,
+            longitude = sample.longitude,
+            altitude = altitude,
+            timestamp = timestamp,
+            speed = sample.speedKmph?.toDouble() ?: 0.0,
+            bearing = sample.bearingDegrees?.toDouble() ?: 0.0,
+            accuracy = sample.accuracyMeters?.toDouble() ?: 0.0,
+            verticalAccuracy = sample.verticalAccuracyMeters?.toDouble() ?: 0.0,
+            featureDetected = sample.featureDetected,
+            roadQuality = sample.roadQuality,
+            accelXMean = sample.accelXMean?.toDouble(),
+            accelYMean = sample.accelYMean?.toDouble(),
+            accelZMean = sample.accelZMean?.toDouble(),
+            accelVertMean = sample.accelVertMean?.toDouble(),
+            accelMagMax = sample.accelMagnitudeMax?.toDouble(),
+            accelRMS = sample.accelRMS?.toDouble(),
+            stdDev = sample.stdDev?.toDouble(),
+            avgRms = sample.avgRms?.toDouble(),
+            avgMaxMagnitude = sample.avgMaxMagnitude?.toDouble(),
+            avgMeanMagnitude = sample.avgMeanMagnitude?.toDouble(),
+            avgStdDev = sample.avgStdDev?.toDouble(),
+            avgPeakRatio = sample.avgPeakRatio?.toDouble(),
+            peakRatio = sample.peakRatio?.toDouble(),
+            accelFwdRms = sample.accelFwdRms?.toDouble(),
+            accelFwdMax = sample.accelFwdMax?.toDouble(),
+            accelLatRms = sample.accelLatRms?.toDouble(),
+            accelLatMax = sample.accelLatMax?.toDouble()
+        )
+        
+        trackPoints.add(trackPoint)
+        
+        // Track entries for gx:Track
         trackEntries.append("<when>$timestamp</when>\n")
         trackEntries.append("<gx:coord>${sample.longitude} ${sample.latitude} $altitude</gx:coord>\n")
-
-        writer.write("<Placemark>")
-        writer.newLine()
-        val featureName = sample.featureDetected ?: ""
-        writer.write("<name>$featureName</name>")
-        writer.newLine()
-        val styleId = when (sample.roadQuality) {
-            "smooth" -> "smoothStyle"
-            "rough" -> "roughStyle"
-            else -> null
-        }
-        styleId?.let {
-            writer.write("<styleUrl>#$it</styleUrl>")
-            writer.newLine()
-        }
-        writer.write("<TimeStamp><when>$timestamp</when></TimeStamp>")
-        writer.newLine()
-        writer.write("<ExtendedData>")
-        writer.newLine()
-        writer.write("<Data name=\"timestamp\"><value>$timestamp</value></Data>")
-        writer.newLine()
-        writer.write("<Data name=\"speedKmph\"><value>$speed</value></Data>")
-        writer.newLine()
-        writer.write("<Data name=\"bearingDegrees\"><value>$bearing</value></Data>")
-        writer.newLine()
-        writer.write("<Data name=\"accuracyMeters\"><value>$accuracy</value></Data>")
-        writer.newLine()
-        writer.write("<Data name=\"verticalAccuracyMeters\"><value>$verticalAccuracy</value></Data>")
-        writer.newLine()
-        if (sample.accelXMean != null) {
-            val formattedStdDev = sample.stdDev?.let { "%.3f".format(it) }
-            writer.write("<Data name=\"accelXMean\"><value>$accelXMean</value></Data>")
-            writer.newLine()
-            writer.write("<Data name=\"accelYMean\"><value>$accelYMean</value></Data>")
-            writer.newLine()
-            writer.write("<Data name=\"accelZMean\"><value>$accelZMean</value></Data>")
-            writer.newLine()
-            if (sample.accelVertMean != null) {
-                writer.write("<Data name=\"accelVertMean\"><value>$accelVertMean</value></Data>")
-                writer.newLine()
-            }
-            writer.write("<Data name=\"accelMagnitudeMax\"><value>$accelMagMax</value></Data>")
-            writer.newLine()
-            writer.write("<Data name=\"accelRMS\"><value>$accelRMS</value></Data>")
-            writer.newLine()
-            sample.roadQuality?.let {
-                writer.write("<Data name=\"roadQuality\"><value>$it</value></Data>")
-                writer.newLine()
-            }
-            sample.featureDetected?.let {
-                writer.write("<Data name=\"featureDetected\"><value>$it</value></Data>")
-                writer.newLine()
-            }
-            sample.peakRatio?.let {
-                writer.write("<Data name=\"peakRatio\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.stdDev?.let {
-                writer.write("<Data name=\"stdDev\"><value>${formattedStdDev}</value></Data>")
-                writer.newLine()
-            }
-            sample.avgRms?.let {
-                writer.write("<Data name=\"avgRms\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.avgMaxMagnitude?.let {
-                writer.write("<Data name=\"avgMaxMagnitude\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.avgMeanMagnitude?.let {
-                writer.write("<Data name=\"avgMeanMagnitude\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.avgStdDev?.let {
-                writer.write("<Data name=\"avgStdDev\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.avgPeakRatio?.let {
-                writer.write("<Data name=\"avgPeakRatio\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.accelFwdRms?.let {
-                writer.write("<Data name=\"fwdRms\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.accelFwdMax?.let {
-                writer.write("<Data name=\"fwdMax\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.accelLatRms?.let {
-                writer.write("<Data name=\"latRms\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-            sample.accelLatMax?.let {
-                writer.write("<Data name=\"latMax\"><value>${"%.3f".format(it)}</value></Data>")
-                writer.newLine()
-            }
-        }
-        writer.write("</ExtendedData>")
-        writer.newLine()
-        writer.write("<Point>")
-        writer.newLine()
-        writer.write("<coordinates>${sample.longitude},${sample.latitude},$altitude</coordinates>")
-        writer.newLine()
-        writer.write("</Point>")
-        writer.newLine()
-        writer.write("</Placemark>")
-        writer.newLine()
-
-        if (lineStringCoordinates.isNotEmpty()) {
-            lineStringCoordinates.append(' ')
-        }
-        lineStringCoordinates.append("${sample.longitude},${sample.latitude},$altitude")
+        
         writer.flush()
     }
 
     override fun close(totalDistanceMeters: Double?) {
         if (closed) return
 
+        // Process points and create line segments
+        val lineSegments = mutableListOf<LineSegment>()
+        val featurePoints = mutableListOf<TrackPoint>()
+        
+        var currentSegment = mutableListOf<String>()
+        var currentQuality: String? = null
+        
+        for (point in trackPoints) {
+            val coordStr = "${point.longitude},${point.latitude},${point.altitude}"
+            
+            // Collect line segments by road quality
+            if (point.roadQuality != currentQuality) {
+                // End current segment if it exists
+                if (currentSegment.isNotEmpty() && currentQuality != null) {
+                    lineSegments.add(LineSegment(currentQuality!!, currentSegment.toMutableList()))
+                }
+                // Start new segment
+                currentSegment = mutableListOf(coordStr)
+                currentQuality = point.roadQuality
+            } else {
+                currentSegment.add(coordStr)
+            }
+            
+            // Only collect feature points (bumps/potholes)
+            if (!point.featureDetected.isNullOrEmpty()) {
+                featurePoints.add(point)
+            }
+        }
+        
+        // Add the last segment
+        if (currentSegment.isNotEmpty() && currentQuality != null) {
+            lineSegments.add(LineSegment(currentQuality!!, currentSegment))
+        }
+        
+        // --- Write road quality line segments ---
+        for (segment in lineSegments) {
+            val styleId = when (segment.quality) {
+                "smooth" -> "smoothLineStyle"
+                "rough" -> "roughLineStyle"
+                else -> "averageLineStyle"
+            }
+            
+            writer.write("<Placemark>")
+            writer.newLine()
+            writer.write("<name>Road Quality: ${segment.quality}</name>")
+            writer.newLine()
+            writer.write("<styleUrl>#$styleId</styleUrl>")
+            writer.newLine()
+            writer.write("<LineString>")
+            writer.newLine()
+            writer.write("<tessellate>1</tessellate>")
+            writer.newLine()
+            writer.write("<coordinates>${segment.coordinates.joinToString(" ")}</coordinates>")
+            writer.newLine()
+            writer.write("</LineString>")
+            writer.newLine()
+            writer.write("</Placemark>")
+            writer.newLine()
+        }
+        
+        // --- Write feature placemarks (only bumps/potholes) ---
+        for (point in featurePoints) {
+            val styleId = when (point.featureDetected) {
+                "bump" -> "bumpStyle"
+                "pothole" -> "potholeStyle"
+                else -> null
+            }
+            
+            writer.write("<Placemark>")
+            writer.newLine()
+            writer.write("<name>${point.featureDetected?.capitalize() ?: "Feature"}</name>")
+            writer.newLine()
+            styleId?.let {
+                writer.write("<styleUrl>#$it</styleUrl>")
+                writer.newLine()
+            }
+            writer.write("<TimeStamp><when>${point.timestamp}</when></TimeStamp>")
+            writer.newLine()
+            writer.write("<ExtendedData>")
+            writer.newLine()
+            writer.write("<Data name=\"timestamp\"><value>${point.timestamp}</value></Data>")
+            writer.newLine()
+            writer.write("<Data name=\"speedKmph\"><value>${"%.2f".format(point.speed)}</value></Data>")
+            writer.newLine()
+            writer.write("<Data name=\"bearingDegrees\"><value>${"%.1f".format(point.bearing)}</value></Data>")
+            writer.newLine()
+            writer.write("<Data name=\"featureDetected\"><value>${point.featureDetected}</value></Data>")
+            writer.newLine()
+            
+            // Add key accel metrics for features
+            point.accelMagMax?.let {
+                writer.write("<Data name=\"accelMagnitudeMax\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            point.accelRMS?.let {
+                writer.write("<Data name=\"accelRMS\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            point.accelVertMean?.let {
+                writer.write("<Data name=\"accelVertMean\"><value>${"%.3f".format(it)}</value></Data>")
+                writer.newLine()
+            }
+            
+            writer.write("</ExtendedData>")
+            writer.newLine()
+            writer.write("<Point>")
+            writer.newLine()
+            writer.write("<coordinates>${point.longitude},${point.latitude},${point.altitude}</coordinates>")
+            writer.newLine()
+            writer.write("</Point>")
+            writer.newLine()
+            writer.write("</Placemark>")
+            writer.newLine()
+        }
+        
+        // --- gx:Track (optional, for timeline playback) ---
         writer.write("<Placemark>")
         writer.newLine()
-        writer.write("<name>Track</name>")
+        writer.write("<name>Track Timeline</name>")
         writer.newLine()
-        writer.write("<MultiGeometry>")
-        writer.newLine()
+        writer.write("<visibility>0</visibility>")  // Hidden by default
         writer.write("<gx:Track>")
         writer.newLine()
         writer.write(trackEntries.toString())
         writer.write("</gx:Track>")
         writer.newLine()
-        writer.write("<LineString>")
-        writer.newLine()
-        writer.write("<tessellate>1</tessellate>")
-        writer.newLine()
-        writer.write("<coordinates>${lineStringCoordinates}</coordinates>")
-        writer.newLine()
-        writer.write("</LineString>")
-        writer.newLine()
-        writer.write("</MultiGeometry>")
-        writer.newLine()
         writer.write("</Placemark>")
         writer.newLine()
 
+        // --- Summary ---
         totalDistanceMeters?.let { meters ->
             val km = meters / 1000.0
             val formattedMeters = "%.1f".format(meters)
