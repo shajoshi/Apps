@@ -231,7 +231,7 @@ class KmlWriter(outputStream: OutputStream) : TrackWriter {
             
             writer.write("<Placemark>")
             writer.newLine()
-            writer.write("<name>${point.featureDetected?.capitalize() ?: "Feature"}</name>")
+            writer.write("<name>${point.featureDetected?.replaceFirstChar { it.uppercase() } ?: "Feature"}</name>")
             writer.newLine()
             styleId?.let {
                 writer.write("<styleUrl>#$it</styleUrl>")
