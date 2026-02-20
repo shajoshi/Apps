@@ -162,29 +162,29 @@ class MetricsEngineTest {
 
     @Test
     fun testFeatureDetectionPothole() {
-        // rms > rmsRoughMin(4.0), magMax > magMaxSevereMin(25.0), peakRatio < peakRatioRoughMin(0.4)
-        val feature = engine.detectFeatureFromMetrics(rms = 5.0f, magMax = 30.0f, peakRatio = 0.2f)
+        // rms > rmsRoughMin(4.0), magMax > magMaxSevereMin(25.0), meanVert >= 0 → pothole
+        val feature = engine.detectFeatureFromMetrics(rms = 5.0f, magMax = 30.0f, peakRatio = 0.2f, meanVert = 1.0f)
         assertEquals("pothole", feature)
     }
 
     @Test
     fun testFeatureDetectionBump() {
-        // rms > rmsRoughMin(4.0), magMax > magMaxSevereMin(25.0), peakRatio >= peakRatioRoughMin(0.4)
-        val feature = engine.detectFeatureFromMetrics(rms = 5.0f, magMax = 30.0f, peakRatio = 0.5f)
+        // rms > rmsRoughMin(4.0), magMax > magMaxSevereMin(25.0), meanVert < 0 → bump
+        val feature = engine.detectFeatureFromMetrics(rms = 5.0f, magMax = 30.0f, peakRatio = 0.5f, meanVert = -1.0f)
         assertEquals("bump", feature)
     }
 
     @Test
     fun testFeatureDetectionNone() {
         // rms <= rmsRoughMin(4.0) → no feature
-        val feature = engine.detectFeatureFromMetrics(rms = 3.0f, magMax = 30.0f, peakRatio = 0.5f)
+        val feature = engine.detectFeatureFromMetrics(rms = 3.0f, magMax = 30.0f, peakRatio = 0.5f, meanVert = 0f)
         assertNull("No feature when rms below threshold", feature)
     }
 
     @Test
     fun testFeatureDetectionNoSevere() {
         // rms > threshold but magMax not severe
-        val feature = engine.detectFeatureFromMetrics(rms = 5.0f, magMax = 20.0f, peakRatio = 0.5f)
+        val feature = engine.detectFeatureFromMetrics(rms = 5.0f, magMax = 20.0f, peakRatio = 0.5f, meanVert = 0f)
         assertNull("No feature when magMax below severe threshold", feature)
     }
 

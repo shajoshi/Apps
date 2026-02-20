@@ -100,6 +100,18 @@ class TrackHistoryRepository(private val context: Context) {
         return lower.endsWith(".kml") || lower.endsWith(".gpx") || lower.endsWith(".json")
     }
 
+    suspend fun readJsonText(settings: TrackingSettings, info: TrackFileInfo): String? = withContext(Dispatchers.IO) {
+        val entry = collectEntries(settings).find { candidate ->
+            when {
+                info.uri != null && candidate.documentFile?.uri == info.uri -> true
+                info.filePath != null && candidate.file?.absolutePath == info.filePath -> true
+                else -> candidate.name == info.name
+            }
+        } ?: return@withContext null
+        if (entry.extension.lowercase() != "json") return@withContext null
+        entry.readText(context)
+    }
+
     suspend fun loadDetails(settings: TrackingSettings, info: TrackFileInfo): TrackDetails? = withContext(Dispatchers.IO) {
         val entry = collectEntries(settings).find { candidate ->
             when {

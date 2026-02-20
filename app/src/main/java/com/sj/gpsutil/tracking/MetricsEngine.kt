@@ -290,7 +290,7 @@ class MetricsEngine(
                 detectSpeedHumpPattern(rawVertAccel, fwdMax, speedKmph, 100f)
             } else null
 
-            feature = speedHumpFeature ?: detectFeatureFromMetrics(rmsVert, maxMagnitude, peakRatio)
+            feature = speedHumpFeature ?: detectFeatureFromMetrics(rmsVert, maxMagnitude, peakRatio, meanVert)
         }
 
         // Calculate deltas (will be overwritten in TrackingService with actual bearing data)
@@ -324,11 +324,13 @@ class MetricsEngine(
     fun detectFeatureFromMetrics(
         rms: Float,
         magMax: Float,
-        peakRatio: Float
+        peakRatio: Float,
+        meanVert: Float = 0f
     ): String? {
         if (rms <= calibration.rmsRoughMin) return null
         if (magMax > calibration.magMaxSevereMin) {
-            return if (peakRatio < calibration.peakRatioRoughMin) "pothole" else "bump"
+            // downward impulse (meanVert < 0) → bump, upward (meanVert >= 0) → pothole
+            return if (meanVert < 0f) "bump" else "pothole"
         }
         return null
     }

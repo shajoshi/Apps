@@ -10,16 +10,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +46,8 @@ import android.util.Log
 import com.sj.gpsutil.AppDestinations
 import com.sj.gpsutil.data.SettingsRepository
 import com.sj.gpsutil.data.TrackingSettings
+import com.sj.gpsutil.data.VehicleProfileRepository
+import com.sj.gpsutil.tracking.CalibrateParams
 import com.sj.gpsutil.tracking.TrackHistoryRepository
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -55,14 +62,17 @@ fun TrackHistoryScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier
     val trackHistoryRepository = remember { TrackHistoryRepository(context) }
     val logTag = "TrackHistoryScreen"
     val viewModel: TrackHistoryViewModel = viewModel(factory = TrackHistoryViewModel.factory(context))
+    val profileRepository = remember { VehicleProfileRepository(context) }
     val settingsState by settingsRepository.settingsFlow.collectAsState(initial = TrackingSettings())
     val folderLabel by remember(settingsState) {
         mutableStateOf(trackHistoryRepository.resolveFolderLabel(settingsState))
     }
     val uiState by viewModel.state.collectAsState()
+    val calibrationState by viewModel.calibrationState.collectAsState()
     var selectedInfo by remember { mutableStateOf<TrackHistoryRepository.TrackFileInfo?>(null) }
     var details by remember { mutableStateOf<TrackHistoryRepository.TrackDetails?>(null) }
     var isDetailsLoading by remember { mutableStateOf(false) }
+    var availableProfiles by remember { mutableStateOf<List<String>>(emptyList()) }
     val scope = rememberCoroutineScope()
 
     fun refresh() {
@@ -147,14 +157,125 @@ fun TrackHistoryScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(uiState.tracks, key = { it.name + it.timestampMillis }) { info ->
-                        TrackHistoryCard(info = info, onClick = {
-                            selectedInfo = info
-                            loadDetails(info)
-                        })
+                        TrackHistoryCard(
+                            info = info,
+                            onClick = {
+                                selectedInfo = info
+                                loadDetails(info)
+                            },
+                            onCalibrateClick = {
+                                scope.launch {
+                                    availableProfiles = runCatching {
+                                        profileRepository.listProfiles(settingsState.folderUri)
+                                            .map { it.name }
+                                    }.getOrElse { emptyList() }
+                                }
+                                viewModel.requestCalibrate(info, settingsState)
+                            }
+                        )
                     }
                 }
             }
         }
+    }
+
+    // --- Calibration dialogs ---
+    if (calibrationState.isValidating || calibrationState.isCalibrating) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text(if (calibrationState.isValidating) "Validating…" else "Analyzing…") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text(if (calibrationState.isValidating) "Checking track for raw data…" else "Analyzing track data…")
+                }
+            }
+        )
+    }
+
+    if (calibrationState.calibrationError != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissCalibrationError() },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissCalibrationError() }) { Text("OK") }
+            },
+            title = { Text("Calibration Error") },
+            text = { Text(calibrationState.calibrationError ?: "") }
+        )
+    }
+
+    if (calibrationState.showParamsDialog) {
+        val target = calibrationState.calibrateTarget
+        if (target != null) {
+            CalibrateParametersDialog(
+                trackName = target.name,
+                initialParams = CalibrateParams(
+                    minSpeedKmph = settingsState.driverThresholds.minSpeedKmph
+                ),
+                onAnalyze = { params -> viewModel.runCalibration(settingsState, params) },
+                onDismiss = { viewModel.dismissCalibration() }
+            )
+        }
+    }
+
+    val calibResult = calibrationState.calibrationResult
+    if (calibResult != null && !calibrationState.isApplyingProfile) {
+        val target = calibrationState.calibrateTarget
+        ThresholdRecommendationDialog(
+            trackName = target?.name ?: "",
+            recommendation = calibResult,
+            currentProfileName = settingsState.currentProfileName,
+            currentCalibration = settingsState.calibration,
+            currentDriverThresholds = settingsState.driverThresholds,
+            availableProfiles = availableProfiles,
+            isApplying = calibrationState.isApplyingProfile,
+            onApplyToCurrent = {
+                val profileName = settingsState.currentProfileName ?: return@ThresholdRecommendationDialog
+                viewModel.applyToProfile(profileName, calibResult, settingsState, settingsState.folderUri)
+            },
+            onApplyToProfile = { profileName ->
+                viewModel.applyToProfile(profileName, calibResult, settingsState, settingsState.folderUri)
+            },
+            onDismiss = { viewModel.dismissCalibration() }
+        )
+    }
+
+    if (calibrationState.isApplyingProfile) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = { Text("Applying…") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text("Saving profile…")
+                }
+            }
+        )
+    }
+
+    if (calibrationState.applySuccess != null) {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.dismissApplySuccess()
+                viewModel.dismissCalibration()
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissApplySuccess()
+                    viewModel.dismissCalibration()
+                }) { Text("OK") }
+            },
+            title = { Text("Applied") },
+            text = { Text("Thresholds applied to profile: ${calibrationState.applySuccess}") }
+        )
     }
 
     val currentDetails = details
@@ -189,7 +310,11 @@ fun TrackHistoryScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier
 }
 
 @Composable
-private fun TrackHistoryCard(info: TrackHistoryRepository.TrackFileInfo, onClick: () -> Unit) {
+private fun TrackHistoryCard(
+    info: TrackHistoryRepository.TrackFileInfo,
+    onClick: () -> Unit,
+    onCalibrateClick: () -> Unit
+) {
     val zone = remember { ZoneId.systemDefault() }
     val formatter = remember {
         DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm")
@@ -213,13 +338,29 @@ private fun TrackHistoryCard(info: TrackHistoryRepository.TrackFileInfo, onClick
             .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(info.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "$displayDate • $sizeLabel",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(info.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "$displayDate • $sizeLabel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (info.extension.lowercase() == "json") {
+                IconButton(onClick = onCalibrateClick) {
+                    Icon(
+                        imageVector = Icons.Filled.Tune,
+                        contentDescription = "Calibrate Thresholds",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

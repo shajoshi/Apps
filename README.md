@@ -1,6 +1,30 @@
-# SJGpsUtil Analysis & Conversion Scripts
+# Tracker — Analysis & Conversion Scripts
 
-Python scripts for analyzing recorded track data and converting between export formats produced by the SJGpsUtil Android app.
+Python scripts for analyzing recorded track data and converting between export formats produced by the **Tracker** Android app.
+
+## Project Overview
+
+**Tracker** is an Android app for GPS tracking with real-time road quality monitoring. It records routes with accelerometer data to classify road surface conditions (smooth/average/rough) and detect features (bumps, potholes). The app provides:
+
+- **Live Driving View** with lean angle gauge, speed, road quality, and driver event detection
+- **Track Recording** in JSON, KML, or GPX formats with raw accelerometer samples
+- **Calibrate Thresholds** feature that analyses recorded tracks to recommend optimal detection thresholds
+- **Vehicle Profiles** for different vehicle types (Motorcycle, Car, Bicycle)
+- **Driver Metrics** including smoothness scoring, friction circle, and event classification
+
+### Core Architecture
+
+- **`MetricsEngine.kt`** — Pure Kotlin computation engine (no Android dependencies) used by both live recording and offline calibration
+- **`TrackingService.kt`** — Android service that records GPS + accelerometer data in real-time
+- **`ThresholdRecommendationEngine.kt`** — Calibration engine that streams JSON tracks and recommends thresholds
+- **`VehicleProfileRepository.kt`** — Manages named calibration profiles stored as JSON files
+- **`SettingsRepository.kt`** — Android DataStore for live calibration and driver threshold settings
+
+### Data Flow
+
+1. **Recording**: GPS fixes + raw accelerometer samples → `MetricsEngine.computeAccelMetrics()` → per-fix statistics → JSON/KML/GPX output
+2. **Calibration**: JSON track → `ThresholdRecommendationEngine.analyze()` → percentile-based threshold recommendations → profile update + live DataStore
+3. **Analysis**: Python scripts read JSON/KML/GPX → replicate app computations → visualisations and CSV exports
 
 All scripts use **Python 3.8+** with no external dependencies except `matplotlib` (optional, for plot generation).
 
@@ -10,7 +34,7 @@ All scripts use **Python 3.8+** with no external dependencies except `matplotlib
 
 ### `kml_to_json.py`
 
-Converts SJGpsUtil KML track files to the app's native JSON format.
+Converts Tracker KML track files to the app's native JSON format.
 
 **Usage:**
 ```
@@ -20,7 +44,7 @@ python kml_to_json.py <track.kml> [--output <output.json>]
 **Arguments:**
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `track.kml` | Yes | Path to SJGpsUtil KML track file |
+| `track.kml` | Yes | Path to Tracker KML track file |
 | `--output`, `-o` | No | Output JSON path. Default: `<track>.json` |
 
 **What it does:**
@@ -33,7 +57,7 @@ python kml_to_json.py <track.kml> [--output <output.json>]
 
 ### `gpx_to_json.py`
 
-Converts SJGpsUtil GPX track files to the app's native JSON format.
+Converts Tracker GPX track files to the app's native JSON format.
 
 **Usage:**
 ```
@@ -43,7 +67,7 @@ python gpx_to_json.py <track.gpx> [--output <output.json>]
 **Arguments:**
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `track.gpx` | Yes | Path to SJGpsUtil GPX track file |
+| `track.gpx` | Yes | Path to Tracker GPX track file |
 | `--output`, `-o` | No | Output JSON path. Default: `<gpx>.json` |
 
 **What it does:**
@@ -56,7 +80,7 @@ python gpx_to_json.py <track.gpx> [--output <output.json>]
 
 ### `json_to_kml.py`
 
-Converts SJGpsUtil JSON track files to KML format.
+Converts Tracker JSON track files to KML format.
 
 **Usage:**
 ```
@@ -66,7 +90,7 @@ python json_to_kml.py <track.json> [--output <output.kml>]
 **Arguments:**
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `track.json` | Yes | Path to SJGpsUtil JSON track file |
+| `track.json` | Yes | Path to Tracker JSON track file |
 | `--output`, `-o` | No | Output KML path. Default: `<track>.kml` |
 
 **What it does:**
@@ -80,7 +104,7 @@ python json_to_kml.py <track.json> [--output <output.kml>]
 
 ### `recommend_thresholds.py`
 
-Analyzes a recorded track and recommends calibration and driver threshold settings to hit target road quality and event count goals.
+Analyzes a recorded track and recommends calibration and driver threshold settings to hit target road quality and event count goals. **Note**: Tracker now includes an in-app "Calibrate Thresholds" feature (⚙ icon on JSON tracks) that provides the same functionality with a modern UI. This Python script is useful for batch processing, custom analysis, or when you need programmatic access to the recommendation algorithm.
 
 **Usage:**
 ```
@@ -92,7 +116,7 @@ python recommend_thresholds.py <track.json> [--smooth 60] [--rough 10] [--hardbr
 **Arguments:**
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `track.json` | Yes | — | Path to SJGpsUtil JSON track file |
+| `track.json` | Yes | — | Path to Tracker JSON track file |
 | `--smooth` | No | `60` | Target % of moving fixes classified as "smooth" road |
 | `--rough` | No | — | Target % of moving fixes classified as "rough" road. If specified, `rmsRoughMin` and `stdDevRoughMin` will also be recommended. |
 | `--hardbrake` | No | `5` | Target number of hard braking events |
@@ -136,7 +160,7 @@ python validate_calc_for_profile.py <calibration_profile.json> <recording_track.
 | Argument | Required | Description |
 |----------|----------|-------------|
 | `calibration_profile.json` | Yes | JSON file with a `calibration` key containing all 9 calibration fields |
-| `recording_track.json` | Yes | SJGpsUtil JSON track file with raw accel data |
+| `recording_track.json` | Yes | Tracker JSON track file with raw accel data |
 
 **What it does:**
 - Loads a calibration profile and applies it to a recorded track
@@ -162,7 +186,7 @@ python driver_metrics.py <track.json>
 **Arguments:**
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `track.json` | Yes | SJGpsUtil JSON track file (with raw accel data for best results) |
+| `track.json` | Yes | Tracker JSON track file (with raw accel data for best results) |
 
 **What it does:**
 - Recomputes fwd/lat projections from raw accel data using the track's gravity vector
@@ -194,7 +218,7 @@ python raw_xy_decompose.py <track.json>
 **Arguments:**
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `track.json` | Yes | SJGpsUtil JSON track file with `accel.raw[]` data |
+| `track.json` | Yes | Tracker JSON track file with `accel.raw[]` data |
 
 **What it does:**
 - Computes vehicle-frame basis from `baseGravityVector`
@@ -218,7 +242,7 @@ python vert_analysis.py <input_file> [--filterby <column>] [--nodata]
 **Arguments:**
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `input_file` | Yes | — | Path to SJGpsUtil JSON track file |
+| `input_file` | Yes | — | Path to Tracker JSON track file |
 | `--filterby` | No | None | Column name to filter by (e.g., `manualFeatureLabel`). Only rows with non-empty values in this field are kept. |
 | `--nodata` | No | off | Exclude raw accel data rows. Only summary rows (one per GPS point) are output. |
 
@@ -245,7 +269,7 @@ python extract_test_points.py <input_file> <output_file> [--max-per-category N]
 **Arguments:**
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `input_file` | Yes | — | Path to SJGpsUtil JSON track file |
+| `input_file` | Yes | — | Path to Tracker JSON track file |
 | `output_file` | Yes | — | Path for the output JSON file |
 | `--max-per-category` | No | — | Maximum number of points to keep per category |
 
