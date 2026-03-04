@@ -5,5 +5,6 @@ data class DriverMetrics(
     val primaryEvent: String,
     val smoothnessScore: Float,
     val jerk: Float,
-    val reactionTimeMs: Float?
+    val reactionTimeMs: Float?,
+    val signedFwdRms: Float = 0f
 )

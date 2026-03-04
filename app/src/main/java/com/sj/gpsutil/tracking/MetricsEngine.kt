@@ -159,10 +159,13 @@ class MetricsEngine(
         var vertMaxMag = 0f
         var aboveZThresholdCount = 0
         val vertMagnitudes = mutableListOf<Float>()
+        val signedVertValues = mutableListOf<Float>()
 
         // Forward/lateral accumulators
         var fwdSumSquares = 0f
         var fwdMaxMag = 0f
+        var fwdMaxPositive = 0f
+        var fwdMaxNegative = 0f
         var fwdSum = 0f
         var latSumSquares = 0f
         var latMaxMag = 0f
@@ -183,6 +186,7 @@ class MetricsEngine(
 
             val absVert = abs(aVert)
             vertMagnitudes.add(absVert)
+            signedVertValues.add(aVert)
             if (absVert > vertMaxMag) vertMaxMag = absVert
             vertSumSquares += aVert * aVert
 
@@ -201,6 +205,8 @@ class MetricsEngine(
                 fwdSumSquares += aFwd * aFwd
                 val absFwd = abs(aFwd)
                 if (absFwd > fwdMaxMag) fwdMaxMag = absFwd
+                if (aFwd > fwdMaxPositive) fwdMaxPositive = aFwd
+                if (-aFwd > fwdMaxNegative) fwdMaxNegative = -aFwd
                 fwdValuesList.add(aFwd)
             }
 
@@ -228,7 +234,8 @@ class MetricsEngine(
         val peakRatio = aboveZThresholdCount.toFloat() / count.toFloat()
 
         val meanMagnitudeVert = vertMagnitudes.average().toFloat()
-        val variance = vertMagnitudes.map { (it - meanMagnitudeVert) * (it - meanMagnitudeVert) }.average().toFloat()
+        // Compute stdDev from signed vertical values (not absolute) for correct variance
+        val variance = signedVertValues.map { (it - meanVert) * (it - meanVert) }.average().toFloat()
         val stdDevVert = sqrt(variance)
 
         val fwdRms = if (useFwd != null && driverCount > 0) sqrt(fwdSumSquares / driverCount) else 0f
@@ -302,7 +309,7 @@ class MetricsEngine(
             peakRatio, stdDevVert,
             avgRms, avgMaxMagnitude, avgMeanMagnitude, avgStdDev, avgPeakRatio,
             roadQuality, feature, rawData,
-            fwdRms, fwdMax, fwdMean, latRms, latMax, latMean,
+            fwdRms, fwdMax, fwdMaxNegative, fwdMaxPositive, fwdMean, latRms, latMax, latMean,
             signedFwdRms, signedLatRms, leanAngleDeg,
             deltaSpeed, deltaCourse,
             fwdValuesList, latValuesList
@@ -405,9 +412,9 @@ class MetricsEngine(
     }
 
     fun classifyDriverEvent(
-        fwdMax: Float,
+        fwdMaxBrake: Float,
+        fwdMaxAccel: Float,
         latMax: Float,
-        deltaSpeed: Float,
         deltaCourse: Float,
         speed: Float,
         leanAngleDeg: Float = 0f
@@ -423,10 +430,10 @@ class MetricsEngine(
             return listOf("low_speed")
         }
 
-        if (fwdMax > thresholds.hardBrakeFwdMax && deltaSpeed < 0) {
+        if (fwdMaxBrake > thresholds.hardBrakeFwdMax) {
             events.add("hard_brake")
         }
-        if (fwdMax > thresholds.hardAccelFwdMax && deltaSpeed > 0) {
+        if (fwdMaxAccel > thresholds.hardAccelFwdMax) {
             events.add("hard_accel")
         }
         if (latMax > thresholds.swerveLatMax) {
@@ -455,9 +462,9 @@ class MetricsEngine(
         previousDriverMetrics: DriverMetrics?
     ): DriverMetrics {
         val events = classifyDriverEvent(
-            accelMetrics.fwdMax,
+            accelMetrics.fwdMaxBrake,
+            accelMetrics.fwdMaxAccel,
             accelMetrics.latMax,
-            accelMetrics.deltaSpeed,
             accelMetrics.deltaCourse,
             speed,
             accelMetrics.leanAngleDeg
@@ -469,11 +476,10 @@ class MetricsEngine(
         val smoothness = computeSmoothnessScore(accelMetrics.fwdRms, accelMetrics.latRms)
 
         // Calculate jerk from signed RMS change
+        val currSigned = if (accelMetrics.fwdMean != 0f)
+            Math.copySign(accelMetrics.fwdRms, accelMetrics.fwdMean) else accelMetrics.fwdRms
         val jerk = previousDriverMetrics?.let { prev ->
-            val currSigned = if (accelMetrics.fwdMean != 0f)
-                Math.copySign(accelMetrics.fwdRms, accelMetrics.fwdMean) else accelMetrics.fwdRms
-            val prevSigned = prev.jerk
-            abs(currSigned - prevSigned)
+            abs(currSigned - prev.signedFwdRms)
         } ?: 0f
 
         // Reaction time: time between first fwd spike and first lat spike (lat must follow fwd)
@@ -496,7 +502,7 @@ class MetricsEngine(
             } else null
         }
 
-        return DriverMetrics(events, primaryEvent, smoothness, jerk, reactionTimeMs)
+        return DriverMetrics(events, primaryEvent, smoothness, jerk, reactionTimeMs, currSigned)
     }
 
     fun bearingDiff(c1: Float, c2: Float): Float {

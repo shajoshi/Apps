@@ -20,6 +20,8 @@ data class AccelMetrics(
     val rawData: List<FloatArray>,
     val fwdRms: Float = 0f,
     val fwdMax: Float = 0f,
+    val fwdMaxBrake: Float = 0f,
+    val fwdMaxAccel: Float = 0f,
     val fwdMean: Float = 0f,
     val latRms: Float = 0f,
     val latMax: Float = 0f,

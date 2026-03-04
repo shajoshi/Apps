@@ -35,6 +35,7 @@ android {
     buildFeatures {
         compose = true
     }
+    base.archivesName.set("Tracker")
 }
 
 dependencies {

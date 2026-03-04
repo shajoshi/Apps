@@ -3,6 +3,8 @@ package com.sj.gpsutil.tracking
 import com.sj.gpsutil.data.CalibrationSettings
 import com.sj.gpsutil.data.DriverThresholdSettings
 import org.json.JSONObject
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 data class CalibrateParams(
     val smoothTargetPct: Double = 60.0,
@@ -23,7 +25,9 @@ data class ThresholdRecommendation(
     val bumpCount: Int,
     val potholeCount: Int,
     val recommended: CalibrationSettings,
-    val recommendedDriver: DriverThresholdSettings
+    val recommendedDriver: DriverThresholdSettings,
+    val recommendedPeakZ: Float,
+    val totalVertSamples: Int
 )
 
 private data class FixResult(
@@ -82,9 +86,10 @@ class ThresholdRecommendationEngine {
         // Infer sampling rate
         val samplingRateHz = inferSamplingRate(dataArray)
 
-        // Stream fixes one at a time
+        // Stream fixes one at a time - First pass: collect all vertical samples
         val metricsHistory = ArrayDeque<MetricsEngine.FixMetrics>()
         val fixResults = mutableListOf<FixResult>()
+        val allVertSamples = mutableListOf<Float>()
         var prevSpeed = 0f
         var prevCourse = 0f
 
@@ -121,6 +126,19 @@ class ThresholdRecommendationEngine {
             val accelMetrics = engine.computeAccelMetrics(accelBuffer, speed, basis, metricsHistory)
                 ?: continue
 
+            // Collect vertical samples for PeakThresholdZ analysis
+            if (basis != null) {
+                for (sample in accelBuffer) {
+                    val aVert = sample[0] * basis.gUnit[0] + sample[1] * basis.gUnit[1] + sample[2] * basis.gUnit[2]
+                    allVertSamples.add(abs(aVert))
+                }
+            } else {
+                // Fallback: use Z axis if no basis
+                for (sample in accelBuffer) {
+                    allVertSamples.add(abs(sample[2]))
+                }
+            }
+
             val deltaSpeed = speed - prevSpeed
             val deltaCourse = engine.bearingDiff(prevCourse, course)
 
@@ -148,7 +166,10 @@ class ThresholdRecommendationEngine {
             throw IllegalArgumentException("No valid fixes with raw accelerometer data found at speed >= ${params.minSpeedKmph} km/h")
         }
 
-        val recommended = recommendCalibration(fixResults, params)
+        // Recommend PeakThresholdZ from all collected vertical samples
+        val recommendedPeakZ = recommendPeakThresholdZ(allVertSamples)
+
+        val recommended = recommendCalibration(fixResults, params, recommendedPeakZ)
         val recommendedDriver = recommendDriverThresholds(fixResults, params)
 
         // Compute achieved percentages with recommended thresholds
@@ -176,7 +197,9 @@ class ThresholdRecommendationEngine {
             bumpCount = bumpCount,
             potholeCount = potholeCount,
             recommended = recommended,
-            recommendedDriver = recommendedDriver
+            recommendedDriver = recommendedDriver,
+            recommendedPeakZ = recommendedPeakZ,
+            totalVertSamples = allVertSamples.size
         )
     }
 
@@ -200,7 +223,7 @@ class ThresholdRecommendationEngine {
         return rates[rates.size / 2]
     }
 
-    private fun recommendCalibration(fixes: List<FixResult>, params: CalibrateParams): CalibrationSettings {
+    private fun recommendCalibration(fixes: List<FixResult>, params: CalibrateParams, recommendedPeakZ: Float): CalibrationSettings {
         val sortedRms = fixes.map { it.avgRms.toDouble() }.sorted()
         val sortedStdDev = fixes.map { it.avgStdDev.toDouble() }.sorted()
         val n = fixes.size
@@ -226,7 +249,7 @@ class ThresholdRecommendationEngine {
 
         return CalibrationSettings(
             rmsSmoothMax = rmsSmoothMax.coerceAtLeast(0.1f),
-            peakThresholdZ = 1.5f,
+            peakThresholdZ = recommendedPeakZ,
             movingAverageWindow = 5,
             stdDevSmoothMax = stdDevSmoothMax.coerceAtLeast(0.1f),
             rmsRoughMin = rmsRoughMin.coerceAtLeast(rmsSmoothMax + 0.01f),
@@ -267,6 +290,67 @@ class ThresholdRecommendationEngine {
             smoothnessRmsMax = 10f,
             fallLeanAngle = 40f
         )
+    }
+
+    /**
+     * Analyzes all raw acceleration samples to recommend optimal PeakThresholdZ.
+     * This mirrors the Python script's --recommendPeakZ functionality.
+     */
+    private fun recommendPeakThresholdZ(allVertSamples: List<Float>): Float {
+        if (allVertSamples.isEmpty()) return 1.5f
+
+        // Calculate statistics
+        val mean = allVertSamples.average().toFloat()
+        val median = allVertSamples.sorted()[allVertSamples.size / 2]
+        val std = sqrt(allVertSamples.map { (it - mean) * (it - mean) }.average()).toFloat()
+
+        // Calculate percentiles
+        val sorted = allVertSamples.sorted()
+        val p75 = sorted[(sorted.size * 0.75).toInt()]
+        val p90 = sorted[(sorted.size * 0.90).toInt()]
+        val p95 = sorted[(sorted.size * 0.95).toInt()]
+        val p99 = sorted[(sorted.size * 0.99).toInt()]
+
+        // Candidate thresholds
+        val candidates = mapOf(
+            "mean_plus_2std" to (mean + 2 * std),
+            "mean_plus_3std" to (mean + 3 * std),
+            "p75" to p75,
+            "p90" to p90,
+            "p95" to p95,
+            "p99" to p99,
+            "median_plus_2std" to (median + 2 * std)
+        )
+
+        // Evaluate each candidate
+        var bestThreshold = 1.5f
+        var bestScore = -1.0
+
+        for ((_, threshold) in candidates) {
+            if (threshold <= 0f) continue
+
+            // Count peaks above threshold
+            val peaksAbove = allVertSamples.count { it >= threshold }
+            val peakRatio = peaksAbove.toDouble() / allVertSamples.size
+
+            // Score based on having reasonable peak density (5-20% peaks)
+            // Ideal is 10% peaks
+            val score = when {
+                peakRatio in 0.05..0.20 -> 1.0 - abs(peakRatio - 0.10)
+                peakRatio < 0.05 -> peakRatio / 0.05
+                else -> 0.20 / peakRatio
+            }
+
+            // Prefer higher thresholds for better signal separation
+            val adjustedScore = score * (threshold / candidates.values.maxOrNull()!!)
+
+            if (adjustedScore > bestScore) {
+                bestScore = adjustedScore
+                bestThreshold = threshold
+            }
+        }
+
+        return bestThreshold.coerceAtLeast(0.1f)
     }
 
     companion object {

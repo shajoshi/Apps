@@ -80,6 +80,8 @@ fun ThresholdRecommendationDialog(
                 )
                 Text("Sampling rate: %.0f Hz".format(locale, recommendation.samplingRateHz))
                 Text("Fixes analyzed: ${recommendation.totalFixes}")
+                Text("Vert samples: ${recommendation.totalVertSamples}")
+                Text("Peak Threshold Z: %.2f".format(locale, recommendation.recommendedPeakZ))
                 Text("Smooth: %.1f%%".format(locale, recommendation.achievedSmoothPct))
                 Text("Rough: %.1f%%".format(locale, recommendation.achievedRoughPct))
                 Text("Bumps: ${recommendation.bumpCount}  Potholes: ${recommendation.potholeCount}")
