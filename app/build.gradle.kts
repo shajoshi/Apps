@@ -13,8 +13,8 @@ android {
         applicationId = "com.sj.gpsutil"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1-Beta"
+        versionCode = 3
+        versionName = "0.2-Beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
