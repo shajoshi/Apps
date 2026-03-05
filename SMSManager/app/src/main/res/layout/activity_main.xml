@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:tools="http://schemas.android.com/tools"
+android:layout_width="match_parent"
+android:layout_height="match_parent"
+android:orientation="vertical"
+android:padding="16dp"
+android:background="#F0F4F8"
+tools:context=".MainActivity">
+
+<!-- Title Header -->
+<TextView
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="SMS Manager"
+    android:textSize="24sp"
+    android:textStyle="bold"
+    android:textColor="#1F2937"
+    android:gravity="center"
+    android:layout_marginBottom="16dp"/>
+
+<!-- Search Input and Button -->
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:layout_marginBottom="16dp"
+    android:background="@drawable/rounded_bg_white"
+    android:elevation="2dp"
+    android:padding="4dp">
+
+    <EditText
+        android:id="@+id/searchEditText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:hint="Enter pattern to search messages"
+        android:inputType="text"
+        android:padding="10dp"
+        android:background="@android:color/transparent"
+        android:textSize="16sp"/>
+
+    <Button
+        android:id="@+id/searchButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Search"
+        android:backgroundTint="#4F46E5"
+        android:textColor="#FFFFFF"
+        style="@style/Widget.AppCompat.Button.Colored"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:layout_marginStart="8dp"/>
+
+</LinearLayout>
+
+<!-- Controls for Selection and Deletion -->
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:layout_marginBottom="12dp">
+
+    <CheckBox
+        android:id="@+id/selectAllCheckBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Select All"
+        android:textSize="14sp"
+        android:textColor="#1F2937"
+        android:layout_marginEnd="16dp"/>
+
+    <Button
+        android:id="@+id/deleteButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Delete Selected"
+        android:backgroundTint="#EF4444"
+        android:textColor="#FFFFFF"
+        android:enabled="false"
+        style="@style/Widget.AppCompat.Button.Colored"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"/>
+</LinearLayout>
+
+<!-- RecyclerView for SMS List -->
+<androidx.recyclerview.widget.RecyclerView
+    android:id="@+id/recyclerView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:scrollbars="vertical"
+    android:fadeScrollbars="false"
+    tools:listitem="@layout/item_sms_message"/>
+
+</LinearLayout>
