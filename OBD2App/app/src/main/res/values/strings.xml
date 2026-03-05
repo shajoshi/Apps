@@ -1,0 +1,53 @@
+<resources>
+    <string name="app_name">OBD2 Viewer</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+    <string name="nav_header_title">OBD2 Viewer</string>
+    <string name="nav_header_subtitle">Bluetooth OBD-II Scanner</string>
+    <string name="nav_header_desc">Navigation header</string>
+    <string name="action_settings">Settings</string>
+
+    <!-- Menu items -->
+    <string name="menu_connect">Connect</string>
+    <string name="menu_dashboard">Dashboard</string>
+    <string name="menu_details">Details</string>
+    <string name="menu_settings">Settings</string>
+
+    <!-- Connect screen -->
+    <string name="connect_title">Bluetooth Devices</string>
+    <string name="paired_devices">Paired Devices</string>
+    <string name="nearby_devices">Nearby Devices</string>
+    <string name="scan_for_devices">Scan for nearby devices</string>
+    <string name="disconnect">Disconnect</string>
+
+    <!-- Dashboard screen -->
+    <string name="dashboard_title">Dashboard</string>
+    <string name="gauge_rpm">ENGINE RPM</string>
+    <string name="gauge_speed">VEHICLE SPEED</string>
+    <string name="gauge_coolant">COOLANT TEMP</string>
+    <string name="gauge_throttle">THROTTLE</string>
+    <string name="gauge_engine_load">ENGINE LOAD</string>
+    <string name="gauge_fuel_level">FUEL LEVEL</string>
+    <string name="unit_rpm">rpm</string>
+    <string name="unit_kmh">km/h</string>
+    <string name="unit_celsius">°C</string>
+    <string name="unit_percent">%</string>
+    <string name="dash">—</string>
+
+    <!-- Details screen -->
+    <string name="header_parameter">Parameter</string>
+    <string name="header_value">Value</string>
+    <string name="header_unit">Unit</string>
+    <string name="pid_count_format">%d PIDs</string>
+
+    <!-- Status -->
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_connecting">Connecting…</string>
+
+    <!-- Permissions -->
+    <string name="bt_permission_rationale">Bluetooth permissions are required to communicate with your OBD2 adapter.</string>
+    <string name="bt_enable_request">Bluetooth must be turned on to connect to your OBD2 adapter.</string>
+
+    <string name="fab_content_description">Represents a view to invoke an action</string>
+</resources>

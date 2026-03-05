@@ -1,0 +1,71 @@
+# ─── Gradle ───────────────────────────────────────────────
+.gradle/
+build/
+**/build/
+gradle/wrapper/gradle-wrapper.jar
+
+# ─── Android Studio / IntelliJ IDEA ──────────────────────
+*.iml
+.idea/
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/tasks.xml
+.idea/vcs.xml
+.idea/jsLibraryMappings.xml
+.idea/datasources.xml
+.idea/dataSources.ids
+.idea/sqlDataSources.xml
+.idea/dynamic.xml
+.idea/uiDesigner.xml
+.idea/runConfigurations.xml
+*.iws
+*.ipr
+
+# ─── Local configuration ─────────────────────────────────
+local.properties
+/local.properties
+
+# ─── Build artefacts ─────────────────────────────────────
+/build
+/captures
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# ─── Native / NDK ────────────────────────────────────────
+.externalNativeBuild/
+.cxx/
+/obj/
+
+# ─── ProGuard ────────────────────────────────────────────
+*.pro.map
+
+# ─── Keystore — NEVER commit signing credentials ─────────
+*.jks
+*.keystore
+keystore.properties
+
+# ─── Kotlin ──────────────────────────────────────────────
+*.kotlin_module
+
+# ─── Test outputs ────────────────────────────────────────
+test-results/
+androidTest-results/
+
+# ─── OS generated ────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ─── Logs ────────────────────────────────────────────────
+*.log
