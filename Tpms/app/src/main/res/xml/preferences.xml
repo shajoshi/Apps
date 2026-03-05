@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory
+        android:title="@string/pref_category_display">
+
+        <ListPreference
+            android:key="pressure_unit"
+            android:title="@string/pref_pressure_unit_title"
+            android:summary="@string/pref_pressure_unit_summary"
+            android:entries="@array/pressure_units"
+            android:entryValues="@array/pressure_unit_values"
+            android:defaultValue="psi"
+            app:useSimpleSummaryProvider="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_category_scan">
+
+        <SwitchPreferenceCompat
+            android:key="run_in_background"
+            android:title="@string/pref_run_background_title"
+            android:summary="@string/pref_run_background_summary"
+            android:defaultValue="true" />
+
+        <SwitchPreferenceCompat
+            android:key="parse_known_sensors_only"
+            android:title="@string/pref_known_sensors_title"
+            android:summary="@string/pref_known_sensors_summary"
+            android:defaultValue="false" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

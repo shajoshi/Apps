@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TPMS Monitor</string>
+    <string name="settings_title">Settings</string>
+
+    <!-- Tabs -->
+    <string name="tab_dashboard">Dashboard</string>
+    <string name="tab_scan">Scan</string>
+    <string name="tab_sensors">Sensors</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_title">Tyre Pressure Overview</string>
+    <string name="no_data">No signal</string>
+    <string name="pressure_format_psi">%.1f psi</string>
+    <string name="pressure_format_kpa">%.1f kPa</string>
+    <string name="temp_format">%.0f°C</string>
+    <string name="battery_format">🔋 %d%%</string>
+
+    <!-- Alarms -->
+    <string name="alarm_low_pressure">LOW PRESSURE</string>
+    <string name="alarm_high_pressure">HIGH PRESSURE</string>
+    <string name="alarm_high_temp">HIGH TEMP</string>
+
+    <!-- Scan -->
+    <string name="scan_no_devices">Scanning for nearby BLE devices…\nMake sure Bluetooth is on and sensors are active.</string>
+    <string name="assign_as_sensor">Assign as Sensor</string>
+    <string name="assign_sensor_title">Assign \"%s\" to position</string>
+    <string name="assign_sensor_manual_title">Assign sensor to position</string>
+
+    <!-- Sensors -->
+    <string name="not_assigned">Not assigned</string>
+    <string name="assign">Assign</string>
+    <string name="reassign">Reassign</string>
+    <string name="remove_sensor">Remove sensor</string>
+
+    <!-- Dialogs -->
+    <string name="cancel">Cancel</string>
+
+    <!-- Units -->
+    <string name="unit_psi">PSI</string>
+    <string name="unit_bar">Bar</string>
+    <string name="unit_kpa">kPa</string>
+
+    <!-- Permissions & Bluetooth -->
+    <string name="bluetooth_required">Bluetooth is required to scan for TPMS sensors.</string>
+    <string name="permissions_required">Bluetooth and location permissions are required for BLE scanning.</string>
+    <string name="no_bluetooth">This device does not have Bluetooth hardware.</string>
+
+    <!-- Settings -->
+    <string name="pref_pressure_unit_title">Pressure Unit</string>
+    <string name="pref_pressure_unit_summary">Choose display unit for tyre pressure</string>
+    <string name="pref_run_background_title">Run in Background</string>
+    <string name="pref_run_background_summary">Keep scanning when app is minimised</string>
+    <string name="pref_category_display">Display</string>
+    <string name="pref_category_scan">Scanning</string>
+    <string name="pref_known_sensors_title">Parse known sensors only</string>
+    <string name="pref_known_sensors_summary">Only show data from sensors assigned to a tyre position. Off = show all BLE TPMS data (useful for testing)</string>
+    <string name="action_start_scan">Start Scan</string>
+    <string name="action_stop_scan">Stop Scan</string>
+</resources>

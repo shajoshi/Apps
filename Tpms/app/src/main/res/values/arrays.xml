@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="pressure_units">
+        <item>PSI</item>
+        <item>Bar</item>
+        <item>kPa</item>
+    </string-array>
+
+    <string-array name="pressure_unit_values">
+        <item>psi</item>
+        <item>bar</item>
+        <item>kpa</item>
+    </string-array>
+</resources>
