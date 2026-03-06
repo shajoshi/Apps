@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Declares that this app uses the Android Auto template protocol -->
+<automotiveApp>
+    <uses name="template"/>
+</automotiveApp>

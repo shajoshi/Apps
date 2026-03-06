@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipChildren="false">
+
+    <!-- The actual gauge goes here -->
+    <FrameLayout
+        android:id="@+id/widget_content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Background drawn via code or View when selected -->
+    <View
+        android:id="@+id/selection_border"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_widget_selected"
+        android:visibility="gone" />
+
+    <!-- 4 Handles, visibility managed in code -->
+    <View
+        android:id="@+id/handle_tl"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="top|start"
+        android:background="@drawable/bg_widget_handle"
+        android:visibility="gone" />
+
+    <View
+        android:id="@+id/handle_tr"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="top|end"
+        android:background="@drawable/bg_widget_handle"
+        android:visibility="gone" />
+
+    <View
+        android:id="@+id/handle_bl"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="bottom|start"
+        android:background="@drawable/bg_widget_handle"
+        android:visibility="gone" />
+
+    <View
+        android:id="@+id/handle_br"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="bottom|end"
+        android:background="@drawable/bg_widget_handle"
+        android:visibility="gone" />
+
+</FrameLayout>

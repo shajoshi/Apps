@@ -22,6 +22,7 @@ import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.sj.obd2app.databinding.ActivityMainBinding
+import com.sj.obd2app.gps.GpsDataSource
 import com.sj.obd2app.obd.Obd2ServiceProvider
 
 class MainActivity : AppCompatActivity() {
@@ -74,6 +75,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         setSupportActionBar(binding.appBarMain.toolbar)
 
+        // Start GPS tracking
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            GpsDataSource.getInstance(this).start()
+        }
+
         // Initialise OBD2 service (mock or real)
         Obd2ServiceProvider.useMock = USE_MOCK_OBD2
         if (USE_MOCK_OBD2) {
@@ -91,26 +97,16 @@ class MainActivity : AppCompatActivity() {
             (supportFragmentManager.findFragmentById(R.id.nav_host_fragment_content_main) as NavHostFragment?)!!
         val navController = navHostFragment.navController
 
-        binding.navView?.let {
-            appBarConfiguration = AppBarConfiguration(
-                setOf(
-                    R.id.nav_connect, R.id.nav_dashboard, R.id.nav_details, R.id.nav_settings
-                ),
-                binding.drawerLayout
-            )
-            setupActionBarWithNavController(navController, appBarConfiguration)
-            it.setupWithNavController(navController)
-        }
+        // Setup unified AppBarConfiguration with all top-level destinations
+        appBarConfiguration = AppBarConfiguration(
+            setOf(R.id.nav_connect, R.id.nav_dashboard, R.id.nav_details, R.id.nav_settings),
+            binding.drawerLayout
+        )
 
-        binding.appBarMain.contentMain.bottomNavView?.let {
-            appBarConfiguration = AppBarConfiguration(
-                setOf(
-                    R.id.nav_connect, R.id.nav_dashboard, R.id.nav_details
-                )
-            )
-            setupActionBarWithNavController(navController, appBarConfiguration)
-            it.setupWithNavController(navController)
-        }
+        setupActionBarWithNavController(navController, appBarConfiguration)
+
+        binding.navView?.setupWithNavController(navController)
+        binding.appBarMain.contentMain.bottomNavView?.setupWithNavController(navController)
     }
 
     /**
@@ -131,6 +127,11 @@ class MainActivity : AppCompatActivity() {
                 != PackageManager.PERMISSION_GRANTED
             ) {
                 permissionsNeeded.add(Manifest.permission.BLUETOOTH_SCAN)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsNeeded.add(Manifest.permission.ACCESS_FINE_LOCATION)
             }
         } else {
             // Android < 12 needs location for BT scanning
