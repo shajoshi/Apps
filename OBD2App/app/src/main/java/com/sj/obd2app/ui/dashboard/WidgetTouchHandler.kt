@@ -3,80 +3,100 @@ package com.sj.obd2app.ui.dashboard
 import android.annotation.SuppressLint
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 
 /**
  * Handles touch events to drag a widget around the dashboard canvas,
  * snapping it to a virtual grid upon release.
+ *
+ * [onContextMenu] is invoked (with the anchor view) when the user taps a widget
+ * that is already selected — used to show the "Edit Widget / Delete / …" popup.
  */
 class WidgetTouchHandler(
     private val viewModel: DashboardEditorViewModel,
     private val widgetId: String,
-    private val gridSizePx: Int = 100 // Example: 1 grid unit = 100 pixels
+    private val gridSizePx: Int = 100,
+    private val onContextMenu: ((anchor: View) -> Unit)? = null,
+    private val getCanvasScale: (() -> Float)? = null,
+    private val getCanvasBounds: (() -> Pair<Int, Int>)? = null  // returns (maxGridX, maxGridY)
 ) : View.OnTouchListener {
 
-    private var dX = 0f
-    private var dY = 0f
+    private var downRawX = 0f       // raw screen X when finger went down
+    private var downRawY = 0f       // raw screen Y when finger went down
+    private var startViewX = 0f     // view.x at the moment of ACTION_DOWN
+    private var startViewY = 0f     // view.y at the moment of ACTION_DOWN
     private var lastAction = 0
-    private var lastClickTime: Long = 0
-    private val DOUBLE_CLICK_TIMEOUT = 300L
+    private var wasAlreadySelected = false
+    private var dragStarted = false
+
+    companion object {
+        private const val DRAG_THRESHOLD_DP = 10f
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(view: View, event: MotionEvent): Boolean {
+        val density = view.resources.displayMetrics.density
+        val dragThresholdPx = DRAG_THRESHOLD_DP * density
+        val scale = getCanvasScale?.invoke() ?: 1f
+
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // Select the widget in the ViewModel as soon as we touch it
+                wasAlreadySelected = (viewModel.selectedWidgetId.value == widgetId)
                 viewModel.selectWidget(widgetId)
-                
-                dX = view.x - event.rawX
-                dY = view.y - event.rawY
+
+                // Capture raw screen position and current view position in canvas space.
+                downRawX  = event.rawX
+                downRawY  = event.rawY
+                startViewX = view.x
+                startViewY = view.y
                 lastAction = MotionEvent.ACTION_DOWN
-                // Elevate slightly while dragging to show it's active
+                dragStarted = false
                 view.elevation = 20f
                 return true
             }
 
             MotionEvent.ACTION_MOVE -> {
-                view.y = event.rawY + dY
-                view.x = event.rawX + dX
+                val totalDx = event.rawX - downRawX
+                val totalDy = event.rawY - downRawY
+                if (!dragStarted) {
+                    if (Math.sqrt((totalDx * totalDx + totalDy * totalDy).toDouble()) < dragThresholdPx) {
+                        return true
+                    }
+                    dragStarted = true
+                }
+                // The finger moved (totalDx, totalDy) in screen pixels.
+                // Divide by scale to convert to canvas-space pixels, then offset from start.
+                view.x = startViewX + totalDx / scale
+                view.y = startViewY + totalDy / scale
                 lastAction = MotionEvent.ACTION_MOVE
                 return true
             }
 
             MotionEvent.ACTION_UP -> {
                 view.elevation = 0f
-                
-                // Keep track of movement distance to distinguish dragging from clicking
-                val clickTime = System.currentTimeMillis()
-                
+
                 if (lastAction == MotionEvent.ACTION_DOWN) {
-                    // This was a click, not a drag
-                    if (clickTime - lastClickTime < DOUBLE_CLICK_TIMEOUT) {
-                        // Double click detected! Open the properties panel.
-                        viewModel.openPropertiesPanel()
-                        lastClickTime = 0L // Reset
-                    } else {
-                        // Just a single click (already selected in ACTION_DOWN)
-                        lastClickTime = clickTime
+                    if (wasAlreadySelected && onContextMenu != null) {
+                        onContextMenu.invoke(view)
                     }
                 } else if (lastAction == MotionEvent.ACTION_MOVE) {
-                    // Calculate nearest grid intersection
-                    val newX = view.x
-                    val newY = view.y
-                    
-                    val gridX = Math.round(newX / gridSizePx).toInt().coerceAtLeast(0)
-                    val gridY = Math.round(newY / gridSizePx).toInt().coerceAtLeast(0)
-                    
-                    // Snap visually
+                    // Snap to nearest grid intersection, clamped inside canvas bounds
+                    val bounds = getCanvasBounds?.invoke()
+                    val maxGridX = bounds?.first ?: Int.MAX_VALUE
+                    val maxGridY = bounds?.second ?: Int.MAX_VALUE
+
+                    val gridX = Math.round(view.x / gridSizePx)
+                        .coerceIn(0, maxGridX)
+                    val gridY = Math.round(view.y / gridSizePx)
+                        .coerceIn(0, maxGridY)
+
                     view.x = (gridX * gridSizePx).toFloat()
                     view.y = (gridY * gridSizePx).toFloat()
-                    
-                    // Update ViewModel location
+
                     viewModel.updateSelectedWidgetPosition(widgetId, gridX, gridY)
                 }
                 return true
             }
-            
+
             MotionEvent.ACTION_CANCEL -> {
                 view.elevation = 0f
                 return true

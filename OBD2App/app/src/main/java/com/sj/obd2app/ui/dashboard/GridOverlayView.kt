@@ -20,8 +20,14 @@ class GridOverlayView @JvmOverloads constructor(
         set(value) { field = value; invalidate() }
 
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x44FFFFFF // 26% opaque white
+        color = 0x88FFB74D.toInt() // amber-tinted dots, 53% opacity
         style = Paint.Style.FILL
+    }
+
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFF8F00.toInt() // solid amber border
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -41,5 +47,9 @@ class GridOverlayView @JvmOverloads constructor(
                 )
             }
         }
+
+        // Canvas bounds border
+        val inset = borderPaint.strokeWidth / 2f
+        canvas.drawRect(inset, inset, width - inset, height - inset, borderPaint)
     }
 }

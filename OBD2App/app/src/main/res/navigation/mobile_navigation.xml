@@ -3,13 +3,19 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/mobile_navigation"
-    app:startDestination="@+id/nav_connect">
+    app:startDestination="@+id/nav_layout_list">
 
     <fragment
         android:id="@+id/nav_connect"
         android:name="com.sj.obd2app.ui.connect.ConnectFragment"
         android:label="@string/menu_connect"
-        tools:layout="@layout/fragment_connect" />
+        tools:layout="@layout/fragment_connect">
+        <action
+            android:id="@+id/action_connect_to_layoutList"
+            app:destination="@id/nav_layout_list"
+            app:popUpTo="@id/nav_layout_list"
+            app:popUpToInclusive="true" />
+    </fragment>
 
     <fragment
         android:id="@+id/nav_dashboard"
@@ -28,7 +34,7 @@
         android:name="com.sj.obd2app.ui.settings.SettingsFragment"
         android:label="@string/menu_settings"
         tools:layout="@layout/fragment_settings" />
-        
+
     <fragment
         android:id="@+id/nav_layout_list"
         android:name="com.sj.obd2app.ui.dashboard.LayoutListFragment"
@@ -38,10 +44,24 @@
             android:id="@+id/action_layoutList_to_editor"
             app:destination="@id/nav_editor" />
     </fragment>
-    
+
     <fragment
         android:id="@+id/nav_editor"
         android:name="com.sj.obd2app.ui.dashboard.DashboardEditorFragment"
         android:label="Dashboard Editor"
-        tools:layout="@layout/fragment_dashboard_editor" />
+        tools:layout="@layout/fragment_dashboard_editor">
+        <argument
+            android:name="layout_name"
+            app:argType="string"
+            android:defaultValue="@null"
+            app:nullable="true" />
+        <argument
+            android:name="mode"
+            app:argType="string"
+            android:defaultValue="view" />
+        <argument
+            android:name="is_new"
+            app:argType="boolean"
+            android:defaultValue="false" />
+    </fragment>
 </navigation>

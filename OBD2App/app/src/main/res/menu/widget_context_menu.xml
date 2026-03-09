@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/action_edit_widget"   android:title="Edit Widget" />
+    <item android:id="@+id/action_bring_front"   android:title="Bring to Front" />
+    <item android:id="@+id/action_send_back"     android:title="Send to Back" />
+    <item android:id="@+id/action_delete_widget" android:title="Delete" />
+</menu>

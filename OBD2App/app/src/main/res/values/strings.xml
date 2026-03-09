@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">OBD2 Viewer</string>
+    <string name="app_name">OBD2 Diagnostics</string>
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
-    <string name="nav_header_title">OBD2 Viewer</string>
-    <string name="nav_header_subtitle">Bluetooth OBD-II Scanner</string>
+    <string name="nav_header_title">OBD2 Diagnostics</string>
+    <string name="nav_header_subtitle">Vehicle Performance Monitor</string>
     <string name="nav_header_desc">Navigation header</string>
     <string name="action_settings">Settings</string>
 
@@ -48,6 +48,16 @@
     <!-- Permissions -->
     <string name="bt_permission_rationale">Bluetooth permissions are required to communicate with your OBD2 adapter.</string>
     <string name="bt_enable_request">Bluetooth must be turned on to connect to your OBD2 adapter.</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_service">OBD2 Service</string>
+    <string name="notification_channel_service_desc">Background OBD2 data collection and trip logging</string>
+    <string name="notification_connected_title">Connected to Vehicle</string>
+    <string name="notification_connected_text">Monitoring OBD2 data • Tap to open dashboard</string>
+    <string name="notification_logging_title">Trip Logging Active</string>
+    <string name="notification_logging_text">Recording vehicle metrics • Tap to view dashboard</string>
+    <string name="notification_disconnected_title">Disconnected</string>
+    <string name="notification_disconnected_text">Vehicle connection lost • Tap to reconnect</string>
 
     <string name="fab_content_description">Represents a view to invoke an action</string>
 </resources>

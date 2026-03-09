@@ -23,6 +23,8 @@ class DeviceAdapter(
 
     private val devices = mutableListOf<BluetoothDevice>()
     private var connectedAddress: String? = null
+    private var connectingAddress: String? = null
+    private var errorAddress: String? = null
 
     fun submitList(newDevices: List<BluetoothDevice>) {
         devices.clear()
@@ -30,9 +32,21 @@ class DeviceAdapter(
         notifyDataSetChanged()
     }
 
-    /** Update the connected device MAC — highlights the matching row. */
+    /** Update the connected device MAC — highlights the matching row green. */
     fun setConnectedDevice(macAddress: String?) {
         connectedAddress = macAddress
+        notifyDataSetChanged()
+    }
+
+    /** Update the currently-connecting device MAC — highlights row yellow. */
+    fun setConnectingDevice(macAddress: String?) {
+        connectingAddress = macAddress
+        notifyDataSetChanged()
+    }
+
+    /** Mark a device row red after a failed connection attempt. */
+    fun setErrorDevice(macAddress: String?) {
+        errorAddress = macAddress
         notifyDataSetChanged()
     }
 
@@ -45,10 +59,12 @@ class DeviceAdapter(
 
     override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
         val device = devices[position]
-        val isConnected = device.address == connectedAddress
-        holder.bind(device, isConnected)
+        val isConnected  = device.address == connectedAddress
+        val isConnecting = device.address == connectingAddress
+        val isError      = device.address == errorAddress
+        holder.bind(device, isConnected, isConnecting, isError)
         holder.itemView.setOnClickListener {
-            if (!isConnected) onDeviceClick(device)
+            if (!isConnected && !isConnecting) onDeviceClick(device)
         }
         holder.binding.iconDisconnect.setOnClickListener {
             onDisconnectClick(device)
@@ -61,24 +77,47 @@ class DeviceAdapter(
         RecyclerView.ViewHolder(binding.root) {
 
         @SuppressLint("MissingPermission")
-        fun bind(device: BluetoothDevice, isConnected: Boolean) {
+        fun bind(device: BluetoothDevice, isConnected: Boolean, isConnecting: Boolean, isError: Boolean) {
             binding.textDeviceName.text = device.name ?: "Unknown Device"
             binding.textDeviceAddress.text = device.address
 
-            if (isConnected) {
-                // Highlight: teal tinted background, green name, show badge + disconnect icon
-                binding.deviceRowRoot.setBackgroundColor(Color.parseColor("#1A2E2A"))
-                binding.textDeviceName.setTextColor(Color.parseColor("#4CAF50"))
-                binding.iconBt.setColorFilter(Color.parseColor("#4CAF50"))
-                binding.badgeConnected.visibility = View.VISIBLE
-                binding.iconDisconnect.visibility = View.VISIBLE
-            } else {
-                // Default state
-                binding.deviceRowRoot.setBackgroundColor(Color.TRANSPARENT)
-                binding.textDeviceName.setTextColor(Color.parseColor("#E0E0E0"))
-                binding.iconBt.setColorFilter(Color.parseColor("#4FC3F7"))
-                binding.badgeConnected.visibility = View.GONE
-                binding.iconDisconnect.visibility = View.GONE
+            when {
+                isConnected -> {
+                    binding.deviceRowRoot.setBackgroundColor(Color.parseColor("#1A2E2A"))
+                    binding.textDeviceName.setTextColor(Color.parseColor("#4CAF50"))
+                    binding.iconBt.setColorFilter(Color.parseColor("#4CAF50"))
+                    binding.badgeConnected.text = "CONNECTED"
+                    binding.badgeConnected.setBackgroundColor(Color.parseColor("#4CAF50"))
+                    binding.badgeConnected.visibility = View.VISIBLE
+                    binding.iconDisconnect.visibility = View.VISIBLE
+                }
+                isConnecting -> {
+                    binding.deviceRowRoot.setBackgroundColor(Color.parseColor("#2E2A10"))
+                    binding.textDeviceName.setTextColor(Color.parseColor("#FFC107"))
+                    binding.iconBt.setColorFilter(Color.parseColor("#FFC107"))
+                    binding.badgeConnected.text = "CONNECTING…"
+                    binding.badgeConnected.setBackgroundColor(Color.parseColor("#FFC107"))
+                    binding.badgeConnected.setTextColor(Color.parseColor("#1A1A00"))
+                    binding.badgeConnected.visibility = View.VISIBLE
+                    binding.iconDisconnect.visibility = View.GONE
+                }
+                isError -> {
+                    binding.deviceRowRoot.setBackgroundColor(Color.parseColor("#2E1A1A"))
+                    binding.textDeviceName.setTextColor(Color.parseColor("#CF6679"))
+                    binding.iconBt.setColorFilter(Color.parseColor("#CF6679"))
+                    binding.badgeConnected.text = "FAILED"
+                    binding.badgeConnected.setBackgroundColor(Color.parseColor("#CF6679"))
+                    binding.badgeConnected.setTextColor(Color.parseColor("#FFFFFF"))
+                    binding.badgeConnected.visibility = View.VISIBLE
+                    binding.iconDisconnect.visibility = View.GONE
+                }
+                else -> {
+                    binding.deviceRowRoot.setBackgroundColor(Color.TRANSPARENT)
+                    binding.textDeviceName.setTextColor(Color.parseColor("#E0E0E0"))
+                    binding.iconBt.setColorFilter(Color.parseColor("#4FC3F7"))
+                    binding.badgeConnected.visibility = View.GONE
+                    binding.iconDisconnect.visibility = View.GONE
+                }
             }
         }
     }

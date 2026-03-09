@@ -18,6 +18,18 @@
         android:background="@drawable/bg_widget_selected"
         android:visibility="gone" />
 
+    <!-- Move indicator: 4-arrow icon centered on widget, shown when selected -->
+    <ImageView
+        android:id="@+id/move_indicator"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="center"
+        android:src="@android:drawable/ic_menu_directions"
+        android:tint="#CCFFFFFF"
+        android:alpha="0.85"
+        android:contentDescription="Drag to move"
+        android:visibility="gone" />
+
     <!-- 4 Handles, visibility managed in code -->
     <View
         android:id="@+id/handle_tl"

@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!-- Simplified car silhouette for notification -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6,10 L6,14 L8,14 L8,13 L9,13 L10,9 L14,9 L15,13 L16,13 L16,14 L18,14 L18,10 L16,10 L16,9 L15,9 L14,7 L10,7 L9,9 L8,9 L8,10 Z" />
+    <!-- Wheels -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M8,14 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14,14 a1,1 0 1,0 2,0 a1,1 0 1,0 -2,0 Z" />
+    <!-- Diagnostic indicator -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M10,16 L14,16 L12,18 Z" />
+</vector>

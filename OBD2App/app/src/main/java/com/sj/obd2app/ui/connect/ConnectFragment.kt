@@ -13,6 +13,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.sj.obd2app.databinding.FragmentConnectBinding
 import com.sj.obd2app.databinding.ItemDeviceBinding
+import com.sj.obd2app.obd.Obd2Service
+import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.ui.attachNavOverflow
 
 /**
  * Connect screen — lists paired and discovered Bluetooth devices,
@@ -37,6 +41,8 @@ class ConnectFragment : Fragment() {
         viewModel = ViewModelProvider(this)[ConnectViewModel::class.java]
         _binding = FragmentConnectBinding.inflate(inflater, container, false)
 
+        attachNavOverflow(binding.btnTopOverflow)
+
         binding.recyclerviewDevices.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerviewDiscovered.layoutManager = LinearLayoutManager(requireContext())
 
@@ -54,26 +60,31 @@ class ConnectFragment : Fragment() {
             }
 
         } else {
-            // Paired devices list
+            // OBD devices list (filtered — likely OBD adapters)
             pairedAdapter = DeviceAdapter(
                 onDeviceClick = { device -> viewModel.connectToDevice(device, requireContext()) },
                 onDisconnectClick = { viewModel.disconnect() }
             )
             binding.recyclerviewDevices.adapter = pairedAdapter
-            viewModel.pairedDevices.observe(viewLifecycleOwner) { devices ->
+            viewModel.obdDevices.observe(viewLifecycleOwner) { devices ->
                 pairedAdapter?.submitList(devices)
+                binding.labelPaired.text = if (devices.isEmpty()) "Paired devices" else "OBD Adapters"
             }
 
-            // Discovered devices list
+            // "Other devices" section — non-OBD paired devices
             discoveredAdapter = DeviceAdapter(
                 onDeviceClick = { device -> viewModel.connectToDevice(device, requireContext()) },
                 onDisconnectClick = { viewModel.disconnect() }
             )
             binding.recyclerviewDiscovered.adapter = discoveredAdapter
-            viewModel.discoveredDevices.observe(viewLifecycleOwner) { devices ->
+            viewModel.otherDevices.observe(viewLifecycleOwner) { devices ->
                 if (devices.isNotEmpty()) {
+                    binding.labelDiscovered.text = "Other paired devices"
                     binding.labelDiscovered.visibility = View.VISIBLE
                     binding.recyclerviewDiscovered.visibility = View.VISIBLE
+                } else {
+                    binding.labelDiscovered.visibility = View.GONE
+                    binding.recyclerviewDiscovered.visibility = View.GONE
                 }
                 discoveredAdapter?.submitList(devices)
             }
@@ -82,6 +93,12 @@ class ConnectFragment : Fragment() {
             viewModel.connectedDeviceMac.observe(viewLifecycleOwner) { mac ->
                 pairedAdapter?.setConnectedDevice(mac)
                 discoveredAdapter?.setConnectedDevice(mac)
+            }
+
+            // Yellow "CONNECTING…" row while BT handshake is in progress
+            viewModel.connectingDeviceMac.observe(viewLifecycleOwner) { mac ->
+                pairedAdapter?.setConnectingDevice(mac)
+                discoveredAdapter?.setConnectingDevice(mac)
             }
 
             // Scan icon click
@@ -99,21 +116,49 @@ class ConnectFragment : Fragment() {
             viewModel.loadPairedDevices(requireContext())
 
             // Auto-connect to last device if the setting is enabled
-            val prefs = requireContext().getSharedPreferences(
-                com.sj.obd2app.ui.settings.SettingsFragment.PREFS_NAME,
-                android.content.Context.MODE_PRIVATE
-            )
-            if (prefs.getBoolean(com.sj.obd2app.ui.settings.SettingsFragment.KEY_AUTO_CONNECT, true)) {
+            if (AppSettings.isAutoConnect(requireContext())) {
                 viewModel.tryAutoConnect(requireContext())
             }
         }
 
         viewModel.connectionStatus.observe(viewLifecycleOwner) { status ->
             binding.textConnectStatus.text = status
+            // Colour the status label by state
+            val service = Obd2ServiceProvider.getService()
+            binding.textConnectStatus.setTextColor(
+                when (service.connectionState.value) {
+                    Obd2Service.ConnectionState.CONNECTING   -> android.graphics.Color.parseColor("#FFC107")
+                    Obd2Service.ConnectionState.CONNECTED    -> android.graphics.Color.parseColor("#4CAF50")
+                    Obd2Service.ConnectionState.ERROR        -> android.graphics.Color.parseColor("#CF6679")
+                    else                                     -> android.graphics.Color.parseColor("#888888")
+                }
+            )
+        }
+
+        // Connection log panel — show whenever there are log lines
+        viewModel.connectionLog.observe(viewLifecycleOwner) { lines ->
+            if (lines.isEmpty()) {
+                binding.panelConnectionLog.visibility = View.GONE
+            } else {
+                binding.panelConnectionLog.visibility = View.VISIBLE
+                binding.textConnectionLog.text = lines.joinToString("\n")
+                // Auto-scroll to bottom so latest message is visible
+                binding.scrollLog.post { binding.scrollLog.fullScroll(View.FOCUS_DOWN) }
+            }
+        }
+
+        // Red "FAILED" row when a connection attempt fails
+        viewModel.errorDeviceMac.observe(viewLifecycleOwner) { mac ->
+            pairedAdapter?.setErrorDevice(mac)
+            discoveredAdapter?.setErrorDevice(mac)
         }
 
         viewModel.isConnected.observe(viewLifecycleOwner) { connected ->
             binding.btnDisconnect.visibility = if (connected) View.VISIBLE else View.GONE
+            if (connected) {
+                // Navigate to default dashboard or layout list after successful connection
+                (activity as? com.sj.obd2app.MainActivity)?.onObd2Connected()
+            }
         }
 
         binding.btnDisconnect.setOnClickListener {

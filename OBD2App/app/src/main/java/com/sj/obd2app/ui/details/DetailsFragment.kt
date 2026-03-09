@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentDetailsBinding
+import com.sj.obd2app.ui.attachNavOverflow
 
 /**
  * Details screen — displays all OBD-II values in a scrollable table
@@ -29,6 +30,9 @@ class DetailsFragment : Fragment() {
     ): View {
         viewModel = ViewModelProvider(this)[DetailsViewModel::class.java]
         _binding = FragmentDetailsBinding.inflate(inflater, container, false)
+
+        binding.topBarInclude.txtTopBarTitle.text = getString(R.string.menu_details)
+        attachNavOverflow(binding.topBarInclude.btnTopOverflow)
 
         adapter = Obd2Adapter()
         binding.recyclerviewObd2.layoutManager = LinearLayoutManager(requireContext())

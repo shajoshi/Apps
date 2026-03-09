@@ -3,9 +3,11 @@ package com.sj.obd2app.obd
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
+import android.content.Context
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.sj.obd2app.settings.AppSettings
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -17,7 +19,7 @@ import java.util.UUID
  * then continuously polls only the supported PIDs.
  */
 @SuppressLint("MissingPermission")
-class BluetoothObd2Service : Obd2Service {
+class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     companion object {
         /** Standard SPP (Serial Port Profile) UUID */
@@ -52,9 +54,9 @@ class BluetoothObd2Service : Obd2Service {
         @Volatile
         private var instance: BluetoothObd2Service? = null
 
-        fun getInstance(): BluetoothObd2Service {
+        fun getInstance(context: Context? = null): BluetoothObd2Service {
             return instance ?: synchronized(this) {
-                instance ?: BluetoothObd2Service().also { instance = it }
+                instance ?: BluetoothObd2Service(context?.applicationContext).also { instance = it }
             }
         }
     }
@@ -74,6 +76,13 @@ class BluetoothObd2Service : Obd2Service {
     private val _errorMessage = MutableStateFlow<String?>(null)
     override val errorMessage: StateFlow<String?> = _errorMessage
 
+    private val _connectionLog = MutableStateFlow<List<String>>(emptyList())
+    override val connectionLog: StateFlow<List<String>> = _connectionLog
+
+    private fun log(msg: String) {
+        _connectionLog.value = _connectionLog.value + msg
+    }
+
     /**
      * Connect to the given Bluetooth device and start polling OBD-II data.
      */
@@ -86,35 +95,48 @@ class BluetoothObd2Service : Obd2Service {
 
         _connectionState.value = Obd2Service.ConnectionState.CONNECTING
         _errorMessage.value = null
+        _connectionLog.value = emptyList()
+        log("Connecting to ${btDevice.name ?: btDevice.address}…")
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // Open RFCOMM socket
+                log("Opening Bluetooth socket (RFCOMM/SPP)…")
                 socket = btDevice.createRfcommSocketToServiceRecord(SPP_UUID)
                 socket!!.connect()
+                log("✓ Bluetooth socket connected")
 
                 inputStream = socket!!.inputStream
                 outputStream = socket!!.outputStream
 
                 // Initialise ELM327
+                log("Initialising ELM327 adapter…")
                 delay(1000) // Give the adapter time to boot after ATZ
                 for (cmd in INIT_COMMANDS) {
+                    log("  → $cmd")
                     sendCommand(cmd)
                     delay(500)
                 }
+                log("✓ ELM327 initialised")
 
                 // Discover which PIDs the ECU supports
+                log("Querying supported PIDs from ECU…")
                 supportedPids = discoverSupportedPids()
+                log("✓ ${supportedPids.size} PIDs supported — starting data polling")
 
                 _connectionState.value = Obd2Service.ConnectionState.CONNECTED
                 startPolling()
 
             } catch (e: IOException) {
-                _errorMessage.value = "Connection failed: ${e.message}"
+                val msg = "Connection failed: ${e.message}"
+                log("✗ $msg")
+                _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
                 closeSocket()
             } catch (e: SecurityException) {
-                _errorMessage.value = "Bluetooth permission denied"
+                val msg = "Bluetooth permission denied"
+                log("✗ $msg")
+                _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
                 closeSocket()
             }
@@ -131,6 +153,7 @@ class BluetoothObd2Service : Obd2Service {
         supportedPids = emptySet()
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
+        _connectionLog.value = emptyList()
     }
 
     /**
@@ -208,12 +231,14 @@ class BluetoothObd2Service : Obd2Service {
                     } catch (e: Exception) {
                         // Skip on error
                     }
-                    delay(50) // Small delay between commands
+                    val cmdDelay = if (context != null) AppSettings.effectiveCommandDelayMs(context) else AppSettings.DEFAULT_COMMAND_DELAY_MS
+                    delay(cmdDelay)
                 }
                 if (results.isNotEmpty()) {
                     _obd2Data.value = results
                 }
-                delay(500) // Pause between full polling cycles
+                val pollDelay = if (context != null) AppSettings.effectivePollingDelayMs(context) else AppSettings.DEFAULT_POLLING_DELAY_MS
+                delay(pollDelay) // Pause between full polling cycles
             }
         }
     }

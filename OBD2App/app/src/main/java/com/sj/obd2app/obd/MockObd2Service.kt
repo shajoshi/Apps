@@ -76,6 +76,9 @@ class MockObd2Service private constructor() : Obd2Service {
     private val _errorMessage = MutableStateFlow<String?>(null)
     override val errorMessage: StateFlow<String?> = _errorMessage
 
+    private val _connectionLog = MutableStateFlow<List<String>>(emptyList())
+    override val connectionLog: StateFlow<List<String>> = _connectionLog
+
     /**
      * Simulate connecting — device parameter is ignored.
      * After a short delay, starts emitting fluctuating data.
@@ -87,10 +90,15 @@ class MockObd2Service private constructor() : Obd2Service {
 
         _connectionState.value = Obd2Service.ConnectionState.CONNECTING
         _errorMessage.value = null
+        _connectionLog.value = listOf("Connecting to Mock OBD2 Adapter…")
 
         CoroutineScope(Dispatchers.IO).launch {
-            // Simulate connection delay
-            delay(1500)
+            delay(500)
+            _connectionLog.value = _connectionLog.value + "✓ Bluetooth socket connected"
+            delay(500)
+            _connectionLog.value = _connectionLog.value + "✓ ELM327 initialised (mock)"
+            delay(500)
+            _connectionLog.value = _connectionLog.value + "✓ 20 PIDs supported — starting data polling"
             _connectionState.value = Obd2Service.ConnectionState.CONNECTED
             startPolling()
         }
@@ -101,6 +109,7 @@ class MockObd2Service private constructor() : Obd2Service {
         pollingJob = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
+        _connectionLog.value = emptyList()
     }
 
     /**

@@ -54,6 +54,8 @@ dependencies {
     // GPS Geoid correction + layout persistence
     implementation(libs.play.services.location)
     implementation(libs.gson)
+    implementation(libs.androidx.viewpager2)
+    implementation(libs.androidx.documentfile)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

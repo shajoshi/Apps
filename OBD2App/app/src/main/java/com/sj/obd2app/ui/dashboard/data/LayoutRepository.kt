@@ -42,22 +42,54 @@ class LayoutRepository(private val context: Context) {
 
     /**
      * Deserialize all JSON layouts from the local directory.
+     * Legacy WidgetType names (REV_COUNTER, SPEEDOMETER_7SEG, FUEL_BAR, IFC_BAR) are
+     * automatically migrated to their canonical equivalents on load.
      */
     fun getSavedLayouts(): List<DashboardLayout> {
         val files = layoutsDir.listFiles { _, name -> name.endsWith(".json") } ?: return emptyList()
         return files.mapNotNull { file ->
             try {
-                gson.fromJson(file.readText(), DashboardLayout::class.java)
+                val layout = gson.fromJson(file.readText(), DashboardLayout::class.java)
+                migrateLegacyTypes(layout)
             } catch (e: Exception) {
                 null
             }
         }
     }
 
+    /** Replaces deprecated WidgetType values with their canonical counterparts. */
+    private fun migrateLegacyTypes(layout: DashboardLayout): DashboardLayout {
+        var changed = false
+        val migratedWidgets = layout.widgets.map { widget ->
+            val canonical = widget.type.canonical()
+            if (canonical != widget.type) { changed = true; widget.copy(type = canonical) }
+            else widget
+        }
+        return if (changed) layout.copy(widgets = migratedWidgets) else layout
+    }
+
     fun deleteLayout(name: String) {
         val safeName = name.replace(Regex("[^A-Za-z0-9 _-]"), "")
         val file = File(layoutsDir, "$safeName.json")
         if (file.exists()) file.delete()
+        if (getDefaultLayoutName() == name) clearDefaultLayout()
+    }
+
+    fun getDefaultLayoutName(): String? =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_DEFAULT_LAYOUT, null)
+
+    fun setDefaultLayoutName(name: String) =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_DEFAULT_LAYOUT, name).apply()
+
+    fun clearDefaultLayout() =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().remove(KEY_DEFAULT_LAYOUT).apply()
+
+    companion object {
+        private const val PREFS_NAME = "dashboard_prefs"
+        private const val KEY_DEFAULT_LAYOUT = "default_layout_name"
     }
 }
 
@@ -75,6 +107,10 @@ class DashboardMetricAdapter : JsonSerializer<DashboardMetric>, JsonDeserializer
             }
             DashboardMetric.GpsSpeed -> result.addProperty("type", "GpsSpeed")
             DashboardMetric.GpsAltitude -> result.addProperty("type", "GpsAltitude")
+            is DashboardMetric.DerivedMetric -> {
+                result.addProperty("type", "DerivedMetric")
+                result.add("data", context.serialize(src))
+            }
         }
         return result
     }
@@ -87,6 +123,7 @@ class DashboardMetricAdapter : JsonSerializer<DashboardMetric>, JsonDeserializer
             "Obd2Pid" -> context.deserialize(jsonObject.get("data"), DashboardMetric.Obd2Pid::class.java)
             "GpsSpeed" -> DashboardMetric.GpsSpeed
             "GpsAltitude" -> DashboardMetric.GpsAltitude
+            "DerivedMetric" -> context.deserialize(jsonObject.get("data"), DashboardMetric.DerivedMetric::class.java)
             else -> throw JsonParseException("Unknown DashboardMetric type: $type")
         }
     }

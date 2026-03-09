@@ -28,16 +28,18 @@ import kotlinx.coroutines.launch
  */
 class ConnectViewModel : ViewModel() {
 
-    companion object {
-        private const val PREFS_NAME = "obd2_prefs"
-        private const val KEY_LAST_DEVICE_MAC = "last_device_mac"
-        private const val KEY_LAST_DEVICE_NAME = "last_device_name"
-    }
-
     private val service = Obd2ServiceProvider.getService()
 
     private val _pairedDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
     val pairedDevices: LiveData<List<BluetoothDevice>> = _pairedDevices
+
+    /** OBD-likely devices from the paired list */
+    private val _obdDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
+    val obdDevices: LiveData<List<BluetoothDevice>> = _obdDevices
+
+    /** Paired devices that don't look like OBD adapters */
+    private val _otherDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
+    val otherDevices: LiveData<List<BluetoothDevice>> = _otherDevices
 
     private val _discoveredDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
     val discoveredDevices: LiveData<List<BluetoothDevice>> = _discoveredDevices
@@ -58,6 +60,18 @@ class ConnectViewModel : ViewModel() {
 
     private val _isConnected = MutableLiveData(false)
     val isConnected: LiveData<Boolean> = _isConnected
+
+    /** MAC of the device currently being connected to (CONNECTING state). Null otherwise. */
+    private val _connectingDeviceMac = MutableLiveData<String?>(null)
+    val connectingDeviceMac: LiveData<String?> = _connectingDeviceMac
+
+    /** MAC of the last attempted device — retained so ERROR state can tint that row red. */
+    private val _errorDeviceMac = MutableLiveData<String?>(null)
+    val errorDeviceMac: LiveData<String?> = _errorDeviceMac
+
+    /** Step-by-step log lines emitted during connection establishment. */
+    private val _connectionLog = MutableLiveData<List<String>>(emptyList())
+    val connectionLog: LiveData<List<String>> = _connectionLog
 
     val isMockMode: Boolean get() = Obd2ServiceProvider.useMock
 
@@ -105,17 +119,33 @@ class ConnectViewModel : ViewModel() {
                     when (state) {
                         Obd2Service.ConnectionState.DISCONNECTED -> {
                             _connectedDeviceMac.postValue(null)
+                            _connectingDeviceMac.postValue(null)
+                            _errorDeviceMac.postValue(null)
                             "Disconnected — tap a device to connect"
                         }
                         Obd2Service.ConnectionState.CONNECTING -> "Connecting…"
-                        Obd2Service.ConnectionState.CONNECTED -> "Connected"
+                        Obd2Service.ConnectionState.CONNECTED -> {
+                            // Promote connecting → connected so the green row fires
+                            _connectedDeviceMac.postValue(_connectingDeviceMac.value)
+                            _connectingDeviceMac.postValue(null)
+                            _errorDeviceMac.postValue(null)
+                            "Connected"
+                        }
                         Obd2Service.ConnectionState.ERROR -> {
+                            // Move the connecting MAC to error MAC so the row turns red
+                            _errorDeviceMac.postValue(_connectingDeviceMac.value)
                             _connectedDeviceMac.postValue(null)
+                            _connectingDeviceMac.postValue(null)
                             val msg = service.errorMessage.value
                             "Error${if (msg != null) ": $msg" else ""}"
                         }
                     }
                 )
+            }
+        }
+        viewModelScope.launch {
+            service.connectionLog.collect { lines ->
+                _connectionLog.postValue(lines)
             }
         }
     }
@@ -141,6 +171,8 @@ class ConnectViewModel : ViewModel() {
         try {
             val paired = adapter.bondedDevices?.toList() ?: emptyList()
             _pairedDevices.value = paired
+            _obdDevices.value  = paired.filter { isLikelyObd(it) }
+            _otherDevices.value = paired.filter { !isLikelyObd(it) }
         } catch (e: SecurityException) {
             _connectionStatus.value = "Bluetooth permission not granted"
             _pairedDevices.value = emptyList()
@@ -174,7 +206,8 @@ class ConnectViewModel : ViewModel() {
 
     fun connectToDevice(device: BluetoothDevice, context: Context) {
         saveLastDevice(context, device)
-        _connectedDeviceMac.value = device.address
+        _errorDeviceMac.value = null   // clear any previous error tint
+        _connectingDeviceMac.value = device.address
         service.connect(device)
     }
 
@@ -234,5 +267,19 @@ class ConnectViewModel : ViewModel() {
     fun getLastDeviceName(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(KEY_LAST_DEVICE_NAME, null)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun isLikelyObd(device: BluetoothDevice): Boolean {
+        val name = try { device.name?.uppercase() ?: "" } catch (_: Exception) { "" }
+        return OBD_KEYWORDS.any { name.contains(it) }
+    }
+
+    companion object {
+        private const val PREFS_NAME = "obd2_prefs"
+        private const val KEY_LAST_DEVICE_MAC = "last_device_mac"
+        private const val KEY_LAST_DEVICE_NAME = "last_device_name"
+
+        private val OBD_KEYWORDS = listOf("OBD", "ELM", "OBDII", "VGATE", "ICAR", "VEEPEAK", "KONNWEI", "CARISTA", "BLUEDRIVER", "CARLY")
     }
 }

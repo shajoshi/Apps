@@ -6,6 +6,12 @@
     android:orientation="vertical"
     tools:context=".ui.details.DetailsFragment">
 
+    <include
+        android:id="@+id/top_bar_include"
+        layout="@layout/include_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp" />
+
     <!-- Connection status bar -->
     <LinearLayout
         android:layout_width="match_parent"

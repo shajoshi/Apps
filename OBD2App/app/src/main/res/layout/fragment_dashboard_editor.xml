@@ -1,33 +1,244 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#121212">
 
-    <!-- The actual drawing canvas for widgets -->
-    <FrameLayout
-        android:id="@+id/canvas_container"
+    <!-- In-screen top strip -->
+    <LinearLayout
+        android:id="@+id/top_strip"
         android:layout_width="0dp"
-        android:layout_height="0dp"
-        app:layout_constraintBottom_toTopOf="@+id/editor_toolbar"
+        android:layout_height="48dp"
+        android:background="#1A1A2E"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent">
 
-    <!-- A grid overlay shown only in edit mode -->
-    <com.sj.obd2app.ui.dashboard.GridOverlayView
-        android:id="@+id/grid_overlay"
+        <!-- Back -->
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_revert"
+            android:tint="#FFFFFF"
+            android:contentDescription="Back" />
+
+        <!-- Dashboard name + EDITING badge -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp">
+
+            <TextView
+                android:id="@+id/txt_dashboard_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/badge_editing"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:background="#CCFF8F00"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="2dp"
+                android:paddingBottom="2dp"
+                android:text="EDITING"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <!-- Undo button (visible only when there are unsaved changes) -->
+        <ImageButton
+            android:id="@+id/btn_undo"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_revert"
+            android:tint="#FFC107"
+            android:visibility="gone"
+            android:contentDescription="Undo" />
+
+        <!-- Save button (visible only in edit mode with unsaved changes) -->
+        <ImageButton
+            android:id="@+id/btn_save"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_save"
+            android:tint="#66BB6A"
+            android:visibility="gone"
+            android:contentDescription="Save" />
+
+        <!-- Trip: Play -->
+        <ImageButton
+            android:id="@+id/btn_trip_play"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="#4FC3F7"
+            android:contentDescription="Start trip" />
+
+        <!-- Trip: Pause -->
+        <ImageButton
+            android:id="@+id/btn_trip_pause"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_pause"
+            android:tint="#FFC107"
+            android:visibility="gone"
+            android:contentDescription="Pause trip" />
+
+        <!-- Trip: Stop -->
+        <ImageButton
+            android:id="@+id/btn_trip_stop"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_delete"
+            android:tint="#EF5350"
+            android:visibility="gone"
+            android:contentDescription="Stop trip" />
+
+        <!-- Edit toggle (pencil = enter edit; check = exit edit) -->
+        <ImageButton
+            android:id="@+id/btn_edit_toggle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_edit"
+            android:tint="#AAAAAA"
+            android:contentDescription="Toggle edit mode" />
+
+        <!-- Overflow ⋮ (settings / color scheme etc.) -->
+        <ImageButton
+            android:id="@+id/btn_overflow"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_settings_black_24dp"
+            android:tint="#AAAAAA"
+            android:contentDescription="More options" />
+
+    </LinearLayout>
+
+    <!-- Canvas host — fills remaining space; canvas_container is sized to match in code -->
+    <FrameLayout
+        android:id="@+id/canvas_scroll_h"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@+id/canvas_container"
-        app:layout_constraintEnd_toEndOf="@+id/canvas_container"
-        app:layout_constraintStart_toStartOf="@+id/canvas_container"
-        app:layout_constraintTop_toTopOf="@+id/canvas_container" />
+        android:clipChildren="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/top_strip">
 
-    <!-- Property Editor Panel (shown when a widget is selected) -->
+            <!-- The actual drawing canvas for widgets; size set programmatically to match parent -->
+            <FrameLayout
+                android:id="@+id/canvas_container"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <!-- Grid overlay — fills canvas -->
+                <com.sj.obd2app.ui.dashboard.GridOverlayView
+                    android:id="@+id/grid_overlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone" />
+
+            </FrameLayout>
+
+    </FrameLayout>
+
+    <!-- FAB: Add Widget — visible only in edit mode -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab_add_widget"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:src="@android:drawable/ic_input_add"
+        android:contentDescription="Add widget"
+        android:visibility="gone"
+        app:backgroundTint="#FF8F00"
+        app:tint="#FFFFFF"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- Widget inline action toolbar — shown above selected widget in edit mode -->
+    <LinearLayout
+        android:id="@+id/widget_action_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:background="#CC1A1A2E"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:elevation="8dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@+id/top_strip"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <ImageButton
+            android:id="@+id/wab_edit"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_edit"
+            android:tint="#4FC3F7"
+            android:contentDescription="Edit widget" />
+
+        <ImageButton
+            android:id="@+id/wab_front"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_ff"
+            android:tint="#AAAACC"
+            android:contentDescription="Bring to front" />
+
+        <ImageButton
+            android:id="@+id/wab_back"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_media_rew"
+            android:tint="#AAAACC"
+            android:contentDescription="Send to back" />
+
+        <ImageButton
+            android:id="@+id/wab_delete"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_delete"
+            android:tint="#EF5350"
+            android:contentDescription="Delete widget" />
+
+    </LinearLayout>
+
+    <!-- Property Editor Panel (shown when a widget is selected in edit mode) -->
     <LinearLayout
         android:id="@+id/panel_properties"
         android:layout_width="250dp"
@@ -36,16 +247,16 @@
         android:orientation="vertical"
         android:padding="16dp"
         android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@+id/editor_toolbar"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@+id/top_strip">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-            
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -54,7 +265,7 @@
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="bold" />
-                
+
             <ImageButton
                 android:id="@+id/btn_close_properties"
                 android:layout_width="32dp"
@@ -91,7 +302,7 @@
             android:layout_height="wrap_content"
             android:max="100"
             android:progress="100" />
-            
+
         <Button
             android:id="@+id/btn_delete_widget"
             android:layout_width="match_parent"
@@ -100,44 +311,6 @@
             android:backgroundTint="#D32F2F"
             android:text="Delete Widget" />
 
-    </LinearLayout>
-
-    <!-- Bottom Toolbar -->
-    <LinearLayout
-        android:id="@+id/editor_toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#1A1A2E"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        app:layout_constraintBottom_toBottomOf="parent">
-
-        <Button
-            android:id="@+id/btn_toggle_edit"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Edit Layout" />
-
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1" />
-
-        <Button
-            android:id="@+id/btn_add_widget"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Add+"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btn_save"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="Save"
-            android:visibility="gone" />
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
