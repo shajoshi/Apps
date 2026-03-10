@@ -7,6 +7,7 @@ import com.sj.obd2app.obd.Obd2Command
 import com.sj.obd2app.obd.Obd2CommandRegistry
 import com.sj.obd2app.obd.Obd2DataItem
 import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.sensors.AccelerometerSource
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.FuelType
 import com.sj.obd2app.settings.VehicleProfileRepository
@@ -16,6 +17,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 
 /**
  * Singleton service that combines live OBD2 + GPS data, computes all
@@ -43,9 +45,47 @@ class MetricsCalculator private constructor(private val context: Context) {
     private val _metrics = MutableStateFlow(VehicleMetrics())
     val metrics: StateFlow<VehicleMetrics> = _metrics
 
+    private val _tripPhase = MutableStateFlow(TripPhase.IDLE)
+    val tripPhase: StateFlow<TripPhase> = _tripPhase
+
     private val tripState = TripState()
     private val logger = MetricsLogger()
     @Volatile private var isTripPaused = false
+    @Volatile private var pauseStartMs: Long? = null
+    @Volatile private var pausedAccumMs: Long = 0L
+
+    /** Wall-clock ms when the current trip was started; null when IDLE. */
+    @Volatile var tripStartMs: Long? = null
+        private set
+
+    /** Accumulated paused ms for current trip (excludes any ongoing pause). */
+    @Volatile var pausedAccumMsPublic: Long = 0L
+        private set
+
+    /** Current pause start ms, non-null while PAUSED. */
+    @Volatile var currentPauseStartMs: Long? = null
+        private set
+
+    /** Elapsed active trip seconds, honouring pauses. 0 when IDLE. */
+    fun elapsedTripSec(): Long {
+        val start = tripStartMs ?: return 0L
+        val now = System.currentTimeMillis()
+        val pauseOngoing = currentPauseStartMs?.let { now - it } ?: 0L
+        return ((now - start - pausedAccumMsPublic - pauseOngoing) / 1000L).coerceAtLeast(0L)
+    }
+
+    private val accelEngine = AccelEngine()
+    @Volatile private var vehicleBasis: AccelEngine.VehicleBasis? = null
+
+    /** Gravity vector captured when [startTrip] was last called; null if no trip started or accel disabled. */
+    @Volatile var capturedGravityVector: FloatArray? = null
+        private set
+
+    /** True if we're waiting for the first gravity reading after a trip start. */
+    @Volatile private var waitingForGravityCapture: Boolean = false
+
+    /** Number of samples appended to the current log file (0 if no trip active). */
+    val currentSampleNo: Int get() = logger.currentSampleNo
 
     /** Most recently received OBD2 readings, keyed by PID */
     private var latestObd2: Map<String, String> = emptyMap()
@@ -100,6 +140,21 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     fun startTrip() {
         tripState.reset()
+        isTripPaused = false
+        pauseStartMs = null
+        pausedAccumMs = 0L
+        tripStartMs = System.currentTimeMillis()
+        pausedAccumMsPublic = 0L
+        currentPauseStartMs = null
+        _tripPhase.value = TripPhase.RUNNING
+        val accelSource = AccelerometerSource.getInstance(context)
+        if (AppSettings.isAccelerometerEnabled(context) && accelSource.isAvailable) {
+            accelSource.start()
+            // Don't capture yet; wait for first gravity reading in the calculation loop
+            waitingForGravityCapture = true
+            capturedGravityVector = null
+            vehicleBasis = null
+        }
         if (AppSettings.isLoggingEnabled(context)) {
             val profile = VehicleProfileRepository.getInstance(context).activeProfile
             logger.open(context, profile, supportedPids)
@@ -108,15 +163,38 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     fun pauseTrip() {
         isTripPaused = true
+        if (pauseStartMs == null) {
+            pauseStartMs = System.currentTimeMillis()
+        }
+        currentPauseStartMs = pauseStartMs
+        _tripPhase.value = TripPhase.PAUSED
     }
 
     fun resumeTrip() {
         isTripPaused = false
+        pauseStartMs?.let { startMs ->
+            val elapsed = System.currentTimeMillis() - startMs
+            pausedAccumMs += elapsed
+            pausedAccumMsPublic += elapsed
+        }
+        pauseStartMs = null
+        currentPauseStartMs = null
+        _tripPhase.value = TripPhase.RUNNING
     }
 
     fun stopTrip() {
         isTripPaused = false
+        pauseStartMs = null
+        pausedAccumMs = 0L
+        tripStartMs = null
+        pausedAccumMsPublic = 0L
+        currentPauseStartMs = null
         tripState.reset()
+        _tripPhase.value = TripPhase.IDLE
+        AccelerometerSource.getInstance(context).stop()
+        vehicleBasis = null
+        capturedGravityVector = null
+        waitingForGravityCapture = false
         logger.close()
     }
 
@@ -183,10 +261,16 @@ class MetricsCalculator private constructor(private val context: Context) {
         val fuelTypeStr     = pidStr("0151")
 
         // GPS
-        val gpsSpeed    = gps?.speedKmh
-        val altitude    = gps?.altitudeMsl
-        val accuracy    = gps?.accuracyM
-        val bearing     = null as Float? // GpsDataItem doesn't carry bearing yet
+        val gpsSpeed          = gps?.speedKmh
+        val altitude          = gps?.altitudeMsl
+        val accuracy          = gps?.accuracyM
+        val bearing           = gps?.bearingDeg
+        val gpsLat            = gps?.latitude
+        val gpsLon            = gps?.longitude
+        val altEllipsoid      = gps?.altitudeEllipsoid
+        val geoidUndulation   = gps?.geoidUndulation
+        val vertAccuracy      = gps?.verticalAccuracyM
+        val satelliteCount    = gps?.satelliteCount
 
         // Effective speed: prefer GPS, fall back to OBD
         val speedKmh = gpsSpeed ?: obdSpeedKmh ?: 0f
@@ -196,6 +280,17 @@ class MetricsCalculator private constructor(private val context: Context) {
             fuelRatePid != null && fuelRatePid > 0f -> fuelRatePid
             maf != null && maf > 0f -> (maf * fuelType.mafLitreFactor * 3600.0).toFloat()
             else -> null
+        }
+
+        // Capture first gravity vector after trip start (if waiting)
+        if (waitingForGravityCapture) {
+            val accelSource = AccelerometerSource.getInstance(context)
+            val gv = accelSource.gravityVector
+            if (gv != null) {
+                capturedGravityVector = gv.copyOf()
+                vehicleBasis = gv.let { accelEngine.computeVehicleBasis(it) }
+                waitingForGravityCapture = false
+            }
         }
 
         // Update trip accumulators (skipped when paused)
@@ -227,7 +322,9 @@ class MetricsCalculator private constructor(private val context: Context) {
 
         // Trip time
         val now = System.currentTimeMillis()
-        val tripTimeSec = (now - tripState.tripStartMs) / 1000L
+        val pauseOngoingMs = pauseStartMs?.let { now - it } ?: 0L
+        val tripTimeMs = (now - tripState.tripStartMs - pausedAccumMs - pauseOngoingMs).coerceAtLeast(0L)
+        val tripTimeSec = tripTimeMs / 1000L
 
         // Average speed
         val movingSec = tripState.movingTimeSec
@@ -239,6 +336,43 @@ class MetricsCalculator private constructor(private val context: Context) {
 
         // Drive mode
         val (pctCity, pctHwy, pctIdle) = tripState.driveModePercents()
+
+        // ── Accelerometer ────────────────────────────────────────────────────
+        val accelSource = AccelerometerSource.getInstance(context)
+        val accelMetrics: AccelMetrics? = if (AppSettings.isAccelerometerEnabled(context)) {
+            val basis = vehicleBasis
+                ?: accelSource.gravityVector?.let { accelEngine.computeVehicleBasis(it) }
+                    .also { vehicleBasis = it }
+            val buffer = accelSource.drainBuffer()
+            if (buffer.isNotEmpty()) accelEngine.computeAccelMetrics(buffer, basis) else null
+        } else null
+
+        // ── Power calculations ───────────────────────────────────────────────
+        val speedMs = speedKmh / 3.6f
+
+        val powerAccelKw: Float? = run {
+            val mass = profile?.vehicleMassKg ?: 0f
+            val fwdAcc = accelMetrics?.fwdMean
+            if (mass > 0f && fwdAcc != null && speedMs > 0f)
+                (mass * fwdAcc * speedMs) / 1000f
+            else null
+        }
+
+        val powerThermoKw: Float? = fuelRateEffective?.let { rate ->
+            val energy = fuelType.energyDensityMJpL
+            if (energy > 0.0 && rate > 0f)
+                ((rate / 3600.0) * energy * 1e6 * 0.35 / 1000.0).toFloat()
+            else null
+        }
+
+        val powerOBDKw: Float? = run {
+            val torqPct = actualTorque
+            val refNm   = refTorque
+            val rpmVal  = rpm
+            if (torqPct != null && refNm != null && rpmVal != null && rpmVal > 0f)
+                ((torqPct / 100f) * refNm * rpmVal * 2.0 * PI / 60000.0).toFloat()
+            else null
+        }
 
         return VehicleMetrics(
             timestampMs            = now,
@@ -284,10 +418,16 @@ class MetricsCalculator private constructor(private val context: Context) {
             fuelSystemStatus       = fuelSysStatus,
             monitorStatus          = monitorStat,
             fuelTypeStr            = fuelTypeStr,
+            gpsLatitude            = if (gpsLat != null && gpsLat != 0.0) gpsLat else null,
+            gpsLongitude           = if (gpsLon != null && gpsLon != 0.0) gpsLon else null,
             gpsSpeedKmh            = gpsSpeed,
             altitudeMslM           = altitude,
+            altitudeEllipsoidM     = altEllipsoid,
+            geoidUndulationM       = geoidUndulation,
             gpsAccuracyM           = accuracy,
             gpsBearingDeg          = bearing,
+            gpsVerticalAccuracyM   = vertAccuracy,
+            gpsSatelliteCount      = satelliteCount,
             fuelRateEffectiveLh    = fuelRateEffective,
             instantLper100km       = instantLpk,
             instantKpl             = instantKpl,
@@ -307,7 +447,25 @@ class MetricsCalculator private constructor(private val context: Context) {
             spdDiffKmh             = spdDiff,
             pctCity                = pctCity,
             pctHighway             = pctHwy,
-            pctIdle                = pctIdle
+            pctIdle                = pctIdle,
+            powerAccelKw           = powerAccelKw,
+            powerThermoKw          = powerThermoKw,
+            powerOBDKw             = powerOBDKw,
+            accelVertRms           = accelMetrics?.vertRms,
+            accelVertMax           = accelMetrics?.vertMax,
+            accelVertMean          = accelMetrics?.vertMean,
+            accelVertStdDev        = accelMetrics?.vertStdDev,
+            accelVertPeakRatio     = accelMetrics?.vertPeakRatio,
+            accelFwdRms            = accelMetrics?.fwdRms,
+            accelFwdMax            = accelMetrics?.fwdMax,
+            accelFwdMaxBrake       = accelMetrics?.fwdMaxBrake,
+            accelFwdMaxAccel       = accelMetrics?.fwdMaxAccel,
+            accelFwdMean           = accelMetrics?.fwdMean,
+            accelLatRms            = accelMetrics?.latRms,
+            accelLatMax            = accelMetrics?.latMax,
+            accelLatMean           = accelMetrics?.latMean,
+            accelLeanAngleDeg      = accelMetrics?.leanAngleDeg,
+            accelRawSampleCount    = accelMetrics?.rawAccelSampleCount
         )
     }
 }

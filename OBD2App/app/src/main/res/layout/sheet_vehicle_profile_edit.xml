@@ -79,7 +79,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="16dp">
+                android:layout_marginBottom="4dp">
 
                 <RadioButton
                     android:id="@+id/rb_petrol"
@@ -90,6 +90,15 @@
                     android:textColor="#CCCCCC"
                     android:buttonTint="#4FC3F7"
                     android:checked="true" />
+
+                <RadioButton
+                    android:id="@+id/rb_e20"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="E20"
+                    android:textColor="#CCCCCC"
+                    android:buttonTint="#4FC3F7" />
 
                 <RadioButton
                     android:id="@+id/rb_diesel"
@@ -110,6 +119,41 @@
                     android:buttonTint="#4FC3F7" />
 
             </RadioGroup>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:textColor="#666688"
+                android:textSize="11sp"
+                android:text="E20 = 20% ethanol blend (lower CO₂, adjusted MAF factor)" />
+
+            <!-- Vehicle Mass -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Vehicle Mass (kg) — for power calculation"
+                android:textColor="#4FC3F7"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                app:boxBackgroundColor="#16213E"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_vehicle_mass"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="e.g. 1200 (optional)"
+                    android:inputType="numberDecimal"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#666688" />
+
+            </com.google.android.material.textfield.TextInputLayout>
 
             <!-- Tank Capacity -->
             <TextView

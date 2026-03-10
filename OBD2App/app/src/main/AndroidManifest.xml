@@ -65,6 +65,12 @@
             </intent-filter>
         </service>
 
+        <!-- Trip tracking foreground service -->
+        <service
+            android:name=".service.TripForegroundService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
         <!-- FileProvider for sharing layout JSON files -->
         <provider
             android:name="androidx.core.content.FileProvider"

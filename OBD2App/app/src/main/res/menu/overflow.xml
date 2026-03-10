@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/nav_trip"
+        android:icon="@drawable/ic_details"
+        android:title="Trip" />
+    <item
         android:id="@+id/nav_connect"
         android:icon="@drawable/ic_bluetooth"
         android:title="@string/menu_connect" />

@@ -29,13 +29,13 @@ class SettingsFragment : Fragment() {
     private lateinit var repo: VehicleProfileRepository
     private lateinit var profileAdapter: ProfileAdapter
 
-    /** Polling seekbar: maps 0..190 → 100ms..2000ms (step 10ms) */
-    private fun seekToPollingMs(progress: Int): Long = (100L + progress * 10L)
-    private fun pollingMsToSeek(ms: Long): Int = ((ms - 100L) / 10L).toInt().coerceIn(0, 190)
+    /** Polling seekbar: maps 0..999 → 2ms..2000ms (step 2ms) */
+    private fun seekToPollingMs(progress: Int): Long = (2L + progress * 2L)
+    private fun pollingMsToSeek(ms: Long): Int = ((ms - 2L) / 2L).toInt().coerceIn(0, 999)
 
-    /** Command seekbar: maps 0..48 → 20ms..500ms (step ~10ms) */
-    private fun seekToCommandMs(progress: Int): Long = (20L + progress * 10L)
-    private fun commandMsToSeek(ms: Long): Int = ((ms - 20L) / 10L).toInt().coerceIn(0, 48)
+    /** Command seekbar: maps 0..249 → 2ms..500ms (step 2ms) */
+    private fun seekToCommandMs(progress: Int): Long = (2L + progress * 2L)
+    private fun commandMsToSeek(ms: Long): Int = ((ms - 2L) / 2L).toInt().coerceIn(0, 249)
 
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -154,6 +154,16 @@ class SettingsFragment : Fragment() {
         binding.switchLoggingEnabled.setOnCheckedChangeListener { _, checked ->
             AppSettings.setLoggingEnabled(ctx, checked)
         }
+
+        binding.switchAutoShareLog.isChecked = AppSettings.isAutoShareLogEnabled(ctx)
+        binding.switchAutoShareLog.setOnCheckedChangeListener { _, checked ->
+            AppSettings.setAutoShareLogEnabled(ctx, checked)
+        }
+
+        binding.switchAccelerometerEnabled.isChecked = AppSettings.isAccelerometerEnabled(ctx)
+        binding.switchAccelerometerEnabled.setOnCheckedChangeListener { _, checked ->
+            AppSettings.setAccelerometerEnabled(ctx, checked)
+        }
     }
 
     // ── Data Logging ──────────────────────────────────────────────────────────
@@ -165,10 +175,7 @@ class SettingsFragment : Fragment() {
             folderPickerLauncher.launch(null)
         }
 
-        binding.btnShareLog.setOnClickListener {
-            // Share handled by MetricsCalculator.getLogShareUri() — called from dashboard
-            Toast.makeText(requireContext(), "Use the Share button on the dashboard after a trip", Toast.LENGTH_SHORT).show()
-        }
+        // Auto-share switch handled in setupConnectionToggles()
     }
 
     private fun updateLogFolderLabel() {

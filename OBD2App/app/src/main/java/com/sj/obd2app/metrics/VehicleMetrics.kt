@@ -55,10 +55,16 @@ data class VehicleMetrics(
 
     // ── Primary GPS ───────────────────────────────────────────────────────────
 
+    val gpsLatitude: Double? = null,
+    val gpsLongitude: Double? = null,
     val gpsSpeedKmh: Float? = null,
     val altitudeMslM: Double? = null,
+    val altitudeEllipsoidM: Double? = null,
+    val geoidUndulationM: Double? = null,
     val gpsAccuracyM: Float? = null,
     val gpsBearingDeg: Float? = null,
+    val gpsVerticalAccuracyM: Float? = null,
+    val gpsSatelliteCount: Int? = null,
 
     // ── Derived — Fuel Efficiency ─────────────────────────────────────────────
 
@@ -108,5 +114,34 @@ data class VehicleMetrics(
 
     val pctCity: Float = 0f,
     val pctHighway: Float = 0f,
-    val pctIdle: Float = 0f
+    val pctIdle: Float = 0f,
+
+    // ── Derived — Power ───────────────────────────────────────────────────────
+
+    /** Acceleration-based power: mass × fwdMean × speed. Requires vehicleMassKg > 0 + accel. */
+    val powerAccelKw: Float? = null,
+
+    /** Thermodynamic power: fuelRate × energyDensity × 0.35 brake thermal efficiency. */
+    val powerThermoKw: Float? = null,
+
+    /** OBD torque-based power: (actualTorquePct/100 × refTorqueNm × rpm × 2π) / 60000. */
+    val powerOBDKw: Float? = null,
+
+    // ── Accelerometer ─────────────────────────────────────────────────────────
+
+    val accelVertRms: Float? = null,
+    val accelVertMax: Float? = null,
+    val accelVertMean: Float? = null,
+    val accelVertStdDev: Float? = null,
+    val accelVertPeakRatio: Float? = null,
+    val accelFwdRms: Float? = null,
+    val accelFwdMax: Float? = null,
+    val accelFwdMaxBrake: Float? = null,
+    val accelFwdMaxAccel: Float? = null,
+    val accelFwdMean: Float? = null,
+    val accelLatRms: Float? = null,
+    val accelLatMax: Float? = null,
+    val accelLatMean: Float? = null,
+    val accelLeanAngleDeg: Float? = null,
+    val accelRawSampleCount: Int? = null
 )

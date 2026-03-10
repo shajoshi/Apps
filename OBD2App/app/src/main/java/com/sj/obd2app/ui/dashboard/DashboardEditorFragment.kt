@@ -202,15 +202,17 @@ class DashboardEditorFragment : Fragment() {
                 calculator.stopTrip()
                 tripPhase = TripPhase.IDLE
                 Toast.makeText(context, "Trip stopped", Toast.LENGTH_SHORT).show()
-                // Offer to share log if logging produced a file
-                val shareUri = calculator.getLogShareUri()
-                if (shareUri != null) {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/json"
-                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                // Auto-share log if enabled and logging produced a file
+                if (com.sj.obd2app.settings.AppSettings.isAutoShareLogEnabled(requireContext())) {
+                    val shareUri = calculator.getLogShareUri()
+                    if (shareUri != null) {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(shareIntent, "Share trip log"))
                     }
-                    startActivity(Intent.createChooser(shareIntent, "Share trip log"))
                 }
                 updateTripControls()
             }

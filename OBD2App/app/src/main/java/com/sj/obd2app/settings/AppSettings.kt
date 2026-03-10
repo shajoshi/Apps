@@ -15,6 +15,8 @@ object AppSettings {
     private const val KEY_GLOBAL_COMMAND_DELAY_MS  = "global_command_delay_ms"
     private const val KEY_LOG_FOLDER_URI            = "log_folder_uri"
     private const val KEY_LOGGING_ENABLED           = "logging_enabled"
+    private const val KEY_AUTO_SHARE_LOG            = "auto_share_log"
+    private const val KEY_ACCELEROMETER_ENABLED     = "accelerometer_enabled"
     private const val KEY_ACTIVE_PROFILE_ID         = "active_profile_id"
     const val KEY_AUTO_CONNECT                      = "auto_connect_last_device"
 
@@ -39,6 +41,18 @@ object AppSettings {
 
     fun setLoggingEnabled(context: Context, value: Boolean) =
         prefs(context).edit().putBoolean(KEY_LOGGING_ENABLED, value).apply()
+
+    fun isAutoShareLogEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_SHARE_LOG, false)
+
+    fun setAutoShareLogEnabled(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(KEY_AUTO_SHARE_LOG, value).apply()
+
+    fun isAccelerometerEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ACCELEROMETER_ENABLED, false)
+
+    fun setAccelerometerEnabled(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(KEY_ACCELEROMETER_ENABLED, value).apply()
 
     // ── Log folder (SAF URI string) ───────────────────────────────────────────
 

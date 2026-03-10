@@ -60,12 +60,14 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             binding.etProfileName.setText(p.name)
             when (p.fuelType) {
                 FuelType.PETROL -> binding.rbPetrol.isChecked = true
+                FuelType.E20    -> binding.rbE20.isChecked = true
                 FuelType.DIESEL -> binding.rbDiesel.isChecked = true
                 FuelType.CNG    -> binding.rbCng.isChecked = true
             }
             binding.etTankCapacity.setText(if (p.tankCapacityL > 0f) p.tankCapacityL.toString() else "")
             binding.etFuelPrice.setText(if (p.fuelPricePerLitre > 0f) p.fuelPricePerLitre.toString() else "")
             binding.etEnginePower.setText(if (p.enginePowerBhp > 0f) p.enginePowerBhp.toString() else "")
+            binding.etVehicleMass.setText(if (p.vehicleMassKg > 0f) p.vehicleMassKg.toString() else "")
             p.obdPollingDelayMs?.let { binding.etPollingDelay.setText(it.toString()) }
             p.obdCommandDelayMs?.let { binding.etCommandDelay.setText(it.toString()) }
             binding.btnDeleteProfile.visibility = View.VISIBLE
@@ -91,6 +93,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
         }
 
         val fuelType = when (binding.rgFuelType.checkedRadioButtonId) {
+            binding.rbE20.id    -> FuelType.E20
             binding.rbDiesel.id -> FuelType.DIESEL
             binding.rbCng.id    -> FuelType.CNG
             else                -> FuelType.PETROL
@@ -99,6 +102,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
         val tank    = binding.etTankCapacity.text?.toString()?.toFloatOrNull() ?: 40f
         val price   = binding.etFuelPrice.text?.toString()?.toFloatOrNull() ?: 0f
         val power   = binding.etEnginePower.text?.toString()?.toFloatOrNull() ?: 0f
+        val mass    = binding.etVehicleMass.text?.toString()?.toFloatOrNull() ?: 0f
         val polling = binding.etPollingDelay.text?.toString()?.toLongOrNull()
         val command = binding.etCommandDelay.text?.toString()?.toLongOrNull()
 
@@ -108,6 +112,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             tankCapacityL     = tank,
             fuelPricePerLitre = price,
             enginePowerBhp    = power,
+            vehicleMassKg     = mass,
             obdPollingDelayMs = polling,
             obdCommandDelayMs = command
         )

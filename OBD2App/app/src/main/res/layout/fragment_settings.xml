@@ -135,7 +135,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="4dp"
-                    android:max="190"
+                    android:max="999"
                     android:progress="40"
                     android:progressTint="#4FC3F7"
                     android:thumbTint="#4FC3F7" />
@@ -144,9 +144,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    android:text="100ms – 2000ms"
+                    android:text="2ms – 2000ms"
                     android:textColor="#666688"
-                    android:textSize="11sp" />
+                    android:textSize="12sp" />
 
                 <!-- Command Gap Delay -->
                 <LinearLayout
@@ -180,7 +180,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="4dp"
-                    android:max="48"
+                    android:max="249"
                     android:progress="3"
                     android:progressTint="#4FC3F7"
                     android:thumbTint="#4FC3F7" />
@@ -188,7 +188,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="20ms – 500ms"
+                    android:text="2ms – 500ms"
                     android:textColor="#666688"
                     android:textSize="11sp" />
 
@@ -390,7 +390,7 @@
                     android:background="#222244"
                     android:layout_marginHorizontal="16dp" />
 
-                <!-- Share log row -->
+                <!-- Auto-share log row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -402,18 +402,60 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Share Latest Log"
+                        android:text="Auto-share latest log"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp" />
 
-                    <Button
-                        android:id="@+id/btn_share_log"
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switch_auto_share_log"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Share"
-                        android:textColor="#4FC3F7"
-                        android:enabled="false"
-                        style="@style/Widget.MaterialComponents.Button.TextButton" />
+                        android:layout_marginStart="12dp" />
+
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#222244"
+                    android:layout_marginHorizontal="16dp" />
+
+                <!-- Accelerometer logging row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Log accelerometer data"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switch_accelerometer_enabled"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="12dp" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Records G-forces, lean angle and forward/lateral acceleration per poll tick. Requires phone mounted on vehicle."
+                        android:textColor="#888888"
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 

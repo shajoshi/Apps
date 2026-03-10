@@ -17,6 +17,7 @@ fun Fragment.attachNavOverflow(anchor: View) {
         popup.setOnMenuItemClickListener { item ->
             val nav = findNavController()
             when (item.itemId) {
+                R.id.nav_trip        -> nav.navigate(R.id.nav_trip)
                 R.id.nav_connect     -> nav.navigate(R.id.nav_connect)
                 R.id.nav_layout_list -> nav.navigate(R.id.nav_layout_list)
                 R.id.nav_details     -> nav.navigate(R.id.nav_details)

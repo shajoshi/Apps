@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import android.widget.Toast
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -123,6 +124,11 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 log("Querying supported PIDs from ECU…")
                 supportedPids = discoverSupportedPids()
                 log("✓ ${supportedPids.size} PIDs supported — starting data polling")
+                context?.let { ctx ->
+                    CoroutineScope(Dispatchers.Main).launch {
+                        Toast.makeText(ctx, "${supportedPids.size} PIDs supported", Toast.LENGTH_SHORT).show()
+                    }
+                }
 
                 _connectionState.value = Obd2Service.ConnectionState.CONNECTED
                 startPolling()

@@ -10,17 +10,21 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.ActivityMainBinding
 import com.sj.obd2app.gps.GpsDataSource
+import com.sj.obd2app.metrics.MetricsCalculator
+import com.sj.obd2app.metrics.TripPhase
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.settings.AppSettings
-import com.sj.obd2app.ui.dashboard.data.LayoutRepository
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -82,6 +86,18 @@ class MainActivity : AppCompatActivity() {
             return // startDestination is nav_layout_list — no explicit navigation needed
         }
 
+        // Keep screen on whenever a trip is running — managed here so it survives
+        // navigation between fragments (DashboardFragment, TripFragment, etc.)
+        lifecycleScope.launch {
+            MetricsCalculator.getInstance(this@MainActivity).tripPhase.collect { phase ->
+                if (phase == TripPhase.RUNNING) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+        }
+
         // Defer BT init until after NavHostFragment has attached its NavController
         val btManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = btManager?.adapter
@@ -112,17 +128,9 @@ class MainActivity : AppCompatActivity() {
      * Navigates to the default dashboard, or the layout list if none is set.
      */
     fun onObd2Connected() {
-        val repo = LayoutRepository(this)
-        val defaultName = repo.getDefaultLayoutName()
         val navController = findNavController(R.id.nav_host_fragment_content_main)
-        if (defaultName != null) {
-            val bundle = Bundle().apply {
-                putString("layout_name", defaultName)
-                putString("mode", "view")
-            }
-            navController.navigate(R.id.nav_editor, bundle)
-        } else {
-            navigateToLayoutList()
+        if (navController.currentDestination?.id != R.id.nav_trip) {
+            navController.navigate(R.id.nav_trip)
         }
     }
 

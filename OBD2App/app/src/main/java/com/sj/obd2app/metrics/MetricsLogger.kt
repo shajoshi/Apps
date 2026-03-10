@@ -38,10 +38,12 @@ class MetricsLogger {
 
     private var writer: BufferedWriter? = null
     private var firstSample = true
+    private var sampleNo = 0
     private var outputUri: Uri? = null
     private var outputFile: File? = null
 
     val isOpen: Boolean get() = writer != null
+    val currentSampleNo: Int get() = sampleNo
 
     /**
      * Opens (or creates) the log file and writes the header.
@@ -60,6 +62,7 @@ class MetricsLogger {
 
         writer = buildWriter(context, fileName)?.also { w ->
             firstSample = true
+            sampleNo = 0
             w.write(buildHeader(context, profile, supportedPids, ts))
             w.write(",\n  \"samples\": [\n")
             w.flush()
@@ -72,7 +75,7 @@ class MetricsLogger {
         try {
             if (!firstSample) w.write(",\n")
             w.write("    ")
-            w.write(metrics.toJson().toString())
+            w.write(metrics.toJson(++sampleNo).toString())
             w.flush()
             firstSample = false
         } catch (_: Exception) {}
@@ -87,6 +90,7 @@ class MetricsLogger {
         } catch (_: Exception) {}
         writer = null
         firstSample = true
+        sampleNo = 0
     }
 
     /** Returns a shareable [Uri] for the most recently written log file. */
@@ -159,9 +163,12 @@ class MetricsLogger {
             JSONObject().apply {
                 put("name", profile.name)
                 put("fuelType", profile.fuelType.name)
+                put("fuelTypeDisplay", profile.fuelType.displayName)
+                put("energyDensityMJpL", profile.fuelType.energyDensityMJpL)
                 put("tankCapacityL", profile.tankCapacityL)
                 put("fuelPricePerLitre", profile.fuelPricePerLitre)
                 put("enginePowerBhp", profile.enginePowerBhp)
+                if (profile.vehicleMassKg > 0f) put("vehicleMassKg", profile.vehicleMassKg)
                 put("obdPollingDelayMs", profile.obdPollingDelayMs ?: AppSettings.getGlobalPollingDelayMs(context))
                 put("obdCommandDelayMs", profile.obdCommandDelayMs ?: AppSettings.getGlobalCommandDelayMs(context))
             }
@@ -177,12 +184,22 @@ class MetricsLogger {
             }
         }
 
+        val accelCalJson = if (AppSettings.isAccelerometerEnabled(context)) {
+            val cal = AccelCalibration()
+            JSONObject().apply {
+                put("enabled", true)
+                put("movingAverageWindow", cal.movingAverageWindow)
+                put("peakThresholdZ", cal.peakThresholdZ)
+            }
+        } else JSONObject().apply { put("enabled", false) }
+
         val header = JSONObject().apply {
             put("appVersion", getAppVersion(context))
             put("logStartedAt", isoTs)
             put("logStartedAtMs", System.currentTimeMillis())
             put("vehicleProfile", profileJson)
             put("supportedPids", pidsJson)
+            put("accelerometer", accelCalJson)
         }
 
         return "{\n  \"header\": ${header.toString(2)}"
@@ -192,75 +209,128 @@ class MetricsLogger {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
     } catch (_: Exception) { "unknown" }
 
-    // ── VehicleMetrics → JSON ─────────────────────────────────────────────────
+    // ── VehicleMetrics → JSON (nested sub-objects) ────────────────────────────
 
-    private fun VehicleMetrics.toJson(): JSONObject = JSONObject().apply {
+    private fun VehicleMetrics.toJson(sampleNo: Int): JSONObject = JSONObject().apply {
         put("timestampMs", timestampMs)
-        rpm?.let { put("rpm", it) }
-        vehicleSpeedKmh?.let { put("vehicleSpeedKmh", it) }
-        engineLoadPct?.let { put("engineLoadPct", it) }
-        throttlePct?.let { put("throttlePct", it) }
-        coolantTempC?.let { put("coolantTempC", it) }
-        intakeTempC?.let { put("intakeTempC", it) }
-        oilTempC?.let { put("oilTempC", it) }
-        ambientTempC?.let { put("ambientTempC", it) }
-        fuelLevelPct?.let { put("fuelLevelPct", it) }
-        fuelPressureKpa?.let { put("fuelPressureKpa", it) }
-        fuelRateLh?.let { put("fuelRateLh", it) }
-        mafGs?.let { put("mafGs", it) }
-        intakeMapKpa?.let { put("intakeMapKpa", it) }
-        baroPressureKpa?.let { put("baroPressureKpa", it) }
-        timingAdvanceDeg?.let { put("timingAdvanceDeg", it) }
-        stftPct?.let { put("stftPct", it) }
-        ltftPct?.let { put("ltftPct", it) }
-        stftBank2Pct?.let { put("stftBank2Pct", it) }
-        ltftBank2Pct?.let { put("ltftBank2Pct", it) }
-        o2Voltage?.let { put("o2Voltage", it) }
-        controlModuleVoltage?.let { put("controlModuleVoltage", it) }
-        runTimeSec?.let { put("runTimeSec", it) }
-        distanceMilOnKm?.let { put("distanceMilOnKm", it) }
-        distanceSinceCleared?.let { put("distanceSinceCleared", it) }
-        absoluteLoadPct?.let { put("absoluteLoadPct", it) }
-        relativeThrottlePct?.let { put("relativeThrottlePct", it) }
-        accelPedalDPct?.let { put("accelPedalDPct", it) }
-        accelPedalEPct?.let { put("accelPedalEPct", it) }
-        commandedThrottlePct?.let { put("commandedThrottlePct", it) }
-        timeMilOnMin?.let { put("timeMilOnMin", it) }
-        timeSinceClearedMin?.let { put("timeSinceClearedMin", it) }
-        ethanolPct?.let { put("ethanolPct", it) }
-        hybridBatteryPct?.let { put("hybridBatteryPct", it) }
-        fuelInjectionTimingDeg?.let { put("fuelInjectionTimingDeg", it) }
-        driverDemandTorquePct?.let { put("driverDemandTorquePct", it) }
-        actualTorquePct?.let { put("actualTorquePct", it) }
-        engineReferenceTorqueNm?.let { put("engineReferenceTorqueNm", it) }
-        catalystTempB1S1C?.let { put("catalystTempB1S1C", it) }
-        catalystTempB2S1C?.let { put("catalystTempB2S1C", it) }
-        fuelSystemStatus?.let { put("fuelSystemStatus", it) }
-        monitorStatus?.let { put("monitorStatus", it) }
-        fuelTypeStr?.let { put("fuelTypeStr", it) }
-        gpsSpeedKmh?.let { put("gpsSpeedKmh", it) }
-        altitudeMslM?.let { put("altitudeMslM", it) }
-        gpsAccuracyM?.let { put("gpsAccuracyM", it) }
-        gpsBearingDeg?.let { put("gpsBearingDeg", it) }
-        fuelRateEffectiveLh?.let { put("fuelRateEffectiveLh", it) }
-        instantLper100km?.let { put("instantLper100km", it) }
-        instantKpl?.let { put("instantKpl", it) }
-        put("tripFuelUsedL", tripFuelUsedL)
-        tripAvgLper100km?.let { put("tripAvgLper100km", it) }
-        tripAvgKpl?.let { put("tripAvgKpl", it) }
-        fuelFlowCcMin?.let { put("fuelFlowCcMin", it) }
-        rangeRemainingKm?.let { put("rangeRemainingKm", it) }
-        fuelCostEstimate?.let { put("fuelCostEstimate", it) }
-        avgCo2gPerKm?.let { put("avgCo2gPerKm", it) }
-        put("tripDistanceKm", tripDistanceKm)
-        put("tripTimeSec", tripTimeSec)
-        put("movingTimeSec", movingTimeSec)
-        put("stoppedTimeSec", stoppedTimeSec)
-        tripAvgSpeedKmh?.let { put("tripAvgSpeedKmh", it) }
-        put("tripMaxSpeedKmh", tripMaxSpeedKmh)
-        spdDiffKmh?.let { put("spdDiffKmh", it) }
-        put("pctCity", pctCity)
-        put("pctHighway", pctHighway)
-        put("pctIdle", pctIdle)
+        put("sampleNo", sampleNo)
+
+        // gps sub-object — only when any GPS data is available
+        val hasGps = gpsLatitude != null || gpsSpeedKmh != null || altitudeMslM != null
+        if (hasGps) {
+            put("gps", JSONObject().apply {
+                gpsLatitude?.let  { put("lat", it) }
+                gpsLongitude?.let { put("lon", it) }
+                gpsSpeedKmh?.let  { put("speedKmh", it) }
+                altitudeMslM?.let { put("altMsl", it) }
+                altitudeEllipsoidM?.let { put("altEllipsoid", it) }
+                geoidUndulationM?.let   { put("geoidUndulation", it) }
+                gpsBearingDeg?.let      { put("bearingDeg", it) }
+                gpsAccuracyM?.let       { put("accuracyM", it) }
+                gpsVerticalAccuracyM?.let { put("vertAccuracyM", it) }
+                gpsSatelliteCount?.let  { put("satelliteCount", it) }
+            })
+        }
+
+        // obd sub-object — only when at least one OBD field is present
+        val hasObd = rpm != null || vehicleSpeedKmh != null || engineLoadPct != null
+        if (hasObd) {
+            put("obd", JSONObject().apply {
+                rpm?.let                  { put("rpm", it) }
+                vehicleSpeedKmh?.let      { put("speedKmh", it) }
+                engineLoadPct?.let        { put("engineLoadPct", it) }
+                throttlePct?.let          { put("throttlePct", it) }
+                coolantTempC?.let         { put("coolantTempC", it) }
+                intakeTempC?.let          { put("intakeTempC", it) }
+                oilTempC?.let             { put("oilTempC", it) }
+                ambientTempC?.let         { put("ambientTempC", it) }
+                fuelLevelPct?.let         { put("fuelLevelPct", it) }
+                fuelPressureKpa?.let      { put("fuelPressureKpa", it) }
+                fuelRateLh?.let           { put("fuelRateLh", it) }
+                mafGs?.let                { put("mafGs", it) }
+                intakeMapKpa?.let         { put("intakeMapKpa", it) }
+                baroPressureKpa?.let      { put("baroPressureKpa", it) }
+                timingAdvanceDeg?.let     { put("timingAdvanceDeg", it) }
+                stftPct?.let              { put("stftPct", it) }
+                ltftPct?.let              { put("ltftPct", it) }
+                stftBank2Pct?.let         { put("stftBank2Pct", it) }
+                ltftBank2Pct?.let         { put("ltftBank2Pct", it) }
+                o2Voltage?.let            { put("o2Voltage", it) }
+                controlModuleVoltage?.let { put("controlModuleVoltage", it) }
+                runTimeSec?.let           { put("runTimeSec", it) }
+                distanceMilOnKm?.let      { put("distanceMilOnKm", it) }
+                distanceSinceCleared?.let { put("distanceSinceCleared", it) }
+                absoluteLoadPct?.let      { put("absoluteLoadPct", it) }
+                relativeThrottlePct?.let  { put("relativeThrottlePct", it) }
+                accelPedalDPct?.let       { put("accelPedalDPct", it) }
+                accelPedalEPct?.let       { put("accelPedalEPct", it) }
+                commandedThrottlePct?.let { put("commandedThrottlePct", it) }
+                timeMilOnMin?.let         { put("timeMilOnMin", it) }
+                timeSinceClearedMin?.let  { put("timeSinceClearedMin", it) }
+                ethanolPct?.let           { put("ethanolPct", it) }
+                hybridBatteryPct?.let     { put("hybridBatteryPct", it) }
+                fuelInjectionTimingDeg?.let  { put("fuelInjectionTimingDeg", it) }
+                driverDemandTorquePct?.let   { put("driverDemandTorquePct", it) }
+                actualTorquePct?.let         { put("actualTorquePct", it) }
+                engineReferenceTorqueNm?.let { put("engineReferenceTorqueNm", it) }
+                catalystTempB1S1C?.let    { put("catalystTempB1S1C", it) }
+                catalystTempB2S1C?.let    { put("catalystTempB2S1C", it) }
+                fuelSystemStatus?.let     { put("fuelSystemStatus", it) }
+                monitorStatus?.let        { put("monitorStatus", it) }
+                fuelTypeStr?.let          { put("fuelTypeStr", it) }
+            })
+        }
+
+        // fuel sub-object
+        put("fuel", JSONObject().apply {
+            fuelRateEffectiveLh?.let { put("fuelRateEffectiveLh", it) }
+            instantLper100km?.let   { put("instantLper100km", it) }
+            instantKpl?.let         { put("instantKpl", it) }
+            put("tripFuelUsedL", tripFuelUsedL)
+            tripAvgLper100km?.let   { put("tripAvgLper100km", it) }
+            tripAvgKpl?.let         { put("tripAvgKpl", it) }
+            fuelFlowCcMin?.let      { put("fuelFlowCcMin", it) }
+            rangeRemainingKm?.let   { put("rangeRemainingKm", it) }
+            fuelCostEstimate?.let   { put("fuelCostEstimate", it) }
+            avgCo2gPerKm?.let       { put("avgCo2gPerKm", it) }
+            powerAccelKw?.let       { put("powerAccelKw", it) }
+            powerThermoKw?.let      { put("powerThermoKw", it) }
+            powerOBDKw?.let         { put("powerOBDKw", it) }
+        })
+
+        // accel sub-object — only when accelerometer data is present
+        if (accelVertRms != null) {
+            put("accel", JSONObject().apply {
+                accelVertRms?.let        { put("vertRms", it) }
+                accelVertMax?.let        { put("vertMax", it) }
+                accelVertMean?.let       { put("vertMean", it) }
+                accelVertStdDev?.let     { put("vertStdDev", it) }
+                accelVertPeakRatio?.let  { put("vertPeakRatio", it) }
+                accelFwdRms?.let         { put("fwdRms", it) }
+                accelFwdMax?.let         { put("fwdMax", it) }
+                accelFwdMaxBrake?.let    { put("fwdMaxBrake", it) }
+                accelFwdMaxAccel?.let    { put("fwdMaxAccel", it) }
+                accelFwdMean?.let        { put("fwdMean", it) }
+                accelLatRms?.let         { put("latRms", it) }
+                accelLatMax?.let         { put("latMax", it) }
+                accelLatMean?.let        { put("latMean", it) }
+                accelLeanAngleDeg?.let   { put("leanAngleDeg", it) }
+                accelRawSampleCount?.let { put("rawSampleCount", it) }
+            })
+        }
+
+        // trip sub-object
+        put("trip", JSONObject().apply {
+            put("distanceKm", tripDistanceKm)
+            put("timeSec", tripTimeSec)
+            put("movingTimeSec", movingTimeSec)
+            put("stoppedTimeSec", stoppedTimeSec)
+            tripAvgSpeedKmh?.let { put("avgSpeedKmh", it) }
+            put("maxSpeedKmh", tripMaxSpeedKmh)
+            spdDiffKmh?.let     { put("spdDiffKmh", it) }
+            put("pctCity", pctCity)
+            put("pctHighway", pctHighway)
+            put("pctIdle", pctIdle)
+        })
     }
 }
