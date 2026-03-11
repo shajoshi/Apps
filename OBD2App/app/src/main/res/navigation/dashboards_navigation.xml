@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/dashboards_navigation"
+    app:startDestination="@+id/nav_layout_list">
+
+    <fragment
+        android:id="@+id/nav_layout_list"
+        android:name="com.sj.obd2app.ui.dashboard.LayoutListFragment"
+        android:label="Saved Dashboards"
+        tools:layout="@layout/fragment_layout_list">
+        <action
+            android:id="@+id/action_layoutList_to_editor"
+            app:destination="@id/nav_editor" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/nav_editor"
+        android:name="com.sj.obd2app.ui.dashboard.DashboardEditorFragment"
+        android:label="Dashboard Editor"
+        tools:layout="@layout/fragment_dashboard_editor">
+        <argument
+            android:name="layout_name"
+            app:argType="string"
+            android:defaultValue="@null"
+            app:nullable="true" />
+        <argument
+            android:name="mode"
+            app:argType="string"
+            android:defaultValue="view" />
+        <argument
+            android:name="is_new"
+            app:argType="boolean"
+            android:defaultValue="false" />
+    </fragment>
+
+</navigation>

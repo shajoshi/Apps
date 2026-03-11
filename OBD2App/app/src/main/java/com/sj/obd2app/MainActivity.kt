@@ -16,7 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.findNavController
+import androidx.viewpager2.widget.ViewPager2
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.ActivityMainBinding
 import com.sj.obd2app.gps.GpsDataSource
@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var viewPager: ViewPager2
     private var bluetoothAdapter: BluetoothAdapter? = null
 
     // Bluetooth enable request launcher
@@ -74,6 +75,11 @@ class MainActivity : AppCompatActivity() {
         // Setup notification channels
         setupNotificationChannels()
 
+        // Set up ViewPager2 with 5 pages
+        viewPager = binding.root.findViewById(R.id.main_view_pager)
+        viewPager.adapter = MainPagerAdapter(this)
+        viewPager.offscreenPageLimit = 2
+
         // Start GPS tracking
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             GpsDataSource.getInstance(this).start()
@@ -83,7 +89,8 @@ class MainActivity : AppCompatActivity() {
         Obd2ServiceProvider.useMock = USE_MOCK_OBD2
         if (USE_MOCK_OBD2) {
             Obd2ServiceProvider.initMock(this)
-            return // startDestination is nav_layout_list — no explicit navigation needed
+            viewPager.setCurrentItem(MainPagerAdapter.PAGE_DASHBOARDS, false)
+            return
         }
 
         // Keep screen on whenever a trip is running — managed here so it survives
@@ -110,28 +117,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun navigateToConnect() {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        if (navController.currentDestination?.id != R.id.nav_connect) {
-            navController.navigate(R.id.nav_connect)
-        }
+        viewPager.setCurrentItem(MainPagerAdapter.PAGE_CONNECT, true)
     }
 
     private fun navigateToLayoutList() {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        if (navController.currentDestination?.id != R.id.nav_layout_list) {
-            navController.navigate(R.id.nav_layout_list)
-        }
+        viewPager.setCurrentItem(MainPagerAdapter.PAGE_DASHBOARDS, true)
     }
 
     /**
      * Called by ConnectFragment when OBD connection is established.
-     * Navigates to the default dashboard, or the layout list if none is set.
+     * Navigates to the Trip screen.
      */
     fun onObd2Connected() {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        if (navController.currentDestination?.id != R.id.nav_trip) {
-            navController.navigate(R.id.nav_trip)
-        }
+        viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, true)
+    }
+
+    /** Navigate to a specific page by index — used by TopBarHelper overflow menu. */
+    fun navigateToPage(pageIndex: Int) {
+        viewPager.setCurrentItem(pageIndex, true)
     }
 
     private fun requestBluetoothPermissions() {
@@ -166,10 +169,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        return navController.navigateUp() || super.onSupportNavigateUp()
-    }
 
     private fun setupNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

@@ -40,7 +40,7 @@
                     android:layout_height="wrap_content"
                     android:text="SENSOR READINESS"
                     android:textColor="#4FC3F7"
-                    android:textSize="11sp"
+                    android:textSize="15sp"
                     android:letterSpacing="0.1"
                     android:textStyle="bold"
                     android:paddingBottom="10dp" />
@@ -65,7 +65,7 @@
                         android:layout_height="wrap_content"
                         android:text="OBD2"
                         android:textColor="#CCCCCC"
-                        android:textSize="13sp"
+                        android:textSize="18sp"
                         android:layout_marginStart="10dp" />
 
                     <TextView
@@ -75,7 +75,7 @@
                         android:layout_weight="1"
                         android:text="—"
                         android:textColor="#FFFFFF"
-                        android:textSize="13sp" />
+                        android:textSize="18sp" />
 
                 </LinearLayout>
 
@@ -99,7 +99,7 @@
                         android:layout_height="wrap_content"
                         android:text="GPS"
                         android:textColor="#CCCCCC"
-                        android:textSize="13sp"
+                        android:textSize="18sp"
                         android:layout_marginStart="10dp" />
 
                     <LinearLayout
@@ -114,7 +114,7 @@
                             android:layout_height="wrap_content"
                             android:text="—"
                             android:textColor="#FFFFFF"
-                            android:textSize="13sp" />
+                            android:textSize="18sp" />
 
                         <TextView
                             android:id="@+id/tv_gps_detail"
@@ -357,6 +357,63 @@
 
                 </LinearLayout>
 
+                <!-- Coolant Temp + Avg Fuel (kmpl) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingBottom="8dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Coolant Temp"
+                            android:textColor="#888888"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/tv_coolant_temp"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="— °C"
+                            android:textColor="#FFFFFF"
+                            android:textSize="21sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Avg Fuel"
+                            android:textColor="#888888"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/tv_avg_fuel_kmpl"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="— kmpl"
+                            android:textColor="#FFFFFF"
+                            android:textSize="21sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
                 <!-- Fuel Cost + Idle % -->
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -374,15 +431,15 @@
                             android:layout_height="wrap_content"
                             android:text="Fuel Cost"
                             android:textColor="#888888"
-                            android:textSize="11sp" />
+                            android:textSize="15sp" />
 
                         <TextView
                             android:id="@+id/tv_fuel_cost"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="— $"
+                            android:text="— ₹"
                             android:textColor="#FFFFFF"
-                            android:textSize="15sp"
+                            android:textSize="21sp"
                             android:textStyle="bold" />
 
                     </LinearLayout>
@@ -398,7 +455,7 @@
                             android:layout_height="wrap_content"
                             android:text="Idle %"
                             android:textColor="#888888"
-                            android:textSize="11sp" />
+                            android:textSize="15sp" />
 
                         <TextView
                             android:id="@+id/tv_idle_percent"
@@ -406,7 +463,7 @@
                             android:layout_height="wrap_content"
                             android:text="— %"
                             android:textColor="#FFFFFF"
-                            android:textSize="15sp"
+                            android:textSize="21sp"
                             android:textStyle="bold" />
 
                     </LinearLayout>
@@ -436,43 +493,72 @@
                 android:orientation="vertical"
                 android:padding="14dp">
 
-                <TextView
+                <!-- Collapsible header row -->
+                <LinearLayout
+                    android:id="@+id/gravity_header_row"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="ORIENTATION"
-                    android:textColor="#4FC3F7"
-                    android:textSize="11sp"
-                    android:letterSpacing="0.1"
-                    android:textStyle="bold"
-                    android:paddingBottom="8dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingBottom="8dp"
+                    android:background="?attr/selectableItemBackground">
 
-                <TextView
-                    android:id="@+id/tv_gravity_values"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="X: —   Y: —   Z: —"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:fontFamily="monospace" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="ORIENTATION"
+                        android:textColor="#4FC3F7"
+                        android:textSize="15sp"
+                        android:letterSpacing="0.1"
+                        android:textStyle="bold" />
 
-                <TextView
-                    android:id="@+id/tv_gravity_magnitude"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="— g"
-                    android:textColor="#AAAAAA"
-                    android:textSize="13sp"
-                    android:fontFamily="monospace" />
+                    <ImageView
+                        android:id="@+id/iv_gravity_chevron"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_chevron_up"
+                        android:tint="#4FC3F7"
+                        android:contentDescription="Collapse orientation" />
 
-                <TextView
-                    android:id="@+id/tv_gravity_label"
+                </LinearLayout>
+
+                <!-- Collapsible body -->
+                <LinearLayout
+                    android:id="@+id/gravity_content"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Awaiting trip start…"
-                    android:textColor="#888888"
-                    android:textSize="12sp" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tv_gravity_values"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="X: —   Y: —   Z: —"
+                        android:textColor="#FFFFFF"
+                        android:textSize="20sp"
+                        android:fontFamily="monospace" />
+
+                    <TextView
+                        android:id="@+id/tv_gravity_magnitude"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="— g"
+                        android:textColor="#AAAAAA"
+                        android:textSize="18sp"
+                        android:fontFamily="monospace" />
+
+                    <TextView
+                        android:id="@+id/tv_gravity_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Awaiting trip start…"
+                        android:textColor="#888888"
+                        android:textSize="17sp" />
+
+                </LinearLayout>
 
             </LinearLayout>
 

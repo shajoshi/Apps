@@ -40,8 +40,18 @@ data class TripUiState(
     val sampleCount: String = "0",
     val duration: String = "00:00",
     val distanceKm: String = "0.0 km",
-    val fuelCost: String = "— $",
+    val coolantTemp: String = "— °C",
+    val avgFuelKmpl: String = "— kmpl",
+    val fuelCost: String = "— ₹",
     val idlePercent: String = "— %"
+)
+
+data class TripFrozenValues(
+    val distanceKm: String,
+    val coolantTemp: String,
+    val avgFuelKmpl: String,
+    val fuelCost: String,
+    val idlePercent: String
 )
 
 enum class IndicatorColor { GREEN, YELLOW, RED, GREY }
@@ -56,6 +66,9 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Public state — ticker patches in-place via update{} ──────────────────
     val uiState: StateFlow<TripUiState> get() = _baseState
+
+    // ── Frozen trip values — persists last-seen values after Stop ─────────────
+    private var frozenTripValues: TripFrozenValues? = null
 
     init {
         // Collect sensor/OBD state. Merges timer fields atomically so they are never lost.
@@ -173,11 +186,27 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
         // Trip fields — duration/sampleCount are intentionally NOT set here;
         // they are merged back in the collect lambda and owned by the 1-s ticker.
-        val distance = if (phase == TripPhase.IDLE) "0.0 km" else "%.1f km".format(metrics.tripDistanceKm)
-        val fuelCost = if (phase == TripPhase.IDLE) "— $" 
-                      else metrics.fuelCostEstimate?.let { "%.2f $".format(it) } ?: "— $"
-        val idlePercent = if (phase == TripPhase.IDLE) "— %" 
-                         else "%.1f %%".format(metrics.pctIdle)
+        val distance: String
+        val coolantTemp: String
+        val avgFuelKmpl: String
+        val fuelCost: String
+        val idlePercent: String
+
+        if (phase == TripPhase.IDLE) {
+            // Use frozen values if available (after a trip was stopped)
+            val frozen = frozenTripValues
+            distance    = frozen?.distanceKm  ?: "0.0 km"
+            coolantTemp = frozen?.coolantTemp ?: "— °C"
+            avgFuelKmpl = frozen?.avgFuelKmpl ?: "— kmpl"
+            fuelCost    = frozen?.fuelCost    ?: "— ₹"
+            idlePercent = frozen?.idlePercent ?: "— %"
+        } else {
+            distance    = "%.1f km".format(metrics.tripDistanceKm)
+            coolantTemp = metrics.coolantTempC?.let { "%.0f °C".format(it) } ?: "— °C"
+            avgFuelKmpl = metrics.tripAvgKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
+            fuelCost    = metrics.fuelCostEstimate?.let { "₹%.2f".format(it) } ?: "— ₹"
+            idlePercent = "%.1f %%".format(metrics.pctIdle)
+        }
 
         return TripUiState(
             obdStatus       = obdStatus,
@@ -197,6 +226,8 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             tripPhase       = phase,
             tripPhaseLabel  = phaseLabel,
             distanceKm      = distance,
+            coolantTemp     = coolantTemp,
+            avgFuelKmpl     = avgFuelKmpl,
             fuelCost        = fuelCost,
             idlePercent     = idlePercent
         )
@@ -208,6 +239,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         Log.d(TAG, "startTrip")
+        frozenTripValues = null  // Clear frozen values on new trip start
         calculator.startTrip()
         TripForegroundService.start(ctx)
         Toast.makeText(ctx, "Trip started", Toast.LENGTH_SHORT).show()
@@ -229,6 +261,17 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopTrip() {
         Log.d(TAG, "stopTrip")
+        // Snapshot last seen values before stopping so they remain visible
+        val current = _baseState.value
+        if (current.tripPhase == TripPhase.RUNNING || current.tripPhase == TripPhase.PAUSED) {
+            frozenTripValues = TripFrozenValues(
+                distanceKm  = current.distanceKm,
+                coolantTemp = current.coolantTemp,
+                avgFuelKmpl = current.avgFuelKmpl,
+                fuelCost    = current.fuelCost,
+                idlePercent = current.idlePercent
+            )
+        }
         calculator.stopTrip()
         TripForegroundService.stop(ctx)
         Toast.makeText(ctx, "Trip stopped", Toast.LENGTH_SHORT).show()

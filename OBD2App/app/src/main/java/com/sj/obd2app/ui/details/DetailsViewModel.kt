@@ -33,15 +33,33 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected
 
+    private var lastNonEmptyObd2Data: List<Obd2DataItem> = emptyList()
+    private var lastNonNullMetrics: VehicleMetrics? = null
+
     init {
         viewModelScope.launch {
             service.obd2Data.collect { data ->
-                _obd2Data.value = data
+                if (data.isNotEmpty()) {
+                    lastNonEmptyObd2Data = data
+                    _obd2Data.value = data
+                } else if (lastNonEmptyObd2Data.isNotEmpty()) {
+                    _obd2Data.value = lastNonEmptyObd2Data
+                }
             }
         }
         viewModelScope.launch {
             calculator.metrics.collect { metrics ->
-                _vehicleMetrics.value = metrics
+                val hasData = metrics.rpm != null || metrics.vehicleSpeedKmh != null ||
+                    metrics.coolantTempC != null || metrics.gpsLatitude != null ||
+                    metrics.tripDistanceKm > 0f || metrics.tripFuelUsedL > 0f
+                if (hasData) {
+                    lastNonNullMetrics = metrics
+                    _vehicleMetrics.value = metrics
+                } else if (lastNonNullMetrics != null) {
+                    _vehicleMetrics.value = lastNonNullMetrics
+                } else {
+                    _vehicleMetrics.value = metrics
+                }
             }
         }
         viewModelScope.launch {

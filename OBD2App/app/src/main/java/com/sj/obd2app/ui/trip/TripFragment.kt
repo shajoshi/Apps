@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentTripBinding
 import com.sj.obd2app.metrics.TripPhase
 import com.sj.obd2app.settings.AppSettings
@@ -62,6 +63,16 @@ class TripFragment : Fragment() {
                 applyState(state)
             }
         }
+
+        // Collapsible orientation section
+        var orientationExpanded = true
+        binding.gravityHeaderRow.setOnClickListener {
+            orientationExpanded = !orientationExpanded
+            binding.gravityContent.visibility = if (orientationExpanded) View.VISIBLE else View.GONE
+            binding.ivGravityChevron.setImageResource(
+                if (orientationExpanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down
+            )
+        }
     }
 
     private fun applyState(state: TripUiState) {
@@ -100,6 +111,8 @@ class TripFragment : Fragment() {
         binding.tvTripSamples.text = state.sampleCount
         binding.tvTripDuration.text = state.duration
         binding.tvTripDistance.text = state.distanceKm
+        binding.tvCoolantTemp.text = state.coolantTemp
+        binding.tvAvgFuelKmpl.text = state.avgFuelKmpl
         binding.tvFuelCost.text = state.fuelCost
         binding.tvIdlePercent.text = state.idlePercent
 

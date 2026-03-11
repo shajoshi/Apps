@@ -104,7 +104,7 @@ class DetailsFragment : Fragment() {
         binding.tvTripFuelUsed.text = "%.1f L".format(metrics.tripFuelUsedL)
         binding.tvTripAvgConsumption.text = metrics.tripAvgLper100km?.let { "%.1f L/100km".format(it) } ?: "— L/100km"
         binding.tvTripAvgEfficiency.text = metrics.tripAvgKpl?.let { "%.1f km/L".format(it) } ?: "— km/L"
-        binding.tvFuelCostEstimate.text = metrics.fuelCostEstimate?.let { "%.2f $".format(it) } ?: "— $"
+        binding.tvFuelCostEstimate.text = metrics.fuelCostEstimate?.let { "₹%.2f".format(it) } ?: "— ₹"
         binding.tvRangeRemaining.text = metrics.rangeRemainingKm?.let { "%.0f km".format(it) } ?: "— km"
         binding.tvCo2Emissions.text = metrics.avgCo2gPerKm?.let { "%.1f g/km".format(it) } ?: "— g/km"
 
