@@ -1,8 +1,14 @@
 package com.sj.obd2app.metrics
 
 import android.content.Context
+import android.net.Uri
+import android.util.Log
 import com.sj.obd2app.gps.GpsDataItem
 import com.sj.obd2app.gps.GpsDataSource
+import com.sj.obd2app.metrics.calculator.FuelCalculator
+import com.sj.obd2app.metrics.calculator.PowerCalculator
+import com.sj.obd2app.metrics.calculator.TripCalculator
+import com.sj.obd2app.metrics.collector.DataOrchestrator
 import com.sj.obd2app.obd.Obd2Command
 import com.sj.obd2app.obd.Obd2CommandRegistry
 import com.sj.obd2app.obd.Obd2DataItem
@@ -17,7 +23,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlin.math.PI
 
 /**
  * Singleton service that combines live OBD2 + GPS data, computes all
@@ -53,6 +58,12 @@ class MetricsCalculator private constructor(private val context: Context) {
     @Volatile private var isTripPaused = false
     @Volatile private var pauseStartMs: Long? = null
     @Volatile private var pausedAccumMs: Long = 0L
+
+    // New calculator components
+    private val fuelCalculator = FuelCalculator()
+    private val powerCalculator = PowerCalculator()
+    private val tripCalculator = TripCalculator()
+    private val dataOrchestrator = DataOrchestrator(context, scope, this)
 
     /** Wall-clock ms when the current trip was started; null when IDLE. */
     @Volatile var tripStartMs: Long? = null
@@ -94,46 +105,27 @@ class MetricsCalculator private constructor(private val context: Context) {
     var supportedPids: List<Obd2Command> = emptyList()
         private set
 
+    // ── Methods for DataOrchestrator ────────────────────────────────────────
+
+    /** Updates the metrics StateFlow with a new snapshot. */
+    internal fun updateMetrics(snapshot: VehicleMetrics) {
+        _metrics.value = snapshot
+    }
+
+    /** Appends metrics to log if logging is active. */
+    internal fun logMetrics(snapshot: VehicleMetrics) {
+        if (AppSettings.isLoggingEnabled(context) && logger.isOpen) {
+            logger.append(snapshot)
+        }
+    }
+
+    /** True if logging is currently active. */
+    internal val isLoggingActive: Boolean get() = logger.isOpen
+
     // ── Collection ────────────────────────────────────────────────────────────
 
     private fun startCollecting() {
-        val obdService = Obd2ServiceProvider.getService()
-        val gpsSource  = GpsDataSource.getInstance(context)
-
-        scope.launch {
-            obdService.obd2Data.collect { items ->
-                latestObd2 = items.associate { it.pid to it.value }
-                if (supportedPids.isEmpty() && items.isNotEmpty()) {
-                    supportedPids = Obd2CommandRegistry.commands.filter { cmd ->
-                        items.any { it.pid == cmd.pid }
-                    }
-                }
-                // Persist last-known values for this vehicle profile
-                val profileId = VehicleProfileRepository.getInstance(context).activeProfile?.id
-                PidAvailabilityStore.update(context, profileId, latestObd2)
-
-                val gps = gpsSource.gpsData.value
-                val snapshot = calculate(items, gps)
-                _metrics.value = snapshot
-                if (AppSettings.isLoggingEnabled(context) && logger.isOpen) {
-                    logger.append(snapshot)
-                }
-            }
-        }
-
-        scope.launch {
-            gpsSource.gpsData.collect { gps ->
-                val items = latestObd2.entries.map { (pid, value) ->
-                    val cmd = Obd2CommandRegistry.commands.firstOrNull { it.pid == pid }
-                    Obd2DataItem(pid = pid, name = cmd?.name ?: pid, value = value, unit = cmd?.unit ?: "")
-                }
-                val snapshot = calculate(items, gps)
-                _metrics.value = snapshot
-                if (AppSettings.isLoggingEnabled(context) && logger.isOpen) {
-                    logger.append(snapshot)
-                }
-            }
-        }
+        dataOrchestrator.startCollecting()
     }
 
     // ── Trip control ──────────────────────────────────────────────────────────
@@ -202,7 +194,112 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     // ── Calculation ───────────────────────────────────────────────────────────
 
-    private fun calculate(
+    internal fun calculate(
+        items: List<Obd2DataItem>,
+        gps: GpsDataItem?
+    ): VehicleMetrics {
+        return try {
+            performCalculations(items, gps)
+        } catch (e: Exception) {
+            Log.e("MetricsCalculator", "Calculation error: ${e.message}")
+            // Return empty metrics on failure
+            VehicleMetrics(
+                timestampMs = System.currentTimeMillis(),
+                rpm = null,
+                vehicleSpeedKmh = null,
+                engineLoadPct = null,
+                throttlePct = null,
+                coolantTempC = null,
+                intakeTempC = null,
+                oilTempC = null,
+                ambientTempC = null,
+                fuelLevelPct = null,
+                fuelPressureKpa = null,
+                fuelRateLh = null,
+                mafGs = null,
+                intakeMapKpa = null,
+                baroPressureKpa = null,
+                timingAdvanceDeg = null,
+                stftPct = null,
+                ltftPct = null,
+                stftBank2Pct = null,
+                ltftBank2Pct = null,
+                o2Voltage = null,
+                controlModuleVoltage = null,
+                runTimeSec = null,
+                distanceMilOnKm = null,
+                distanceSinceCleared = null,
+                absoluteLoadPct = null,
+                relativeThrottlePct = null,
+                accelPedalDPct = null,
+                accelPedalEPct = null,
+                commandedThrottlePct = null,
+                timeMilOnMin = null,
+                timeSinceClearedMin = null,
+                ethanolPct = null,
+                hybridBatteryPct = null,
+                fuelInjectionTimingDeg = null,
+                driverDemandTorquePct = null,
+                actualTorquePct = null,
+                engineReferenceTorqueNm = null,
+                catalystTempB1S1C = null,
+                catalystTempB2S1C = null,
+                fuelSystemStatus = null,
+                monitorStatus = null,
+                fuelTypeStr = null,
+                gpsLatitude = null,
+                gpsLongitude = null,
+                gpsSpeedKmh = null,
+                altitudeMslM = null,
+                altitudeEllipsoidM = null,
+                geoidUndulationM = null,
+                gpsAccuracyM = null,
+                gpsBearingDeg = null,
+                gpsVerticalAccuracyM = null,
+                gpsSatelliteCount = null,
+                fuelRateEffectiveLh = null,
+                instantLper100km = null,
+                instantKpl = null,
+                tripFuelUsedL = tripState.tripFuelUsedL,
+                tripAvgLper100km = null,
+                tripAvgKpl = null,
+                fuelFlowCcMin = null,
+                rangeRemainingKm = null,
+                fuelCostEstimate = null,
+                avgCo2gPerKm = null,
+                tripDistanceKm = tripState.tripDistanceKm,
+                tripTimeSec = (System.currentTimeMillis() - tripState.tripStartMs) / 1000L,
+                movingTimeSec = tripState.movingTimeSec,
+                stoppedTimeSec = tripState.stoppedTimeSec,
+                tripAvgSpeedKmh = null,
+                tripMaxSpeedKmh = tripState.maxSpeedKmh,
+                spdDiffKmh = null,
+                pctCity = tripState.driveModePercents().first,
+                pctHighway = tripState.driveModePercents().second,
+                pctIdle = tripState.driveModePercents().third,
+                powerAccelKw = null,
+                powerThermoKw = null,
+                powerOBDKw = null,
+                accelVertRms = null,
+                accelVertMax = null,
+                accelVertMean = null,
+                accelVertStdDev = null,
+                accelVertPeakRatio = null,
+                accelFwdRms = null,
+                accelFwdMax = null,
+                accelFwdMaxBrake = null,
+                accelFwdMaxAccel = null,
+                accelFwdMean = null,
+                accelLatRms = null,
+                accelLatMax = null,
+                accelLatMean = null,
+                accelLeanAngleDeg = null,
+                accelRawSampleCount = null
+            )
+        }
+    }
+
+    private fun performCalculations(
         items: List<Obd2DataItem>,
         gps: GpsDataItem?
     ): VehicleMetrics {
@@ -276,11 +373,7 @@ class MetricsCalculator private constructor(private val context: Context) {
         val speedKmh = gpsSpeed ?: obdSpeedKmh ?: 0f
 
         // Effective fuel rate
-        val fuelRateEffective: Float? = when {
-            fuelRatePid != null && fuelRatePid > 0f -> fuelRatePid
-            maf != null && maf > 0f -> (maf * fuelType.mafLitreFactor * 3600.0).toFloat()
-            else -> null
-        }
+        val fuelRateEffective: Float? = fuelCalculator.effectiveFuelRate(fuelRatePid, maf, fuelType.mafLitreFactor)
 
         // Capture first gravity vector after trip start (if waiting)
         if (waitingForGravityCapture) {
@@ -297,28 +390,21 @@ class MetricsCalculator private constructor(private val context: Context) {
         if (!isTripPaused) tripState.update(speedKmh, fuelRateEffective ?: 0f)
 
         // Instantaneous consumption
-        val instantLpk: Float? = if (fuelRateEffective != null && speedKmh > 2f)
-            (fuelRateEffective * 100f) / speedKmh else null
-        val instantKpl: Float? = if (instantLpk != null && instantLpk > 0f)
-            100f / instantLpk else null
+        val (instantLpk, instantKplVal) = fuelCalculator.instantaneous(fuelRateEffective, speedKmh)
 
         // Trip averages
         val tripDist = tripState.tripDistanceKm
         val tripFuel = tripState.tripFuelUsedL
-        val tripAvgLpk: Float? = if (tripDist > 0.1f) (tripFuel * 100f) / tripDist else null
-        val tripAvgKpl: Float? = if (tripAvgLpk != null && tripAvgLpk > 0f) 100f / tripAvgLpk else null
+        val (tripAvgLpk, tripAvgKpl) = fuelCalculator.tripAverages(tripFuel, tripDist)
 
         // Range
-        val range: Float? = if (fuelLevel != null && tripAvgLpk != null && tripAvgLpk > 0f)
-            (fuelLevel / 100f * (profile?.tankCapacityL ?: 40f)) / (tripAvgLpk / 100f) else null
+        val range: Float? = fuelCalculator.range(fuelLevel, profile?.tankCapacityL ?: 40f, tripAvgLpk)
 
         // Fuel cost
-        val cost: Float? = if (profile != null && profile.fuelPricePerLitre > 0f)
-            tripFuel * profile.fuelPricePerLitre else null
+        val cost: Float? = fuelCalculator.cost(tripFuel, profile?.fuelPricePerLitre ?: 0f)
 
         // CO2
-        val co2: Float? = if (tripAvgLpk != null)
-            tripAvgLpk * fuelType.co2Factor.toFloat() else null
+        val co2: Float? = fuelCalculator.co2(tripAvgLpk, fuelType.co2Factor)
 
         // Trip time
         val now = System.currentTimeMillis()
@@ -328,11 +414,10 @@ class MetricsCalculator private constructor(private val context: Context) {
 
         // Average speed
         val movingSec = tripState.movingTimeSec
-        val avgSpeed: Float? = if (movingSec > 0) tripDist / (movingSec / 3600f) else null
+        val avgSpeed: Float? = tripCalculator.averageSpeed(tripDist, movingSec)
 
         // Speed diff
-        val spdDiff: Float? = if (gpsSpeed != null && obdSpeedKmh != null)
-            gpsSpeed - obdSpeedKmh else null
+        val spdDiff: Float? = tripCalculator.speedDiff(gpsSpeed, obdSpeedKmh)
 
         // Drive mode
         val (pctCity, pctHwy, pctIdle) = tripState.driveModePercents()
@@ -350,29 +435,9 @@ class MetricsCalculator private constructor(private val context: Context) {
         // ── Power calculations ───────────────────────────────────────────────
         val speedMs = speedKmh / 3.6f
 
-        val powerAccelKw: Float? = run {
-            val mass = profile?.vehicleMassKg ?: 0f
-            val fwdAcc = accelMetrics?.fwdMean
-            if (mass > 0f && fwdAcc != null && speedMs > 0f)
-                (mass * fwdAcc * speedMs) / 1000f
-            else null
-        }
-
-        val powerThermoKw: Float? = fuelRateEffective?.let { rate ->
-            val energy = fuelType.energyDensityMJpL
-            if (energy > 0.0 && rate > 0f)
-                ((rate / 3600.0) * energy * 1e6 * 0.35 / 1000.0).toFloat()
-            else null
-        }
-
-        val powerOBDKw: Float? = run {
-            val torqPct = actualTorque
-            val refNm   = refTorque
-            val rpmVal  = rpm
-            if (torqPct != null && refNm != null && rpmVal != null && rpmVal > 0f)
-                ((torqPct / 100f) * refNm * rpmVal * 2.0 * PI / 60000.0).toFloat()
-            else null
-        }
+        val powerAccelKw: Float? = powerCalculator.fromAccelerometer(profile?.vehicleMassKg ?: 0f, accelMetrics?.fwdMean, speedMs)
+        val powerThermoKw: Float? = powerCalculator.thermodynamic(fuelRateEffective, fuelType.energyDensityMJpL)
+        val powerOBDKw: Float? = powerCalculator.fromObd(actualTorque, refTorque, rpm)
 
         return VehicleMetrics(
             timestampMs            = now,
@@ -430,11 +495,11 @@ class MetricsCalculator private constructor(private val context: Context) {
             gpsSatelliteCount      = satelliteCount,
             fuelRateEffectiveLh    = fuelRateEffective,
             instantLper100km       = instantLpk,
-            instantKpl             = instantKpl,
+            instantKpl             = instantKplVal,
             tripFuelUsedL          = tripFuel,
             tripAvgLper100km       = tripAvgLpk,
             tripAvgKpl             = tripAvgKpl,
-            fuelFlowCcMin          = fuelRateEffective?.let { it * 1000f / 60f },
+            fuelFlowCcMin          = fuelFlowCcMin(fuelRateEffective),
             rangeRemainingKm       = range,
             fuelCostEstimate       = cost,
             avgCo2gPerKm           = co2,

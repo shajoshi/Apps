@@ -40,6 +40,7 @@ class MetricsLogger {
     private var firstSample = true
     private var sampleNo = 0
     private var outputUri: Uri? = null
+    fun getShareUri(): Uri? = outputUri
     private var outputFile: File? = null
 
     val isOpen: Boolean get() = writer != null
@@ -70,6 +71,7 @@ class MetricsLogger {
     }
 
     /** Appends one [VehicleMetrics] snapshot as a JSON object. */
+    @Synchronized
     fun append(metrics: VehicleMetrics) {
         val w = writer ?: return
         try {
@@ -82,6 +84,7 @@ class MetricsLogger {
     }
 
     /** Closes the JSON array and object, then flushes and closes the writer. */
+    @Synchronized
     fun close() {
         try {
             writer?.write("\n  ]\n}")
@@ -93,8 +96,10 @@ class MetricsLogger {
         sampleNo = 0
     }
 
-    /** Returns a shareable [Uri] for the most recently written log file. */
-    fun getShareUri(): Uri? = outputUri
+    /** Logs an error message to the console/logcat */
+    fun logError(message: String) {
+        android.util.Log.e("MetricsLogger", message)
+    }
 
     // ── Writer factory ────────────────────────────────────────────────────────
 

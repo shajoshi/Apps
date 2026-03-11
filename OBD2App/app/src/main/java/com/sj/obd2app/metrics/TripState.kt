@@ -6,6 +6,10 @@ package com.sj.obd2app.metrics
  */
 internal class TripState {
 
+    companion object {
+        private const val MAX_WINDOW_SIZE = 2000  // Limit to prevent memory leaks in long trips
+    }
+
     var tripStartMs: Long = System.currentTimeMillis()
     var lastUpdateMs: Long = tripStartMs
 

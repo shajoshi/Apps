@@ -208,7 +208,7 @@ class DashboardEditorFragment : Fragment() {
                     if (shareUri != null) {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "application/json"
-                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                            putExtra(Intent.EXTRA_STREAM, shareUri!!)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         startActivity(Intent.createChooser(shareIntent, "Share trip log"))

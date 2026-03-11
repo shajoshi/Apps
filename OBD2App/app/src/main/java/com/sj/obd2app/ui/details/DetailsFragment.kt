@@ -44,19 +44,25 @@ class DetailsFragment : Fragment() {
         binding.recyclerviewObd2.adapter = adapter
 
         // Observe OBD2 data
-        viewModel.obd2Data.observe(viewLifecycleOwner) { items ->
-            adapter.submitList(items)
-            binding.textPidCount.text = getString(R.string.pid_count_format, items.size)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.obd2Data.collect { items ->
+                adapter.submitList(items)
+                binding.textPidCount.text = getString(R.string.pid_count_format, items.size)
+            }
         }
 
         // Observe connection status
-        viewModel.connectionStatus.observe(viewLifecycleOwner) { status ->
-            binding.textConnectionStatus.text = status
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.connectionStatus.collect { status ->
+                binding.textConnectionStatus.text = status
+            }
         }
 
         // Observe vehicle metrics
-        viewModel.vehicleMetrics.observe(viewLifecycleOwner) { metrics ->
-            bindVehicleMetrics(metrics)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.vehicleMetrics.collect { metrics ->
+                metrics?.let { bindVehicleMetrics(it) }
+            }
         }
 
         // Observe trip state to manage wake lock
