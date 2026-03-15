@@ -136,7 +136,10 @@ class DashboardEditorFragment : Fragment() {
         wabDelete        = view.findViewById(R.id.wab_delete)
 
         val btnCloseProperties: View = view.findViewById(R.id.btn_close_properties)
-        btnCloseProperties.setOnClickListener { viewModel.selectWidget(null) }
+        btnCloseProperties.setOnClickListener { 
+            viewModel.selectWidget(null)
+            updateWidgetBoundsImmediate(null) // Hide bounds immediately
+        }
 
         val layoutName = arguments?.getString("layout_name")
         val mode       = arguments?.getString("mode") ?: "view"
@@ -321,6 +324,7 @@ class DashboardEditorFragment : Fragment() {
         MetricsCalculator.getInstance(requireContext()).setDashboardEditMode(isEditMode)
         if (!isEditMode) {
             viewModel.selectWidget(null)
+            updateWidgetBoundsImmediate(null) // Hide bounds immediately
             widgetActionBar.visibility = View.GONE
         }
         updateEditModeVisuals()
@@ -460,13 +464,44 @@ class DashboardEditorFragment : Fragment() {
     }
 
     private var layoutLoadedOnce = false
+    private var previousLayout: com.sj.obd2app.ui.dashboard.model.DashboardLayout? = null
 
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.currentLayout.collect { layout ->
                 if (layoutLoadedOnce && isEditMode) hasUnsavedChanges = true
                 layoutLoadedOnce = true
-                renderCanvas(layout)
+                
+                // Selective update logic
+                val prev = previousLayout
+                if (prev == null) {
+                    // First load - render everything
+                    renderCanvas(layout)
+                } else {
+                    // Check what changed
+                    val prevWidgets = prev.widgets.associateBy { it.id }
+                    val currWidgets = layout.widgets.associateBy { it.id }
+                    
+                    // Check if widgets were added/removed/reordered
+                    val widgetIdsChanged = prevWidgets.keys != currWidgets.keys ||
+                        prev.widgets.map { it.id } != layout.widgets.map { it.id }
+                    
+                    if (widgetIdsChanged) {
+                        // Full re-render needed
+                        renderCanvas(layout)
+                    } else {
+                        // Only update individual widgets that changed
+                        for (widget in layout.widgets) {
+                            val prevWidget = prevWidgets[widget.id]
+                            if (prevWidget != widget) {
+                                // Widget properties changed - update only this widget
+                                updateSingleWidget(widget)
+                            }
+                        }
+                    }
+                }
+                
+                previousLayout = layout
             }
         }
 
@@ -479,6 +514,8 @@ class DashboardEditorFragment : Fragment() {
                 }
                 // Show/hide inline action bar
                 updateWidgetActionBar(id)
+                // Update widget bounds immediately
+                updateWidgetBoundsImmediate(id)
             }
         }
 
@@ -582,8 +619,8 @@ class DashboardEditorFragment : Fragment() {
                 wrapper.setOnTouchListener(null)
             }
 
+            wrapper.tag = widget.id // Tag for identification during individual updates
             canvasContainer.addView(wrapper)
-
 
             // Wire live data
             liveDataJobs[widget.id] = startLiveDataJob(widget, gaugeView)
@@ -594,9 +631,87 @@ class DashboardEditorFragment : Fragment() {
             canvasContainer.setOnClickListener {
                 moveResizeWidgetId = null
                 viewModel.selectWidget(null)
+                updateWidgetBoundsImmediate(null) // Hide bounds immediately
             }
         } else {
             canvasContainer.setOnClickListener(null)
+        }
+    }
+
+    /**
+     * Updates a single widget without re-rendering the entire canvas.
+     * This prevents layout perturbation when editing individual widget properties.
+     */
+    private fun updateSingleWidget(widget: DashboardWidget) {
+        val wrapper = canvasContainer.findViewWithTag<FrameLayout>(widget.id)
+        wrapper?.let {
+            val contentFrame = it.findViewById<FrameLayout>(R.id.widget_content_frame)
+            val gaugeView = contentFrame.getChildAt(0) as DashboardGaugeView
+            
+            // Apply updated settings to the existing gauge view
+            applyWidgetSettings(gaugeView, widget, viewModel.currentLayout.value.colorScheme)
+            
+            // Update size and position if they changed
+            val lp = it.layoutParams as FrameLayout.LayoutParams
+            lp.width = widget.gridW * gridSizePx
+            lp.height = widget.gridH * gridSizePx
+            it.layoutParams = lp
+            it.x = (widget.gridX * gridSizePx).toFloat()
+            it.y = (widget.gridY * gridSizePx).toFloat()
+            
+            // Update z-order if needed (bring to front/back operations)
+            it.z = widget.zOrder.toFloat()
+            
+            // Update selection state
+            val isSelected = isEditMode && (widget.id == viewModel.selectedWidgetId.value)
+            val border = it.findViewById<View>(R.id.selection_border)
+            val handleTL = it.findViewById<View>(R.id.handle_tl)
+            val handleTR = it.findViewById<View>(R.id.handle_tr)
+            val handleBL = it.findViewById<View>(R.id.handle_bl)
+            val handleBR = it.findViewById<View>(R.id.handle_br)
+            val moveIndicator = it.findViewById<View>(R.id.move_indicator)
+            
+            listOf(border, handleTL, handleTR, handleBL, handleBR, moveIndicator).forEach { view ->
+                view.visibility = if (isSelected) View.VISIBLE else View.GONE
+            }
+        }
+    }
+
+    /**
+     * Immediately updates widget bounds visibility for the selected widget.
+     * This provides instant visual feedback when a widget is selected/deselected.
+     */
+    private fun updateWidgetBoundsImmediate(selectedId: String?) {
+        // Hide all bounds first
+        for (i in 0 until canvasContainer.childCount) {
+            val child = canvasContainer.getChildAt(i)
+            val border = child.findViewById<View>(R.id.selection_border)
+            val handleTL = child.findViewById<View>(R.id.handle_tl)
+            val handleTR = child.findViewById<View>(R.id.handle_tr)
+            val handleBL = child.findViewById<View>(R.id.handle_bl)
+            val handleBR = child.findViewById<View>(R.id.handle_br)
+            val moveIndicator = child.findViewById<View>(R.id.move_indicator)
+            
+            listOf(border, handleTL, handleTR, handleBL, handleBR, moveIndicator).forEach {
+                it.visibility = View.GONE
+            }
+        }
+        
+        // Show bounds for selected widget
+        if (selectedId != null && isEditMode) {
+            val wrapper = canvasContainer.findViewWithTag<FrameLayout>(selectedId)
+            wrapper?.let {
+                val border = it.findViewById<View>(R.id.selection_border)
+                val handleTL = it.findViewById<View>(R.id.handle_tl)
+                val handleTR = it.findViewById<View>(R.id.handle_tr)
+                val handleBL = it.findViewById<View>(R.id.handle_bl)
+                val handleBR = it.findViewById<View>(R.id.handle_br)
+                val moveIndicator = it.findViewById<View>(R.id.move_indicator)
+                
+                listOf(border, handleTL, handleTR, handleBL, handleBR, moveIndicator).forEach {
+                    it.visibility = View.VISIBLE
+                }
+            }
         }
     }
 
