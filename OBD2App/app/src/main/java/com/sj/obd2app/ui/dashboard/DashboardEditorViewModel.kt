@@ -12,6 +12,10 @@ import java.util.UUID
  */
 class DashboardEditorViewModel : ViewModel() {
 
+    // Canvas grid dimensions — set by the fragment after layout; used to center new widgets
+    var canvasGridW: Int = 0
+    var canvasGridH: Int = 0
+
     // The current layout being created or edited
     private val _currentLayout = MutableStateFlow(
         DashboardLayout(
@@ -100,7 +104,15 @@ class DashboardEditorViewModel : ViewModel() {
         val layout = _currentLayout.value
         val newZ = (layout.widgets.maxOfOrNull { it.zOrder } ?: -1) + 1
         val defaults = MetricDefaults.get(metric)
-        val (slotX, slotY) = findFirstFreeSlot(layout, gridW, gridH)
+
+        // Place at canvas center; fall back to first free slot if canvas size unknown
+        val (slotX, slotY) = if (canvasGridW > 0 && canvasGridH > 0) {
+            val cx = ((canvasGridW - gridW) / 2).coerceAtLeast(0)
+            val cy = ((canvasGridH - gridH) / 2).coerceAtLeast(0)
+            cx to cy
+        } else {
+            findFirstFreeSlot(layout, gridW, gridH)
+        }
 
         val newWidget = DashboardWidget(
             id = UUID.randomUUID().toString(),

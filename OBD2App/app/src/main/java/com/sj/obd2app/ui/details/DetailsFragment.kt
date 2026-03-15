@@ -1,10 +1,13 @@
 package com.sj.obd2app.ui.details
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -28,6 +31,10 @@ class DetailsFragment : Fragment() {
     private lateinit var adapter: Obd2Adapter
     private var isTripActive = false
 
+    private val sectionExpanded = mutableMapOf(
+        "obd" to true, "gps" to true, "fuel" to true, "trip" to true, "accel" to true
+    )
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -43,6 +50,8 @@ class DetailsFragment : Fragment() {
         binding.recyclerviewObd2.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerviewObd2.adapter = adapter
 
+        setupCollapsibleSections()
+
         // Observe OBD2 data
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.obd2Data.collect { items ->
@@ -51,10 +60,21 @@ class DetailsFragment : Fragment() {
             }
         }
 
-        // Observe connection status
+        // Observe connection status + indicator dot color
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.connectionStatus.collect { status ->
                 binding.textConnectionStatus.text = status
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.isConnected.collect { connected ->
+                val isMock = com.sj.obd2app.obd.Obd2ServiceProvider.useMock
+                val color = when {
+                    isMock -> Color.parseColor("#FFA000")
+                    connected -> Color.parseColor("#4CAF50")
+                    else -> Color.parseColor("#F44336")
+                }
+                binding.statusIndicator.setBackgroundColor(color)
             }
         }
 
@@ -88,6 +108,24 @@ class DetailsFragment : Fragment() {
         return binding.root
     }
 
+    private fun setupCollapsibleSections() {
+        setupSection("obd", binding.headerObd, binding.bodyObd, binding.chevronObd)
+        setupSection("gps", binding.headerGps, binding.bodyGps, binding.chevronGps)
+        setupSection("fuel", binding.headerFuel, binding.bodyFuel, binding.chevronFuel)
+        setupSection("trip", binding.headerTrip, binding.bodyTrip, binding.chevronTrip)
+        setupSection("accel", binding.headerAccel, binding.bodyAccel, binding.chevronAccel)
+    }
+
+    private fun setupSection(key: String, header: LinearLayout, body: LinearLayout, chevron: TextView) {
+        header.setOnClickListener {
+            val expanded = sectionExpanded[key] != false
+            val nowExpanded = !expanded
+            sectionExpanded[key] = nowExpanded
+            body.visibility = if (nowExpanded) View.VISIBLE else View.GONE
+            chevron.text = if (nowExpanded) "▲" else "▼"
+        }
+    }
+
     private fun bindVehicleMetrics(metrics: com.sj.obd2app.metrics.VehicleMetrics) {
         // GPS Data
         binding.tvGpsLatitude.text = metrics.gpsLatitude?.let { "%.6f".format(it) } ?: "—"
@@ -119,9 +157,18 @@ class DetailsFragment : Fragment() {
         binding.tvSpeedDiff.text = metrics.spdDiffKmh?.let { "%.1f km/h".format(it) } ?: "— km/h"
 
         // Accelerometer
-        binding.tvPowerAccel.text = metrics.powerAccelKw?.let { "%.1f kW".format(it) } ?: "— kW"
-        binding.tvPowerThermo.text = metrics.powerThermoKw?.let { "%.1f kW".format(it) } ?: "— kW"
-        binding.tvPowerObd.text = metrics.powerOBDKw?.let { "%.1f kW".format(it) } ?: "— kW"
+        binding.tvPowerAccel.text = metrics.powerAccelKw?.let { 
+            val bhp = it * 1.341f  // Convert kW to BHP (1 kW ≈ 1.341 HP)
+            "%.1f BHP (%.1f kW)".format(bhp, it)
+        } ?: "— BHP (— kW)"
+        binding.tvPowerThermo.text = metrics.powerThermoKw?.let { 
+            val bhp = it * 1.341f  // Convert kW to BHP (1 kW ≈ 1.341 HP)
+            "%.1f BHP (%.1f kW)".format(bhp, it)
+        } ?: "— BHP (— kW)"
+        binding.tvPowerObd.text = metrics.powerOBDKw?.let { 
+            val bhp = it * 1.341f  // Convert kW to BHP (1 kW ≈ 1.341 HP)
+            "%.1f BHP (%.1f kW)".format(bhp, it)
+        } ?: "— BHP (— kW)"
         binding.tvAccelVertRms.text = metrics.accelVertRms?.let { "%.2f m/s²".format(it) } ?: "— m/s²"
         binding.tvAccelVertMax.text = metrics.accelVertMax?.let { "%.2f m/s²".format(it) } ?: "— m/s²"
         binding.tvAccelVertMean.text = metrics.accelVertMean?.let { "%.2f m/s²".format(it) } ?: "— m/s²"

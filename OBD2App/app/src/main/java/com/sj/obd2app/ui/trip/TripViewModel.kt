@@ -40,19 +40,17 @@ data class TripUiState(
     val sampleCount: String = "0",
     val duration: String = "00:00",
     val distanceKm: String = "0.0 km",
+    val avgSpeed: String = "— km/h",
     val coolantTemp: String = "— °C",
     val avgFuelKmpl: String = "— kmpl",
     val fuelCost: String = "— ₹",
-    val idlePercent: String = "— %"
+    val cityPercent: String = "— %",
+    val highwayPercent: String = "— %",
+    val idlePercent: String = "— %",
+    val powerThermoBhp: String = "— BHP",
+    val powerObdBhp: String = "— BHP"
 )
 
-data class TripFrozenValues(
-    val distanceKm: String,
-    val coolantTemp: String,
-    val avgFuelKmpl: String,
-    val fuelCost: String,
-    val idlePercent: String
-)
 
 enum class IndicatorColor { GREEN, YELLOW, RED, GREY }
 
@@ -67,8 +65,6 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
     // ── Public state — ticker patches in-place via update{} ──────────────────
     val uiState: StateFlow<TripUiState> get() = _baseState
 
-    // ── Frozen trip values — persists last-seen values after Stop ─────────────
-    private var frozenTripValues: TripFrozenValues? = null
 
     init {
         // Collect sensor/OBD state. Merges timer fields atomically so they are never lost.
@@ -119,11 +115,13 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
     ): TripUiState {
 
         // OBD2
-        val (obdStatus, obdColor) = when (connState) {
-            Obd2Service.ConnectionState.CONNECTED    -> "Connected" to IndicatorColor.GREEN
-            Obd2Service.ConnectionState.CONNECTING   -> "Connecting…" to IndicatorColor.YELLOW
-            Obd2Service.ConnectionState.ERROR        -> "Error" to IndicatorColor.RED
-            else                                     -> "Disconnected" to IndicatorColor.GREY
+        val isMock = !AppSettings.isObdConnectionEnabled(ctx) || Obd2ServiceProvider.useMock
+        val (obdStatus, obdColor) = when {
+            isMock -> "Simulation Mode" to IndicatorColor.YELLOW
+            connState == Obd2Service.ConnectionState.CONNECTED  -> "Connected" to IndicatorColor.GREEN
+            connState == Obd2Service.ConnectionState.CONNECTING -> "Connecting…" to IndicatorColor.YELLOW
+            connState == Obd2Service.ConnectionState.ERROR      -> "Error" to IndicatorColor.RED
+            else                                                -> "Disconnected" to IndicatorColor.GREY
         }
 
         // Logging
@@ -187,25 +185,48 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
         // Trip fields — duration/sampleCount are intentionally NOT set here;
         // they are merged back in the collect lambda and owned by the 1-s ticker.
         val distance: String
+        val avgSpeed: String
         val coolantTemp: String
         val avgFuelKmpl: String
         val fuelCost: String
+        val cityPercent: String
+        val highwayPercent: String
         val idlePercent: String
+        val powerThermoBhp: String
+        val powerObdBhp: String
 
         if (phase == TripPhase.IDLE) {
-            // Use frozen values if available (after a trip was stopped)
-            val frozen = frozenTripValues
-            distance    = frozen?.distanceKm  ?: "0.0 km"
-            coolantTemp = frozen?.coolantTemp ?: "— °C"
-            avgFuelKmpl = frozen?.avgFuelKmpl ?: "— kmpl"
-            fuelCost    = frozen?.fuelCost    ?: "— ₹"
-            idlePercent = frozen?.idlePercent ?: "— %"
+            // Show empty values when trip is stopped
+            distance    = "0.0 km"
+            avgSpeed    = "— km/h"
+            coolantTemp = "— °C"
+            avgFuelKmpl = "— kmpl"
+            fuelCost    = "— ₹"
+            cityPercent = "— %"
+            highwayPercent = "— %"
+            idlePercent = "— %"
+            powerThermoBhp = "— BHP"
+            powerObdBhp = "— BHP"
         } else {
             distance    = "%.1f km".format(metrics.tripDistanceKm)
+            avgSpeed    = "%.1f km/h".format(metrics.tripAvgSpeedKmh)
             coolantTemp = metrics.coolantTempC?.let { "%.0f °C".format(it) } ?: "— °C"
             avgFuelKmpl = metrics.tripAvgKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
             fuelCost    = metrics.fuelCostEstimate?.let { "₹%.2f".format(it) } ?: "— ₹"
+            cityPercent = "%.1f %%".format(metrics.pctCity)
+            highwayPercent = "%.1f %%".format(metrics.pctHighway)
             idlePercent = "%.1f %%".format(metrics.pctIdle)
+            
+            // Power metrics in BHP
+            powerThermoBhp = metrics.powerThermoKw?.let { 
+                val bhp = it * 1.341f  // Convert kW to BHP
+                "%.1f BHP".format(bhp)
+            } ?: "— BHP"
+            
+            powerObdBhp = metrics.powerOBDKw?.let { 
+                val bhp = it * 1.341f  // Convert kW to BHP
+                "%.1f BHP".format(bhp)
+            } ?: "— BHP"
         }
 
         return TripUiState(
@@ -226,10 +247,15 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             tripPhase       = phase,
             tripPhaseLabel  = phaseLabel,
             distanceKm      = distance,
+            avgSpeed        = avgSpeed,
             coolantTemp     = coolantTemp,
             avgFuelKmpl     = avgFuelKmpl,
             fuelCost        = fuelCost,
-            idlePercent     = idlePercent
+            cityPercent     = cityPercent,
+            highwayPercent  = highwayPercent,
+            idlePercent     = idlePercent,
+            powerThermoBhp  = powerThermoBhp,
+            powerObdBhp     = powerObdBhp
         )
     }
 
@@ -239,7 +265,6 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         Log.d(TAG, "startTrip")
-        frozenTripValues = null  // Clear frozen values on new trip start
         calculator.startTrip()
         TripForegroundService.start(ctx)
         Toast.makeText(ctx, "Trip started", Toast.LENGTH_SHORT).show()
@@ -261,17 +286,6 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopTrip() {
         Log.d(TAG, "stopTrip")
-        // Snapshot last seen values before stopping so they remain visible
-        val current = _baseState.value
-        if (current.tripPhase == TripPhase.RUNNING || current.tripPhase == TripPhase.PAUSED) {
-            frozenTripValues = TripFrozenValues(
-                distanceKm  = current.distanceKm,
-                coolantTemp = current.coolantTemp,
-                avgFuelKmpl = current.avgFuelKmpl,
-                fuelCost    = current.fuelCost,
-                idlePercent = current.idlePercent
-            )
-        }
         calculator.stopTrip()
         TripForegroundService.stop(ctx)
         Toast.makeText(ctx, "Trip stopped", Toast.LENGTH_SHORT).show()

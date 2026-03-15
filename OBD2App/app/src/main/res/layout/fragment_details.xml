@@ -69,15 +69,39 @@
                     android:orientation="vertical"
                     android:padding="14dp">
 
-                    <TextView
+                    <LinearLayout
+                        android:id="@+id/header_obd"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="OBD-II DATA"
-                        android:textColor="#4FC3F7"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1"
-                        android:textStyle="bold"
-                        android:paddingBottom="8dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="OBD-II DATA"
+                            android:textColor="#4FC3F7"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.1"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/chevron_obd"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="▲"
+                            android:textColor="#4FC3F7"
+                            android:textSize="10sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/body_obd"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/text_pid_count"
@@ -96,6 +120,8 @@
                         android:background="#1A1A2E"
                         android:clipToPadding="false"
                         android:paddingBottom="8dp" />
+
+                    </LinearLayout>
 
                 </LinearLayout>
 
@@ -118,15 +144,39 @@
                     android:orientation="vertical"
                     android:padding="14dp">
 
-                    <TextView
+                    <LinearLayout
+                        android:id="@+id/header_gps"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="GPS DATA"
-                        android:textColor="#4FC3F7"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1"
-                        android:textStyle="bold"
-                        android:paddingBottom="12dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingBottom="12dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="GPS DATA"
+                            android:textColor="#4FC3F7"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.1"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/chevron_gps"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="▲"
+                            android:textColor="#4FC3F7"
+                            android:textSize="10sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/body_gps"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
                     <!-- GPS Location -->
                     <LinearLayout
@@ -339,6 +389,8 @@
 
                     </LinearLayout>
 
+                    </LinearLayout>
+
                 </LinearLayout>
 
             </androidx.cardview.widget.CardView>
@@ -360,15 +412,39 @@
                     android:orientation="vertical"
                     android:padding="14dp">
 
-                    <TextView
+                    <LinearLayout
+                        android:id="@+id/header_fuel"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="FUEL EFFICIENCY"
-                        android:textColor="#4FC3F7"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1"
-                        android:textStyle="bold"
-                        android:paddingBottom="12dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingBottom="12dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="FUEL EFFICIENCY"
+                            android:textColor="#4FC3F7"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.1"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/chevron_fuel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="▲"
+                            android:textColor="#4FC3F7"
+                            android:textSize="10sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/body_fuel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
                     <!-- Instant Consumption + Efficiency -->
                     <LinearLayout
@@ -597,6 +673,8 @@
 
                     </LinearLayout>
 
+                    </LinearLayout>
+
                 </LinearLayout>
 
             </androidx.cardview.widget.CardView>
@@ -618,15 +696,39 @@
                     android:orientation="vertical"
                     android:padding="14dp">
 
-                    <TextView
+                    <LinearLayout
+                        android:id="@+id/header_trip"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="TRIP COMPUTER"
-                        android:textColor="#4FC3F7"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1"
-                        android:textStyle="bold"
-                        android:paddingBottom="12dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingBottom="12dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="TRIP COMPUTER"
+                            android:textColor="#4FC3F7"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.1"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/chevron_trip"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="▲"
+                            android:textColor="#4FC3F7"
+                            android:textSize="10sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/body_trip"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
                     <!-- Trip Distance + Time -->
                     <LinearLayout
@@ -863,6 +965,8 @@
 
                     </LinearLayout>
 
+                    </LinearLayout>
+
                 </LinearLayout>
 
             </androidx.cardview.widget.CardView>
@@ -884,15 +988,39 @@
                     android:orientation="vertical"
                     android:padding="14dp">
 
-                    <TextView
+                    <LinearLayout
+                        android:id="@+id/header_accel"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="ACCELEROMETER"
-                        android:textColor="#4FC3F7"
-                        android:textSize="11sp"
-                        android:letterSpacing="0.1"
-                        android:textStyle="bold"
-                        android:paddingBottom="12dp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingBottom="12dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="ACCELEROMETER"
+                            android:textColor="#4FC3F7"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.1"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/chevron_accel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="▲"
+                            android:textColor="#4FC3F7"
+                            android:textSize="10sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/body_accel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
 
                     <!-- Power Values -->
                     <LinearLayout
@@ -1182,6 +1310,8 @@
                             android:orientation="vertical">
 
                         </LinearLayout>
+
+                    </LinearLayout>
 
                     </LinearLayout>
 

@@ -53,6 +53,9 @@ class MetricsCalculator private constructor(private val context: Context) {
     private val _tripPhase = MutableStateFlow(TripPhase.IDLE)
     val tripPhase: StateFlow<TripPhase> = _tripPhase
 
+    private val _dashboardEditMode = MutableStateFlow(false)
+    val dashboardEditMode: StateFlow<Boolean> = _dashboardEditMode
+
     private val tripState = TripState()
     private val logger = MetricsLogger()
     @Volatile private var isTripPaused = false
@@ -121,6 +124,13 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     /** True if logging is currently active. */
     internal val isLoggingActive: Boolean get() = logger.isOpen
+
+    // ── Dashboard Edit Mode ───────────────────────────────────────────────────
+
+    /** Sets the dashboard edit mode state (called by DashboardEditorFragment). */
+    fun setDashboardEditMode(isEditMode: Boolean) {
+        _dashboardEditMode.value = isEditMode
+    }
 
     // ── Collection ────────────────────────────────────────────────────────────
 
@@ -271,7 +281,7 @@ class MetricsCalculator private constructor(private val context: Context) {
                 tripTimeSec = (System.currentTimeMillis() - tripState.tripStartMs) / 1000L,
                 movingTimeSec = tripState.movingTimeSec,
                 stoppedTimeSec = tripState.stoppedTimeSec,
-                tripAvgSpeedKmh = null,
+                tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, tripState.movingTimeSec),
                 tripMaxSpeedKmh = tripState.maxSpeedKmh,
                 spdDiffKmh = null,
                 pctCity = tripState.driveModePercents().first,
@@ -369,8 +379,8 @@ class MetricsCalculator private constructor(private val context: Context) {
         val vertAccuracy      = gps?.verticalAccuracyM
         val satelliteCount    = gps?.satelliteCount
 
-        // Effective speed: prefer GPS, fall back to OBD
-        val speedKmh = gpsSpeed ?: obdSpeedKmh ?: 0f
+        // Effective speed: use hybrid calculation (OBD up to 20 km/h, GPS above 20 km/h)
+        val speedKmh = tripCalculator.hybridSpeed(gpsSpeed, obdSpeedKmh) ?: 0f
 
         // Effective fuel rate
         val fuelRateEffective: Float? = fuelCalculator.effectiveFuelRate(fuelRatePid, maf, fuelType.mafLitreFactor)
@@ -414,7 +424,7 @@ class MetricsCalculator private constructor(private val context: Context) {
 
         // Average speed
         val movingSec = tripState.movingTimeSec
-        val avgSpeed: Float? = tripCalculator.averageSpeed(tripDist, movingSec)
+        val avgSpeed: Float = tripCalculator.averageSpeed(tripDist, movingSec)
 
         // Speed diff
         val spdDiff: Float? = tripCalculator.speedDiff(gpsSpeed, obdSpeedKmh)
@@ -513,7 +523,6 @@ class MetricsCalculator private constructor(private val context: Context) {
             pctCity                = pctCity,
             pctHighway             = pctHwy,
             pctIdle                = pctIdle,
-            powerAccelKw           = powerAccelKw,
             powerThermoKw          = powerThermoKw,
             powerOBDKw             = powerOBDKw,
             accelVertRms           = accelMetrics?.vertRms,

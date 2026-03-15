@@ -17,6 +17,7 @@ class WidgetTouchHandler(
     private val gridSizePx: Int = 100,
     private val onContextMenu: ((anchor: View) -> Unit)? = null,
     private val getCanvasScale: (() -> Float)? = null,
+    private val isMoveResizeMode: Boolean = false,              // drag only when explicitly enabled
     private val getCanvasBounds: (() -> Pair<Int, Int>)? = null  // returns (maxGridX, maxGridY)
 ) : View.OnTouchListener {
 
@@ -55,6 +56,7 @@ class WidgetTouchHandler(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (!isMoveResizeMode) return true  // drag disabled unless in move/resize mode
                 val totalDx = event.rawX - downRawX
                 val totalDy = event.rawY - downRawY
                 if (!dragStarted) {
@@ -78,7 +80,7 @@ class WidgetTouchHandler(
                     if (wasAlreadySelected && onContextMenu != null) {
                         onContextMenu.invoke(view)
                     }
-                } else if (lastAction == MotionEvent.ACTION_MOVE) {
+                } else if (lastAction == MotionEvent.ACTION_MOVE && isMoveResizeMode) {
                     // Snap to nearest grid intersection, clamped inside canvas bounds
                     val bounds = getCanvasBounds?.invoke()
                     val maxGridX = bounds?.first ?: Int.MAX_VALUE

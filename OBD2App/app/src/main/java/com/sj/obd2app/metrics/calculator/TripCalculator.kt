@@ -9,17 +9,38 @@ package com.sj.obd2app.metrics.calculator
 class TripCalculator {
 
     /**
+     * Calculates effective hybrid speed using OBD speed up to 20 km/h and GPS speed above 20 km/h.
+     * This provides more accurate speed data at idle where GPS may be unreliable.
+     *
+     * @param gpsSpeed GPS-reported speed in km/h
+     * @param obdSpeed OBD-reported speed in km/h
+     * @return Effective speed in km/h, or null if both readings are missing
+     */
+    fun hybridSpeed(gpsSpeed: Float?, obdSpeed: Float?): Float? {
+        return when {
+            obdSpeed != null && obdSpeed <= 20f -> obdSpeed
+            gpsSpeed != null && gpsSpeed > 20f -> gpsSpeed
+            obdSpeed != null -> obdSpeed
+            gpsSpeed != null -> gpsSpeed
+            else -> null
+        }
+    }
+
+    /**
      * Calculates average trip speed based on distance traveled and moving time.
+     * Returns 0 when vehicle is not moving or when trip duration is too short for reliable calculation.
+     * Uses minimum threshold to prevent unrealistic values during very short trips.
+     * Uses Double precision for better accuracy with small distances.
      *
      * @param tripDistanceKm Total distance traveled in the trip
      * @param movingTimeSec Total time spent moving (excludes stopped/idle time)
-     * @return Average speed in km/h, or null if moving time is zero
+     * @return Average speed in km/h (0 when not moving or unreliable)
      */
-    fun averageSpeed(tripDistanceKm: Float, movingTimeSec: Long): Float? {
-        return if (movingTimeSec > 0) {
+    fun averageSpeed(tripDistanceKm: Float, movingTimeSec: Long): Float {
+        return if (movingTimeSec > 30 && tripDistanceKm > 0.05f) {  // Minimum 30 seconds and 50 meters
             val movingTimeHours = movingTimeSec / 3600.0
-            (tripDistanceKm / movingTimeHours).toFloat()
-        } else null
+            (tripDistanceKm.toDouble() / movingTimeHours).toFloat()
+        } else 0f
     }
 
     /**

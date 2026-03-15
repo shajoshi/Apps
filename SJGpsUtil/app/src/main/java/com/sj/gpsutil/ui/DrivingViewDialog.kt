@@ -96,6 +96,12 @@ fun DrivingView(onShowDetails: () -> Unit, onNavigate: (AppDestinations) -> Unit
         val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        fun displayRotation(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            context.display?.rotation ?: Surface.ROTATION_0
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
         // Simple low-pass filter for smooth lean display
         val alpha = 0.15f
         var filtX = 0f; var filtY = 0f; var filtZ = 0f; var initialized = false
@@ -104,7 +110,7 @@ fun DrivingView(onShowDetails: () -> Unit, onNavigate: (AppDestinations) -> Unit
                 if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
                 // Remap axes based on display rotation so X=lateral, Y=forward, Z=vertical
                 // regardless of portrait/landscape orientation
-                val rotation = windowManager.defaultDisplay.rotation
+                val rotation = displayRotation()
                 val rawX = event.values[0]; val rawY = event.values[1]; val rawZ = event.values[2]
                 val ax: Float; val ay: Float; val az: Float
                 when (rotation) {

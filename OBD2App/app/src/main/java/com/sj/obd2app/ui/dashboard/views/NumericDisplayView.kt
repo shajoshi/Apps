@@ -51,7 +51,7 @@ class NumericDisplayView @JvmOverloads constructor(
         val valueStr = String.format(fmt, currentValue)
 
         // ── Layout ────────────────────────────────────────
-        val nameSize  = minDim * 0.08f
+        val nameSize  = minDim * 0.10f // Increased from 0.08f
         val valueSize = minDim * 0.48f
         val unitSize  = valueSize * 0.32f
 
@@ -101,7 +101,7 @@ class NumericDisplayView @JvmOverloads constructor(
 
         // ── Value ────────────────────────────────────────
         valuePaint.textAlign = Paint.Align.CENTER
-        valuePaint.color     = if (isWarning) colorScheme.warning else colorScheme.accent
+        valuePaint.color     = if (isWarning) colorScheme.warning else 0xFF2196F3.toInt() // Blue for better contrast
         valuePaint.textSize  = valueSize
         canvas.drawText(valueStr, cx, valueBaseline, valuePaint)
 

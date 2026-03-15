@@ -75,20 +75,59 @@ class MainActivity : AppCompatActivity() {
         // Setup notification channels
         setupNotificationChannels()
 
+        // Initialise OBD2 service mode BEFORE ViewPager/fragments are created,
+        // so MetricsCalculator singleton picks up the correct service instance.
+        Obd2ServiceProvider.useMock = USE_MOCK_OBD2 || !AppSettings.isObdConnectionEnabled(this)
+        if (Obd2ServiceProvider.useMock) {
+            Obd2ServiceProvider.initMock(this)
+        }
+
         // Set up ViewPager2 with 5 pages
         viewPager = binding.root.findViewById(R.id.main_view_pager)
         viewPager.adapter = MainPagerAdapter(this)
         viewPager.offscreenPageLimit = 2
+
+        // Prevent swipe navigation to Settings during active trips and when Dashboard is in edit mode
+        viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageScrollStateChanged(state: Int) {
+                super.onPageScrollStateChanged(state)
+                // Only check when the user lifts their finger (state == 0)
+                if (state == ViewPager2.SCROLL_STATE_IDLE) {
+                    val currentPage = viewPager.currentItem
+                    val calculator = MetricsCalculator.getInstance(this@MainActivity)
+                    
+                    // Check if trying to access Settings during active trip
+                    if (currentPage == MainPagerAdapter.PAGE_SETTINGS) {
+                        val currentPhase = calculator.tripPhase.value
+                        if (currentPhase != TripPhase.IDLE) {
+                            // Navigate back to Trip page and show message
+                            viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, false)
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Settings not accessible during active trip. Please stop or complete the trip first.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            }
+        })
+        
+        // Observe dashboard edit mode and disable swipe when in edit mode
+        lifecycleScope.launch {
+            MetricsCalculator.getInstance(this@MainActivity).dashboardEditMode.collect { isEditMode ->
+                viewPager.isUserInputEnabled = !isEditMode
+            }
+        }
 
         // Start GPS tracking
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             GpsDataSource.getInstance(this).start()
         }
 
-        // Initialise OBD2 service (mock or real)
-        Obd2ServiceProvider.useMock = USE_MOCK_OBD2
+        // Handle compile-time mock flag
         if (USE_MOCK_OBD2) {
-            Obd2ServiceProvider.initMock(this)
+            Obd2ServiceProvider.getService().connect(null)
             viewPager.setCurrentItem(MainPagerAdapter.PAGE_DASHBOARDS, false)
             return
         }
@@ -104,6 +143,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        // If OBD Connection is disabled, use mock/simulate mode — skip BT entirely
+        if (!AppSettings.isObdConnectionEnabled(this)) {
+            Obd2ServiceProvider.getService().connect(null)
+            viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, false)  // Go directly to Trip
+            return
+        }
+
+        // Default to Connect screen
+        viewPager.setCurrentItem(MainPagerAdapter.PAGE_CONNECT, false)
 
         // Defer BT init until after NavHostFragment has attached its NavController
         val btManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
@@ -134,6 +183,18 @@ class MainActivity : AppCompatActivity() {
 
     /** Navigate to a specific page by index — used by TopBarHelper overflow menu. */
     fun navigateToPage(pageIndex: Int) {
+        // Check if trying to access Settings during active trip
+        if (pageIndex == MainPagerAdapter.PAGE_SETTINGS) {
+            val currentPhase = MetricsCalculator.getInstance(this).tripPhase.value
+            if (currentPhase != TripPhase.IDLE) {
+                Toast.makeText(
+                    this,
+                    "Settings not accessible during active trip. Please stop or complete the trip first.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+        }
         viewPager.setCurrentItem(pageIndex, true)
     }
 

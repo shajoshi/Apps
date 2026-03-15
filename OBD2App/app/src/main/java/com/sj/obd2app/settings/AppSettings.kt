@@ -19,12 +19,21 @@ object AppSettings {
     private const val KEY_ACCELEROMETER_ENABLED     = "accelerometer_enabled"
     private const val KEY_ACTIVE_PROFILE_ID         = "active_profile_id"
     const val KEY_AUTO_CONNECT                      = "auto_connect_last_device"
+    private const val KEY_OBD_CONNECTION_ENABLED    = "obd_connection_enabled"
 
     val DEFAULT_POLLING_DELAY_MS = 500L
     val DEFAULT_COMMAND_DELAY_MS = 50L
 
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    // ── OBD Connection (Yes = real BT, No = simulate) ────────────────────────
+
+    fun isObdConnectionEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_OBD_CONNECTION_ENABLED, true)
+
+    fun setObdConnectionEnabled(context: Context, value: Boolean) =
+        prefs(context).edit().putBoolean(KEY_OBD_CONNECTION_ENABLED, value).apply()
 
     // ── Auto-connect ──────────────────────────────────────────────────────────
 

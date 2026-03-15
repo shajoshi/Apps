@@ -184,13 +184,24 @@ class DialView @JvmOverloads constructor(
         pivotPaint.color = colorScheme.accent
         canvas.drawCircle(cx, cy, strokeW * 0.7f, pivotPaint)
 
-        // ── Value readout ─────────────────────────────────────────
-        val valueSize = radius * 0.32f
-        valuePaint.color = if (isWarning) colorScheme.warning else colorScheme.accent
+        // ── Metric name (in upper half of dial) ────────────────────
+        val nameSize = radius * 0.12f // Increased from 0.09f to 0.12f
+        labelPaint.textAlign = Paint.Align.CENTER
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
+        labelPaint.textSize = nameSize
+        // Position in upper half of dial, below the tick marks
+        val nameBaseline = cy - radius * 0.25f
+        canvas.drawText(metricName.uppercase(), cx, nameBaseline, labelPaint)
+
+        // ── Value readout (in lower half of dial, like dash1.jpg) ─────────────────────────────────────────
+        // Make font as big as possible while staying within the dial arc
+        val valueSize = radius * 0.45f // Increased from 0.32f for maximum size
+        valuePaint.color = if (isWarning) colorScheme.warning else 0xFF2196F3.toInt() // Blue for better contrast
         valuePaint.textSize = valueSize
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
-        val valueBaseline = cy + radius * 0.42f
+        // Position value further down from center - about 20% below current position
+        val valueBaseline = cy + radius * 0.55f // Moved down from 0.35f to 0.55f
         canvas.drawText(valueStr, cx, valueBaseline, valuePaint)
 
         // ── Unit superscript (top-right of value block) ───────────────
@@ -204,12 +215,5 @@ class DialView @JvmOverloads constructor(
             labelPaint.textSize = unitSize
             canvas.drawText(metricUnit, unitX, unitBaseline, labelPaint)
         }
-
-        // ── Metric name (compact, below value) ────────────────────
-        val nameSize = radius * 0.09f
-        labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
-        labelPaint.textSize = nameSize
-        canvas.drawText(metricName.uppercase(), cx, valueBaseline + nameSize * 1.6f, labelPaint)
     }
 }

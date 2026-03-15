@@ -111,10 +111,15 @@ class TripFragment : Fragment() {
         binding.tvTripSamples.text = state.sampleCount
         binding.tvTripDuration.text = state.duration
         binding.tvTripDistance.text = state.distanceKm
+        binding.tvAvgSpeed.text = state.avgSpeed
         binding.tvCoolantTemp.text = state.coolantTemp
         binding.tvAvgFuelKmpl.text = state.avgFuelKmpl
         binding.tvFuelCost.text = state.fuelCost
+        binding.tvCityPercent.text = state.cityPercent
+        binding.tvHighwayPercent.text = state.highwayPercent
         binding.tvIdlePercent.text = state.idlePercent
+        binding.tvPowerThermoBhp.text = state.powerThermoBhp
+        binding.tvPowerObdBhp.text = state.powerObdBhp
 
         // Phase colour on trip phase label
         binding.tvTripPhase.setTextColor(

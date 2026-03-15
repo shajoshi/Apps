@@ -24,6 +24,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.sj.obd2app.R
 import com.sj.obd2app.gps.GpsDataSource
 import com.sj.obd2app.metrics.MetricsCalculator
+import com.sj.obd2app.metrics.TripPhase
 import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.ui.dashboard.data.LayoutRepository
@@ -41,12 +42,9 @@ import kotlinx.coroutines.launch
  */
 class DashboardEditorFragment : Fragment() {
 
-    private enum class TripPhase { IDLE, RUNNING, PAUSED }
-
     private lateinit var viewModel: DashboardEditorViewModel
     private var isEditMode = false
     private var hasUnsavedChanges = false
-    private var tripPhase = TripPhase.IDLE
     private val gridSizePx = 100
 
     private val liveDataJobs = mutableMapOf<String, Job>()
@@ -89,6 +87,9 @@ class DashboardEditorFragment : Fragment() {
     // Canvas dimensions in grid units — set from screen size, recalculated on orientation change
     private var canvasGridW = 0
     private var canvasGridH = 0
+
+    // Move/resize mode: only active when user explicitly picks "Move / Resize" from context menu
+    private var moveResizeWidgetId: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -151,12 +152,17 @@ class DashboardEditorFragment : Fragment() {
                 // New dashboard — start immediately in edit mode
                 isEditMode = true
                 hasUnsavedChanges = true
+                // Notify MetricsCalculator of edit mode
+                MetricsCalculator.getInstance(requireContext()).setDashboardEditMode(true)
             }
         }
 
         if (mode == "edit") {
             isEditMode = true
+            hasUnsavedChanges = true
         }
+        // Notify MetricsCalculator of initial edit mode
+        MetricsCalculator.getInstance(requireContext()).setDashboardEditMode(isEditMode)
         updateEditModeVisuals()
 
         setupTopStrip()
@@ -171,36 +177,38 @@ class DashboardEditorFragment : Fragment() {
     private fun setupTopStrip() {
         btnBack.setOnClickListener { handleBackPress() }
 
+        // Observe shared trip phase and keep trip controls in sync
+        viewLifecycleOwner.lifecycleScope.launch {
+            calculator.tripPhase.collect { phase ->
+                updateTripControls(phase)
+            }
+        }
+
         btnTripPlay.setOnClickListener {
-            when (tripPhase) {
-                TripPhase.IDLE -> {
+            val phase = calculator.tripPhase.value
+            when (phase) {
+                com.sj.obd2app.metrics.TripPhase.IDLE -> {
                     calculator.startTrip()
-                    tripPhase = TripPhase.RUNNING
                     Toast.makeText(context, "Trip started", Toast.LENGTH_SHORT).show()
                 }
-                TripPhase.PAUSED -> {
+                com.sj.obd2app.metrics.TripPhase.PAUSED -> {
                     calculator.resumeTrip()
-                    tripPhase = TripPhase.RUNNING
                     Toast.makeText(context, "Trip resumed", Toast.LENGTH_SHORT).show()
                 }
-                TripPhase.RUNNING -> { /* no-op */ }
+                com.sj.obd2app.metrics.TripPhase.RUNNING -> { /* no-op */ }
             }
-            updateTripControls()
         }
 
         btnTripPause.setOnClickListener {
-            if (tripPhase == TripPhase.RUNNING) {
+            if (calculator.tripPhase.value == com.sj.obd2app.metrics.TripPhase.RUNNING) {
                 calculator.pauseTrip()
-                tripPhase = TripPhase.PAUSED
                 Toast.makeText(context, "Trip paused", Toast.LENGTH_SHORT).show()
-                updateTripControls()
             }
         }
 
         btnTripStop.setOnClickListener {
-            if (tripPhase != TripPhase.IDLE) {
+            if (calculator.tripPhase.value != com.sj.obd2app.metrics.TripPhase.IDLE) {
                 calculator.stopTrip()
-                tripPhase = TripPhase.IDLE
                 Toast.makeText(context, "Trip stopped", Toast.LENGTH_SHORT).show()
                 // Auto-share log if enabled and logging produced a file
                 if (com.sj.obd2app.settings.AppSettings.isAutoShareLogEnabled(requireContext())) {
@@ -208,13 +216,12 @@ class DashboardEditorFragment : Fragment() {
                     if (shareUri != null) {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "application/json"
-                            putExtra(Intent.EXTRA_STREAM, shareUri!!)
+                            putExtra(Intent.EXTRA_STREAM, shareUri)
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         startActivity(Intent.createChooser(shareIntent, "Share trip log"))
                     }
                 }
-                updateTripControls()
             }
         }
 
@@ -251,10 +258,10 @@ class DashboardEditorFragment : Fragment() {
         }
     }
 
-    private fun updateTripControls() {
-        btnTripPlay.visibility  = if (tripPhase != TripPhase.RUNNING) View.VISIBLE else View.GONE
-        btnTripPause.visibility = if (tripPhase == TripPhase.RUNNING) View.VISIBLE else View.GONE
-        btnTripStop.visibility  = if (tripPhase != TripPhase.IDLE)    View.VISIBLE else View.GONE
+    private fun updateTripControls(phase: com.sj.obd2app.metrics.TripPhase = calculator.tripPhase.value) {
+        btnTripPlay.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
+        btnTripPause.visibility = if (phase == com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
+        btnTripStop.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.IDLE)    View.VISIBLE else View.GONE
     }
 
     private fun showOverflowMenu() {
@@ -264,19 +271,54 @@ class DashboardEditorFragment : Fragment() {
             popup.menu.add(0, 2, 1, "Add Widget")
             popup.menu.add(0, 3, 2, "Save")
         }
+        popup.menu.add(0, 4, 3, "Manage Dashboards")
+        popup.menu.add(0, 5, 4, "Add New Dashboard")
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> toggleEditMode()
                 2 -> AddWidgetWizardSheet.newInstance().show(childFragmentManager, AddWidgetWizardSheet.TAG)
                 3 -> saveLayout()
+                4 -> findNavController().navigateUp()  // goes back to LayoutListFragment
+                5 -> showCreateNewDashboardDialog()
             }
             true
         }
         popup.show()
     }
 
+    private fun showCreateNewDashboardDialog() {
+        val ctx = requireContext()
+        val inputLayout = com.google.android.material.textfield.TextInputLayout(ctx).apply {
+            hint = "Dashboard name"
+            setPadding(48, 16, 48, 0)
+        }
+        val input = com.google.android.material.textfield.TextInputEditText(ctx)
+        inputLayout.addView(input)
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle("New Dashboard")
+            .setView(inputLayout)
+            .setPositiveButton("Create") { _, _ ->
+                val name = input.text?.toString()?.trim() ?: ""
+                if (name.isBlank()) {
+                    android.widget.Toast.makeText(ctx, "Name cannot be empty", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    val bundle = Bundle().apply {
+                        putString("layout_name", name)
+                        putString("mode", "edit")
+                        putBoolean("is_new", true)
+                    }
+                    findNavController().navigate(R.id.action_layoutList_to_editor, bundle)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun toggleEditMode() {
         isEditMode = !isEditMode
+        // Notify MetricsCalculator of edit mode change
+        MetricsCalculator.getInstance(requireContext()).setDashboardEditMode(isEditMode)
         if (!isEditMode) {
             viewModel.selectWidget(null)
             widgetActionBar.visibility = View.GONE
@@ -337,6 +379,9 @@ class DashboardEditorFragment : Fragment() {
         // Snap to nearest grid multiple so widget positions align exactly to dots
         canvasGridW = w / gridSizePx
         canvasGridH = h / gridSizePx
+        // Propagate to ViewModel so addWidget can center new widgets
+        viewModel.canvasGridW = canvasGridW
+        viewModel.canvasGridH = canvasGridH
         // Clamp widgets that now fall outside the (possibly smaller) canvas
         clampWidgetsToBounds()
     }
@@ -364,6 +409,8 @@ class DashboardEditorFragment : Fragment() {
         repo.saveLayout(layout).onSuccess {
             hasUnsavedChanges = false
             isEditMode = false
+            // Notify MetricsCalculator of edit mode change
+            MetricsCalculator.getInstance(requireContext()).setDashboardEditMode(false)
             widgetActionBar.visibility = View.GONE
             updateEditModeVisuals()
             renderCanvas(viewModel.currentLayout.value)
@@ -504,25 +551,32 @@ class DashboardEditorFragment : Fragment() {
             wrapper.y = (widget.gridY * gridSizePx).toFloat()
 
             if (isEditMode) {
+                val isMoveResize = moveResizeWidgetId == widget.id
                 wrapper.setOnTouchListener(
                     WidgetTouchHandler(
-                        viewModel      = viewModel,
-                        widgetId       = widget.id,
-                        gridSizePx     = gridSizePx,
-                        onContextMenu  = { anchor -> showWidgetContextMenu(anchor, widget.id) },
-                        getCanvasScale = { canvasScale },
-                        getCanvasBounds = {
+                        viewModel        = viewModel,
+                        widgetId         = widget.id,
+                        gridSizePx       = gridSizePx,
+                        onContextMenu    = { anchor -> showWidgetContextMenu(anchor, widget.id) },
+                        getCanvasScale   = { canvasScale },
+                        isMoveResizeMode = isMoveResize,
+                        getCanvasBounds  = {
                             val maxX = (canvasGridW - widget.gridW).coerceAtLeast(0)
                             val maxY = (canvasGridH - widget.gridH).coerceAtLeast(0)
                             maxX to maxY
                         }
                     )
                 )
+                // Resize handles only active when move/resize mode explicitly enabled for this widget
                 if (isSelected) {
-                    handleTL.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 0, gridSizePx))
-                    handleTR.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 1, gridSizePx))
-                    handleBL.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 2, gridSizePx))
-                    handleBR.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 3, gridSizePx))
+                    if (isMoveResize) {
+                        handleTL.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 0, gridSizePx))
+                        handleTR.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 1, gridSizePx))
+                        handleBL.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 2, gridSizePx))
+                        handleBR.setOnTouchListener(WidgetResizeHandler(viewModel, widget, wrapper, 3, gridSizePx))
+                    } else {
+                        listOf(handleTL, handleTR, handleBL, handleBR).forEach { it.setOnTouchListener(null) }
+                    }
                 }
             } else {
                 wrapper.setOnTouchListener(null)
@@ -535,10 +589,10 @@ class DashboardEditorFragment : Fragment() {
             liveDataJobs[widget.id] = startLiveDataJob(widget, gaugeView)
         }
 
-        // Tap on blank canvas → deselect. Uses setOnClickListener so child widget
-        // touches are consumed by the child and never reach this listener.
+        // Tap on blank canvas → deselect + exit move/resize mode.
         if (isEditMode) {
             canvasContainer.setOnClickListener {
+                moveResizeWidgetId = null
                 viewModel.selectWidget(null)
             }
         } else {
@@ -687,6 +741,10 @@ class DashboardEditorFragment : Fragment() {
                 R.id.action_edit_widget -> {
                     EditWidgetSheet.newInstance(widgetId)
                         .show(childFragmentManager, EditWidgetSheet.TAG)
+                }
+                R.id.action_move_resize -> {
+                    moveResizeWidgetId = widgetId
+                    renderCanvas(viewModel.currentLayout.value)
                 }
                 R.id.action_bring_front  -> { viewModel.bringSelectedToFront(); hasUnsavedChanges = true }
                 R.id.action_send_back    -> { viewModel.sendSelectedToBack();   hasUnsavedChanges = true }

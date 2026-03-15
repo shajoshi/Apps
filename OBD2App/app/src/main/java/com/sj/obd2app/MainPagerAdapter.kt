@@ -10,13 +10,13 @@ import com.sj.obd2app.ui.trip.TripFragment
 
 /**
  * ViewPager2 adapter hosting the 5 main screens:
- * 0 = Trip, 1 = Connect, 2 = Dashboards, 3 = Details, 4 = Settings
+ * 0 = Connect, 1 = Trip, 2 = Dashboards, 3 = Details, 4 = Settings
  */
 class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
 
     companion object {
-        const val PAGE_TRIP       = 0
-        const val PAGE_CONNECT    = 1
+        const val PAGE_CONNECT    = 0
+        const val PAGE_TRIP       = 1
         const val PAGE_DASHBOARDS = 2
         const val PAGE_DETAILS    = 3
         const val PAGE_SETTINGS   = 4
@@ -26,11 +26,11 @@ class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activi
     override fun getItemCount(): Int = PAGE_COUNT
 
     override fun createFragment(position: Int): Fragment = when (position) {
-        PAGE_TRIP       -> TripFragment()
         PAGE_CONNECT    -> ConnectFragment()
+        PAGE_TRIP       -> TripFragment()
         PAGE_DASHBOARDS -> DashboardsHostFragment()
         PAGE_DETAILS    -> DetailsFragment()
         PAGE_SETTINGS   -> SettingsFragment()
-        else            -> TripFragment()
+        else            -> ConnectFragment()
     }
 }

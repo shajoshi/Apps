@@ -79,6 +79,9 @@ class MockObd2Service private constructor() : Obd2Service {
     private val _connectionLog = MutableStateFlow<List<String>>(emptyList())
     override val connectionLog: StateFlow<List<String>> = _connectionLog
 
+    private val _connectedDeviceName = MutableStateFlow<String?>(null)
+    override val connectedDeviceName: StateFlow<String?> = _connectedDeviceName
+
     /**
      * Simulate connecting — device parameter is ignored.
      * After a short delay, starts emitting fluctuating data.

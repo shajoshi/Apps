@@ -75,7 +75,7 @@ class BarGaugeView @JvmOverloads constructor(
         // ── Fill gradient ─────────────────────────────────────────
         val fillColor = when {
             isWarning -> colorScheme.warning
-            else -> colorScheme.accent
+            else -> 0xFFFFFF00.toInt() // Light yellow for better contrast
         }
 
         if (isVertical) {
@@ -141,16 +141,18 @@ class BarGaugeView @JvmOverloads constructor(
         val trackCy = (trackRect.top + trackRect.bottom) / 2f
         val minDim = minOf(width, height).toFloat()
 
-        // ── Metric name — small, top-center ───────────────────────
-        val nameSize = minDim * 0.09f
+        // ── Metric name — larger, positioned closer to bar ───────────────
+        val nameSize = minDim * 0.12f // Increased from 0.09f
         labelPaint.textAlign = Paint.Align.CENTER
         labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
         labelPaint.textSize = nameSize
-        canvas.drawText(metricName.uppercase(), width / 2f, nameSize * 1.2f, labelPaint)
+        // Position closer to the bar - just above the track area
+        val nameY = if (isVertical) trackT - nameSize * 0.3f else trackT - nameSize * 0.5f
+        canvas.drawText(metricName.uppercase(), width / 2f, nameY, labelPaint)
 
         // ── Value text (centred in track) ─────────────────────────
         val valueSize = if (isVertical) minDim * 0.16f else trackRect.height() * 0.52f
-        textPaint.color = colorScheme.text
+        textPaint.color = 0xFF2196F3.toInt() // Blue for better contrast
         textPaint.textSize = valueSize
         val valueOffset = (textPaint.descent() + textPaint.ascent()) / 2
         val valueCx = width / 2f

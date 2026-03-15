@@ -27,7 +27,6 @@ class DataOrchestrator(
     private val calculator: MetricsCalculator
 ) {
 
-    private val obdService = Obd2ServiceProvider.getService()
     private val gpsSource = GpsDataSource.getInstance(context)
 
     /** Most recently received OBD2 readings, keyed by PID */
@@ -35,6 +34,7 @@ class DataOrchestrator(
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     fun startCollecting() {
+        val obdService = Obd2ServiceProvider.getService()
         val combinedFlow = combine(
             obdService.obd2Data,
             gpsSource.gpsData

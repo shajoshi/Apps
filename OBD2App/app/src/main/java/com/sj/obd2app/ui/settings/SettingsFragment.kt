@@ -145,6 +145,11 @@ class SettingsFragment : Fragment() {
     private fun setupConnectionToggles() {
         val ctx = requireContext()
 
+        binding.switchObdConnection.isChecked = AppSettings.isObdConnectionEnabled(ctx)
+        binding.switchObdConnection.setOnCheckedChangeListener { _, checked ->
+            AppSettings.setObdConnectionEnabled(ctx, checked)
+        }
+
         binding.switchAutoConnect.isChecked = AppSettings.isAutoConnect(ctx)
         binding.switchAutoConnect.setOnCheckedChangeListener { _, checked ->
             AppSettings.setAutoConnect(ctx, checked)
@@ -160,9 +165,17 @@ class SettingsFragment : Fragment() {
             AppSettings.setAutoShareLogEnabled(ctx, checked)
         }
 
-        binding.switchAccelerometerEnabled.isChecked = AppSettings.isAccelerometerEnabled(ctx)
-        binding.switchAccelerometerEnabled.setOnCheckedChangeListener { _, checked ->
-            AppSettings.setAccelerometerEnabled(ctx, checked)
+        val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
+        if (!accelAvailable) {
+            binding.switchAccelerometerEnabled.isChecked = false
+            binding.switchAccelerometerEnabled.isEnabled = false
+            binding.tvAccelerometerLabel.text = "Log accelerometer data (no sensor)"
+            binding.tvAccelerometerLabel.setTextColor(android.graphics.Color.parseColor("#888888"))
+        } else {
+            binding.switchAccelerometerEnabled.isChecked = AppSettings.isAccelerometerEnabled(ctx)
+            binding.switchAccelerometerEnabled.setOnCheckedChangeListener { _, checked ->
+                AppSettings.setAccelerometerEnabled(ctx, checked)
+            }
         }
     }
 

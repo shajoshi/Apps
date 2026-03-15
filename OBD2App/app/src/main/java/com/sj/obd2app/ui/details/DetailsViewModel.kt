@@ -7,9 +7,10 @@ import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2DataItem
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -33,43 +34,34 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected
 
-    private var lastNonEmptyObd2Data: List<Obd2DataItem> = emptyList()
-    private var lastNonNullMetrics: VehicleMetrics? = null
 
     init {
         viewModelScope.launch {
             service.obd2Data.collect { data ->
-                if (data.isNotEmpty()) {
-                    lastNonEmptyObd2Data = data
-                    _obd2Data.value = data
-                } else if (lastNonEmptyObd2Data.isNotEmpty()) {
-                    _obd2Data.value = lastNonEmptyObd2Data
-                }
+                _obd2Data.value = data
             }
         }
         viewModelScope.launch {
             calculator.metrics.collect { metrics ->
-                val hasData = metrics.rpm != null || metrics.vehicleSpeedKmh != null ||
-                    metrics.coolantTempC != null || metrics.gpsLatitude != null ||
-                    metrics.tripDistanceKm > 0f || metrics.tripFuelUsedL > 0f
-                if (hasData) {
-                    lastNonNullMetrics = metrics
-                    _vehicleMetrics.value = metrics
-                } else if (lastNonNullMetrics != null) {
-                    _vehicleMetrics.value = lastNonNullMetrics
-                } else {
-                    _vehicleMetrics.value = metrics
-                }
+                _vehicleMetrics.value = metrics
             }
         }
         viewModelScope.launch {
-            service.connectionState.collect { state ->
+            combine(
+                service.connectionState,
+                service.connectedDeviceName
+            ) { state, deviceName -> state to deviceName }
+            .collect { (state, deviceName) ->
+                val isMock = !AppSettings.isObdConnectionEnabled(getApplication()) ||
+                    Obd2ServiceProvider.useMock
                 _isConnected.value = state == Obd2Service.ConnectionState.CONNECTED
-                _connectionStatus.value = when (state) {
-                    Obd2Service.ConnectionState.DISCONNECTED -> "Disconnected"
-                    Obd2Service.ConnectionState.CONNECTING -> "Connecting…"
-                    Obd2Service.ConnectionState.CONNECTED -> "Connected"
-                    Obd2Service.ConnectionState.ERROR -> "Error"
+                _connectionStatus.value = when {
+                    isMock -> "Simulation Mode"
+                    state == Obd2Service.ConnectionState.CONNECTED ->
+                        if (deviceName != null) "Connected \u00B7 $deviceName" else "Connected"
+                    state == Obd2Service.ConnectionState.CONNECTING -> "Connecting\u2026"
+                    state == Obd2Service.ConnectionState.ERROR -> "Error"
+                    else -> "Disconnected"
                 }
             }
         }

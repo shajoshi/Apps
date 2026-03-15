@@ -18,6 +18,9 @@ interface Obd2Service {
     /** Latest error message, or null if no error. */
     val errorMessage: StateFlow<String?>
 
+    /** Name of the connected BT device, or null when not connected. */
+    val connectedDeviceName: StateFlow<String?>
+
     /**
      * Step-by-step log of connection progress messages.
      * Cleared when a new connection attempt starts.

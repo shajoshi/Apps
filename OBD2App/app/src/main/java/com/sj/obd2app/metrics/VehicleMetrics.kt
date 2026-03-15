@@ -71,14 +71,26 @@ data class VehicleMetrics(
     /** Effective fuel rate (L/h): PID 015E if present, else MAF-based fallback */
     val fuelRateEffectiveLh: Float? = null,
 
+    /** Effective fuel rate (ml/min): primary internal unit for better precision */
+    val fuelRateEffectiveMlMin: Float? = null,
+
     /** Instantaneous consumption (L/100km); null when speed = 0 */
     val instantLper100km: Float? = null,
 
     /** Instantaneous efficiency (km/L); null when speed = 0 */
     val instantKpl: Float? = null,
 
+    /** Instantaneous consumption (ml/km); null when speed = 0 */
+    val instantMlPerKm: Float? = null,
+
+    /** Instantaneous efficiency (km/ml); null when speed = 0 */
+    val instantKmPerMl: Float? = null,
+
     /** Trip cumulative fuel used (L) */
     val tripFuelUsedL: Float = 0f,
+
+    /** Trip cumulative fuel used (ml); primary internal unit */
+    val tripFuelUsedMl: Double = 0.0,
 
     /** Trip average consumption (L/100km) */
     val tripAvgLper100km: Float? = null,
@@ -86,7 +98,13 @@ data class VehicleMetrics(
     /** Trip average efficiency (km/L) */
     val tripAvgKpl: Float? = null,
 
-    /** Fuel flow rate (cc/min) */
+    /** Trip average consumption (ml/km) */
+    val tripAvgMlPerKm: Float? = null,
+
+    /** Trip average efficiency (km/ml) */
+    val tripAvgKmPerMl: Float? = null,
+
+    /** Fuel flow rate (cc/min) - alias for ml/min */
     val fuelFlowCcMin: Float? = null,
 
     /** Estimated remaining range (km) based on fuel level + trip average */
@@ -104,7 +122,7 @@ data class VehicleMetrics(
     val tripTimeSec: Long = 0L,
     val movingTimeSec: Long = 0L,
     val stoppedTimeSec: Long = 0L,
-    val tripAvgSpeedKmh: Float? = null,
+    val tripAvgSpeedKmh: Float = 0f,
     val tripMaxSpeedKmh: Float = 0f,
 
     /** GPS speed minus OBD speed (sensor cross-check, km/h) */

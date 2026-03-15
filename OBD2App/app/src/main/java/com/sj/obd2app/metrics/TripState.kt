@@ -19,6 +19,10 @@ internal class TripState {
     var stoppedTimeSec: Long = 0L
     var maxSpeedKmh: Float = 0f
 
+    // High-precision accumulators for small fuel rates
+    private var preciseDistanceM: Double = 0.0
+    private var preciseFuelUsedMl: Double = 0.0
+
     /** Circular buffer of (timestampMs, speedKmh) for the last 60 seconds */
     val speedWindow: ArrayDeque<Pair<Long, Float>> = ArrayDeque()
 
@@ -31,11 +35,16 @@ internal class TripState {
         stoppedTimeSec = 0L
         maxSpeedKmh = 0f
         speedWindow.clear()
+        preciseDistanceM = 0.0
+        preciseFuelUsedMl = 0.0
     }
 
     /**
      * Advance accumulators by one update tick.
-     * @param speedKmh   effective speed (GPS preferred, OBD fallback)
+     * Uses high-precision Double arithmetic internally to prevent precision loss
+     * with small fuel rates, then converts to Float for public API compatibility.
+     * 
+     * @param speedKmh   effective speed (hybrid OBD/GPS calculation)
      * @param fuelRateLh effective fuel rate (L/h)
      */
     fun update(speedKmh: Float, fuelRateLh: Float) {
@@ -46,11 +55,19 @@ internal class TripState {
         val dtSec = dtMs / 1000.0
         val dtHr  = dtMs / 3_600_000.0
 
-        // Distance
-        tripDistanceKm += (speedKmh * dtHr).toFloat()
+        // High-precision accumulation using Double
+        // Distance: convert km/h to m/s for precision, accumulate in meters
+        val speedMs = speedKmh / 3.6
+        preciseDistanceM += speedMs * dtSec
+        
+        // Fuel: accumulate in millilitres for better precision with small rates
+        // 1 L/h = 1000 mL/h = 1000/3600 mL/s
+        val fuelRateMlPerSec = fuelRateLh * 1000.0 / 3600.0
+        preciseFuelUsedMl += fuelRateMlPerSec * dtSec
 
-        // Fuel
-        tripFuelUsedL += (fuelRateLh * dtHr).toFloat()
+        // Update public Float fields (convert from precise accumulators)
+        tripDistanceKm = (preciseDistanceM / 1000.0).toFloat()
+        tripFuelUsedL = (preciseFuelUsedMl / 1000.0).toFloat()
 
         // Time buckets (moving = speed > 2 km/h)
         if (speedKmh > 2f) {
@@ -77,7 +94,6 @@ internal class TripState {
         val total = snapshot.size.toFloat()
         var city = 0; var highway = 0; var idle = 0
         for (pair in snapshot) {
-            if (pair == null) continue // Defensive: skip null entries
             val spd = pair.second
             when {
                 spd <= 2f         -> idle++

@@ -1,11 +1,13 @@
 package com.sj.obd2app.ui.dashboard
 
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.launch
 
 /**
@@ -13,8 +15,9 @@ import kotlinx.coroutines.launch
  * Exposes key OBD-II metrics (RPM, Speed, Coolant Temp, Throttle, Engine Load, Fuel Level)
  * for the gauge cards.
  */
-class DashboardViewModel : ViewModel() {
+class DashboardViewModel(app: Application) : AndroidViewModel(app) {
 
+    private val ctx = app.applicationContext
     private val service = Obd2ServiceProvider.getService()
 
     private val _rpm = MutableLiveData("—")
@@ -55,12 +58,14 @@ class DashboardViewModel : ViewModel() {
         }
         viewModelScope.launch {
             service.connectionState.collect { state ->
+                val isMock = !AppSettings.isObdConnectionEnabled(ctx) || Obd2ServiceProvider.useMock
                 _connectionStatus.postValue(
-                    when (state) {
-                        Obd2Service.ConnectionState.DISCONNECTED -> "Disconnected"
-                        Obd2Service.ConnectionState.CONNECTING -> "Connecting…"
-                        Obd2Service.ConnectionState.CONNECTED -> "Connected — live data"
-                        Obd2Service.ConnectionState.ERROR -> "Connection error"
+                    when {
+                        isMock -> "Simulation Mode — live data"
+                        state == Obd2Service.ConnectionState.CONNECTED   -> "Connected — live data"
+                        state == Obd2Service.ConnectionState.CONNECTING  -> "Connecting…"
+                        state == Obd2Service.ConnectionState.ERROR       -> "Connection error"
+                        else                                              -> "Disconnected"
                     }
                 )
             }

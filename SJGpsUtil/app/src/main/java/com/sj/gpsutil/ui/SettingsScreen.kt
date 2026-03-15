@@ -76,6 +76,10 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
     var previousBaseline by remember { mutableStateOf<FloatArray?>(null) }
     var baselineCaptureInProgress by remember { mutableStateOf(false) }
     var temporaryBaseline by remember { mutableStateOf<FloatArray?>(null) }
+    val hasAccelerometer = remember {
+        val sm = context.getSystemService(Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+        sm?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER) != null
+    }
 
         
     // Wait for real settings before checking profiles — the initial TrackingSettings()
@@ -210,7 +214,7 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
             )
         }
 
-        val canCaptureBaseline = trackingStatus != TrackingStatus.Recording && !baselineCaptureInProgress
+        val canCaptureBaseline = hasAccelerometer && trackingStatus != TrackingStatus.Recording && !baselineCaptureInProgress
         OutlinedButton(
             onClick = {
                 baselineCaptureInProgress = true
@@ -236,6 +240,7 @@ fun SettingsScreen(onNavigate: (AppDestinations) -> Unit, modifier: Modifier = M
         ) {
             Text(
                 when {
+                    !hasAccelerometer -> "No accelerometer — baseline not available"
                     baselineCaptureInProgress -> "Capturing baseline..."
                     canCaptureBaseline -> "Capture mount baseline (stationary)"
                     else -> "Stop recording to capture baseline"

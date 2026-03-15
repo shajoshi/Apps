@@ -345,48 +345,43 @@ class TrackingService : Service() {
                 )
 
                 // Force-capture gravity vector from accelerometer (assumes stationary at start)
-                // Temporarily register listener, collect samples, then unregister.
-                // The normal registerAccelerometerListener() call later handles ongoing recording.
-                registerAccelerometerListener()
-                synchronized(accelLock) { accelBuffer.clear() }
-                delay(500L) // collect ~50 samples at 10ms period
-                unregisterAccelerometerListener()
-                val capturedGravity: FloatArray? = synchronized(accelLock) {
-                    if (accelBuffer.isEmpty()) null
-                    else {
-                        var sx = 0f; var sy = 0f; var sz = 0f
-                        accelBuffer.forEach { sx += it[0]; sy += it[1]; sz += it[2] }
-                        val n = accelBuffer.size
-                        floatArrayOf(sx / n, sy / n, sz / n)
+                // Only attempted when accelerometer recording is enabled.
+                if (enableAccelerometer) {
+                    registerAccelerometerListener()
+                    synchronized(accelLock) { accelBuffer.clear() }
+                    delay(500L) // collect ~50 samples at 10ms period
+                    unregisterAccelerometerListener()
+                    val capturedGravity: FloatArray? = synchronized(accelLock) {
+                        if (accelBuffer.isEmpty()) null
+                        else {
+                            var sx = 0f; var sy = 0f; var sz = 0f
+                            accelBuffer.forEach { sx += it[0]; sy += it[1]; sz += it[2] }
+                            val n = accelBuffer.size
+                            floatArrayOf(sx / n, sy / n, sz / n)
+                        }
                     }
-                }
-                if (capturedGravity != null) {
-                    val gMag = sqrt(capturedGravity[0] * capturedGravity[0] + capturedGravity[1] * capturedGravity[1] + capturedGravity[2] * capturedGravity[2])
-                    Log.d(TAG, "Gravity captured at start: [%.3f, %.3f, %.3f] |g|=%.3f".format(
-                        capturedGravity[0], capturedGravity[1], capturedGravity[2], gMag))
-                    capturedGravityVector = capturedGravity.copyOf()
-                    TrackingState.setGravityVector(capturedGravity)
-                    computeVehicleBasis(capturedGravity)
-                    // Show toast on main thread
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            applicationContext,
-                            "Gravity: [%.2f, %.2f, %.2f] |g|=%.2f".format(
-                                capturedGravity[0], capturedGravity[1], capturedGravity[2], gMag),
-                            Toast.LENGTH_LONG
-                        ).show()
+                    if (capturedGravity != null) {
+                        val gMag = sqrt(capturedGravity[0] * capturedGravity[0] + capturedGravity[1] * capturedGravity[1] + capturedGravity[2] * capturedGravity[2])
+                        Log.d(TAG, "Gravity captured at start: [%.3f, %.3f, %.3f] |g|=%.3f".format(
+                            capturedGravity[0], capturedGravity[1], capturedGravity[2], gMag))
+                        capturedGravityVector = capturedGravity.copyOf()
+                        TrackingState.setGravityVector(capturedGravity)
+                        computeVehicleBasis(capturedGravity)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                applicationContext,
+                                "Gravity: [%.2f, %.2f, %.2f] |g|=%.2f".format(
+                                    capturedGravity[0], capturedGravity[1], capturedGravity[2], gMag),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    } else {
+                        Log.w(TAG, "No accel samples captured at start — sensor may not be available")
                     }
                 } else {
-                    Log.e(TAG, "No accel samples — accelerometer not available; aborting recording")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            applicationContext,
-                            "Accelerometer not available — cannot start recording",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    stopSelf()
-                    return@launch
+                    Log.d(TAG, "Accelerometer disabled in settings — skipping gravity capture")
+                    capturedGravityVector = null
+                    TrackingState.setGravityVector(null)
                 }
                 val recordingSettingsSnapshot = RecordingSettingsSnapshot(
                     intervalSeconds = settings.intervalSeconds,

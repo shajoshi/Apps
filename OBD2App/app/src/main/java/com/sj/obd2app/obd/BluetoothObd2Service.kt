@@ -8,9 +8,10 @@ import android.widget.Toast
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import com.sj.obd2app.settings.AppSettings
+import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.OutputStream
 import java.util.UUID
 
@@ -33,8 +34,24 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             "ATL0",  // Linefeeds off
             "ATS0",  // Spaces off
             "ATH0",  // Headers off
+            "ATAT1", // Adaptive timing — ELM learns ECU latency, tightens timeout
             "ATSP0"  // Auto-detect protocol
         )
+
+        /**
+         * Fast-tier PIDs — polled every cycle (~200ms target).
+         * These are the high-frequency metrics needed for trip recording.
+         */
+        val FAST_PIDS = setOf(
+            "010C",  // RPM
+            "010D",  // Vehicle Speed
+            "0110",  // MAF
+            "0111",  // Throttle
+            "015E"   // Engine Fuel Rate
+        )
+
+        /** Slow-tier PIDs are polled once every SLOW_TIER_MODULO fast cycles. */
+        const val SLOW_TIER_MODULO = 5
 
         /**
          * Supported-PIDs discovery commands.
@@ -64,6 +81,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     private var socket: BluetoothSocket? = null
     private var inputStream: InputStream? = null
+    private var bufferedReader: BufferedReader? = null
     private var outputStream: OutputStream? = null
     private var pollingJob: Job? = null
     private var supportedPids: Set<Int> = emptySet()
@@ -79,6 +97,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     private val _connectionLog = MutableStateFlow<List<String>>(emptyList())
     override val connectionLog: StateFlow<List<String>> = _connectionLog
+
+    private val _connectedDeviceName = MutableStateFlow<String?>(null)
+    override val connectedDeviceName: StateFlow<String?> = _connectedDeviceName
 
     private fun log(msg: String) {
         _connectionLog.value = _connectionLog.value + msg
@@ -108,6 +129,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 log("✓ Bluetooth socket connected")
 
                 inputStream = socket!!.inputStream
+                bufferedReader = BufferedReader(InputStreamReader(socket!!.inputStream, Charsets.ISO_8859_1))
                 outputStream = socket!!.outputStream
 
                 // Initialise ELM327
@@ -130,6 +152,14 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                     }
                 }
 
+                // Lock protocol after auto-detection to skip negotiation on each send
+                val detectedProto = sendCommand("ATDPN").trim()
+                if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
+                    sendCommand("ATSP$detectedProto")
+                    log("✓ Protocol locked: ATSP$detectedProto")
+                }
+
+                _connectedDeviceName.value = btDevice.name ?: btDevice.address
                 _connectionState.value = Obd2Service.ConnectionState.CONNECTED
                 startPolling()
 
@@ -157,6 +187,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         pollingJob = null
         closeSocket()
         supportedPids = emptySet()
+        _connectedDeviceName.value = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
         _connectionLog.value = emptyList()
@@ -214,72 +245,92 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     /**
      * Continuously poll only the PIDs that the ECU reported as supported.
+     *
+     * PIDs are split into two tiers:
+     *  - Fast tier (RPM, speed, MAF, throttle, fuel rate): polled every cycle
+     *  - Slow tier (temps, fuel level, etc.): polled every SLOW_TIER_MODULO cycles
+     *
+     * No explicit inter-PID delay — ATAT1 adaptive timing handles ECU pacing.
      */
     private fun startPolling() {
-        // Filter registry to only supported PIDs
-        val commandsToQuery = Obd2CommandRegistry.commands.filter { cmd ->
-            // Extract the PID number from the command string (e.g. "010C" → 0x0C = 12)
+        // Split supported commands into fast and slow tiers
+        val allCommands = Obd2CommandRegistry.commands.filter { cmd ->
             val pidNumber = cmd.pid.substring(2).toIntOrNull(16) ?: return@filter false
             pidNumber in supportedPids
         }
+        val fastCommands = allCommands.filter { it.pid in FAST_PIDS }
+        val slowCommands = allCommands.filter { it.pid !in FAST_PIDS }
+
+        // Cached results — slow-tier values persist between cycles
+        val cachedResults = mutableMapOf<String, Obd2DataItem>()
 
         pollingJob = CoroutineScope(Dispatchers.IO).launch {
+            var cycleCount = 0
             while (isActive && _connectionState.value == Obd2Service.ConnectionState.CONNECTED) {
-                val results = mutableListOf<Obd2DataItem>()
-                for (cmd in commandsToQuery) {
+                // Poll fast-tier PIDs every cycle
+                for (cmd in fastCommands) {
                     if (!isActive) break
                     try {
                         val raw = sendCommand(cmd.pid)
                         val parsed = parseResponse(cmd, raw)
-                        if (parsed != null) {
-                            results.add(parsed)
-                        }
-                    } catch (e: Exception) {
-                        // Skip on error
+                        if (parsed != null) cachedResults[cmd.pid] = parsed
+                    } catch (_: Exception) {}
+                    // No explicit delay — ATAT1 handles ECU pacing
+                }
+
+                // Poll slow-tier PIDs every SLOW_TIER_MODULO cycles
+                if (cycleCount % SLOW_TIER_MODULO == 0) {
+                    for (cmd in slowCommands) {
+                        if (!isActive) break
+                        try {
+                            val raw = sendCommand(cmd.pid)
+                            val parsed = parseResponse(cmd, raw)
+                            if (parsed != null) cachedResults[cmd.pid] = parsed
+                        } catch (_: Exception) {}
                     }
-                    val cmdDelay = if (context != null) AppSettings.effectiveCommandDelayMs(context) else AppSettings.DEFAULT_COMMAND_DELAY_MS
-                    delay(cmdDelay)
                 }
-                if (results.isNotEmpty()) {
-                    _obd2Data.value = results
+
+                if (cachedResults.isNotEmpty()) {
+                    _obd2Data.value = cachedResults.values.toList()
                 }
-                val pollDelay = if (context != null) AppSettings.effectivePollingDelayMs(context) else AppSettings.DEFAULT_POLLING_DELAY_MS
-                delay(pollDelay) // Pause between full polling cycles
+
+                cycleCount++
+                // Small yield between cycles to avoid CPU spin and allow BT stack breathing room
+                delay(10L)
             }
         }
     }
 
     /**
      * Send an AT/OBD command and return the raw response string.
+     *
+     * Uses a [BufferedReader] for blocking character-by-character reads up to the
+     * ELM327 prompt character '>'. This avoids the busy-wait (Thread.sleep + available())
+     * of the previous implementation, reducing per-PID latency by ~10ms.
      */
     private fun sendCommand(command: String): String {
         val os = outputStream ?: throw IOException("Not connected")
-        val iStream = inputStream ?: throw IOException("Not connected")
-
-        // Flush any pending data
-        while (iStream.available() > 0) {
-            iStream.read()
-        }
+        val reader = bufferedReader ?: throw IOException("Not connected")
 
         // Send command with carriage return
-        os.write("$command\r".toByteArray())
+        os.write("$command\r".toByteArray(Charsets.ISO_8859_1))
         os.flush()
 
-        // Read response until '>' prompt
+        // Read characters until ELM327 prompt '>' is received
         val response = StringBuilder()
         val startTime = System.currentTimeMillis()
         val timeout = 5000L
 
         while (System.currentTimeMillis() - startTime < timeout) {
-            if (iStream.available() > 0) {
-                val b = iStream.read()
-                if (b < 0) break
-                val c = b.toChar()
-                if (c == '>') break
-                response.append(c)
-            } else {
-                Thread.sleep(10)
+            if (!reader.ready()) {
+                // Brief yield to avoid CPU spin while waiting for first bytes
+                Thread.sleep(1)
+                continue
             }
+            val c = reader.read()
+            if (c < 0) break
+            if (c.toChar() == '>') break
+            response.append(c.toChar())
         }
 
         return response.toString()
@@ -337,9 +388,11 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     }
 
     private fun closeSocket() {
+        try { bufferedReader?.close() } catch (_: Exception) {}
         try { inputStream?.close() } catch (_: Exception) {}
         try { outputStream?.close() } catch (_: Exception) {}
         try { socket?.close() } catch (_: Exception) {}
+        bufferedReader = null
         inputStream = null
         outputStream = null
         socket = null
