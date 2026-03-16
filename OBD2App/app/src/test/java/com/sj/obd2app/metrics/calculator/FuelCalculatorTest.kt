@@ -120,7 +120,7 @@ class FuelCalculatorTest {
         assertNotNull(result)
         assertTrue("Should calculate positive fuel rate from MAF", result!! > 0f)
         
-        // Expected: 15 g/s × 1.34 ml/g = 20.1 ml/s = 1.206 L/h
+        // Expected: 15 g/s × 0.09195 ml/g (1000/(AFR 14.7 × density 740)) / 1000 × 3600 = 4.96 L/h
         val expected = (15.0 * FuelType.PETROL.mafMlPerGram / 1000.0 * 3600.0).toFloat()
         assertEquals(expected, result!!, DELTA)
     }

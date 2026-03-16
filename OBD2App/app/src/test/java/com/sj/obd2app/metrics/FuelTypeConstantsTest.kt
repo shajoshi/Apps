@@ -10,7 +10,8 @@ class FuelTypeConstantsTest {
 
     @Test
     fun `PETROL mafMlPerGram is correct`() {
-        assertEquals(1.34, FuelType.PETROL.mafMlPerGram, 1e-8)
+        // 1000 / (AFR 14.7 × density 740 g/L) = 0.09195
+        assertEquals(0.09195, FuelType.PETROL.mafMlPerGram, 1e-5)
     }
 
     @Test
@@ -27,7 +28,8 @@ class FuelTypeConstantsTest {
 
     @Test
     fun `DIESEL mafMlPerGram is correct`() {
-        assertEquals(1.18, FuelType.DIESEL.mafMlPerGram, 1e-8)
+        // 1000 / (AFR 14.5 × density 840 g/L) = 0.08210
+        assertEquals(0.08210, FuelType.DIESEL.mafMlPerGram, 1e-5)
     }
 
     @Test
@@ -44,7 +46,8 @@ class FuelTypeConstantsTest {
 
     @Test
     fun `E20 mafMlPerGram is correct`() {
-        assertEquals(1.34, FuelType.E20.mafMlPerGram, 1e-8)
+        // 1000 / (AFR 13.8 × density 790 g/L) = 0.09166
+        assertEquals(0.09166, FuelType.E20.mafMlPerGram, 1e-5)
     }
 
     @Test
@@ -61,7 +64,8 @@ class FuelTypeConstantsTest {
 
     @Test
     fun `CNG mafMlPerGram is correct`() {
-        assertEquals(1.35, FuelType.CNG.mafMlPerGram, 1e-8)
+        // 1000 / (AFR 17.2 × density 423 g/L) = 0.13740
+        assertEquals(0.13740, FuelType.CNG.mafMlPerGram, 1e-5)
     }
 
     @Test

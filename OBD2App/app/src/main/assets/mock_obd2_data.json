@@ -2,19 +2,19 @@
     {
         "pid": "0104",
         "name": "Calculated Engine Load",
-        "value": "42.3",
+        "value": "41.2",
         "unit": "%"
     },
     {
         "pid": "0105",
         "name": "Coolant Temperature",
-        "value": "88",
+        "value": "33",
         "unit": "°C"
     },
     {
         "pid": "0106",
         "name": "Short-term Fuel Trim (Bank 1)",
-        "value": "2.3",
+        "value": "0.0",
         "unit": "%"
     },
     {
@@ -26,61 +26,61 @@
     {
         "pid": "010A",
         "name": "Fuel Pressure",
-        "value": "345",
+        "value": "0",
         "unit": "kPa"
     },
     {
         "pid": "010B",
         "name": "Intake Manifold Pressure",
-        "value": "95",
+        "value": "78",
         "unit": "kPa"
     },
     {
         "pid": "010C",
         "name": "Engine RPM",
-        "value": "2450",
+        "value": "2316",
         "unit": "rpm"
     },
     {
         "pid": "010D",
         "name": "Vehicle Speed",
-        "value": "62",
+        "value": "40",
         "unit": "km/h"
     },
     {
         "pid": "010E",
         "name": "Timing Advance",
-        "value": "12.5",
+        "value": "-2.5",
         "unit": "° before TDC"
     },
     {
         "pid": "010F",
         "name": "Intake Air Temperature",
-        "value": "34",
+        "value": "36",
         "unit": "°C"
     },
     {
         "pid": "0110",
         "name": "MAF Air Flow Rate",
-        "value": "14.87",
+        "value": "2.1",
         "unit": "g/s"
     },
     {
         "pid": "0111",
         "name": "Throttle Position",
-        "value": "18.8",
+        "value": "13.7",
         "unit": "%"
     },
     {
         "pid": "0114",
         "name": "O2 Sensor Voltage (Bank 1, Sensor 1)",
-        "value": "0.685",
+        "value": "0.84",
         "unit": "V"
     },
     {
         "pid": "011F",
         "name": "Run Time Since Engine Start",
-        "value": "842",
+        "value": "2",
         "unit": "sec"
     },
     {
@@ -92,13 +92,13 @@
     {
         "pid": "012F",
         "name": "Fuel Tank Level",
-        "value": "67.1",
+        "value": "70",
         "unit": "%"
     },
     {
         "pid": "0131",
         "name": "Distance Since Codes Cleared",
-        "value": "12847",
+        "value": "30",
         "unit": "km"
     },
     {
@@ -110,7 +110,7 @@
     {
         "pid": "0142",
         "name": "Control Module Voltage",
-        "value": "14.200",
+        "value": "14.2",
         "unit": "V"
     },
     {
@@ -124,11 +124,5 @@
         "name": "Engine Oil Temperature",
         "value": "95",
         "unit": "°C"
-    },
-    {
-        "pid": "015E",
-        "name": "Engine Fuel Rate",
-        "value": "3.45",
-        "unit": "L/h"
     }
 ]
