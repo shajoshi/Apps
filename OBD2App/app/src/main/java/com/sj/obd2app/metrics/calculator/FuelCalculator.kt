@@ -25,12 +25,12 @@ class FuelCalculator {
      * Determines effective fuel rate (L/h) from available sources.
      *
      * Prefers OBD-II direct fuel rate (PID 015E), falls back to MAF-based calculation.
-     * MAF conversion: grams/second * litre_factor = litres/hour
+     * MAF conversion: grams/second * ml_per_gram / 1000 * 3600 = litres/hour
      */
-    fun effectiveFuelRate(fuelRatePid: Float?, maf: Float?, mafLitreFactor: Double): Float? {
+    fun effectiveFuelRate(fuelRatePid: Float?, maf: Float?, mafMlPerGram: Double): Float? {
         return when {
             fuelRatePid != null && fuelRatePid > 0f -> fuelRatePid
-            maf != null && maf > 0f -> (maf * mafLitreFactor * 3600.0).toFloat()
+            maf != null && maf > 0f -> (maf * mafMlPerGram / 1000.0 * 3600.0).toFloat()
             else -> null
         }
     }
@@ -40,12 +40,13 @@ class FuelCalculator {
      * Primary internal unit for better precision with small fuel rates.
      *
      * Prefers OBD-II direct fuel rate (PID 015E), falls back to MAF-based calculation.
+     * MAF conversion: grams/second * ml_per_gram * 60 = ml/min
      * Uses Double precision for better accuracy.
      */
-    fun effectiveFuelRateMlMin(fuelRatePid: Float?, maf: Float?, mafLitreFactor: Double): Float? {
+    fun effectiveFuelRateMlMin(fuelRatePid: Float?, maf: Float?, mafMlPerGram: Double): Float? {
         return when {
             fuelRatePid != null && fuelRatePid > 0f -> (fuelRatePid * 1000.0 / 60.0).toFloat()
-            maf != null && maf > 0f -> (maf * mafLitreFactor * 3600.0 * 1000.0 / 60.0).toFloat()
+            maf != null && maf > 0f -> (maf * mafMlPerGram * 60.0).toFloat()
             else -> null
         }
     }
@@ -178,5 +179,16 @@ class FuelCalculator {
      */
     fun co2(avgLpk: Float?, co2Factor: Double): Float? {
         return avgLpk?.let { (it * co2Factor).toFloat() }
+    }
+
+    /**
+     * Converts fuel rate from L/h to cc/min (cubic centimeters per minute).
+     * 1 L = 1000 cc, 1 hour = 60 minutes
+     *
+     * @param fuelRateLh Fuel rate in litres per hour
+     * @return Fuel rate in cc/min, or null if input is null
+     */
+    fun fuelFlowCcMin(fuelRateLh: Float?): Float? {
+        return fuelRateLh?.let { (it * 1000f / 60f) }
     }
 }

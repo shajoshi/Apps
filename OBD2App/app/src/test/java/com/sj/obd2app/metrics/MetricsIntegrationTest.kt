@@ -40,7 +40,7 @@ class MetricsIntegrationTest {
         val fuelLevel = 0.7f
 
         // Calculate all metrics
-        val fuelRateEffective = fuelCalculator.effectiveFuelRate(fuelRateLh, null, profile.fuelType.mafLitreFactor)
+        val fuelRateEffective = fuelCalculator.effectiveFuelRate(fuelRateLh, null, profile.fuelType.mafMlPerGram)
         val (instantLpk, instantKpl) = fuelCalculator.instantaneous(fuelRateEffective, speedKmh)
         val (tripAvgLpk, tripAvgKpl) = fuelCalculator.tripAverages(2f, 100f) // 2L used in 100km (2.0 L/100km)
         val range = fuelCalculator.range(fuelLevel, profile.tankCapacityL, tripAvgLpk)
@@ -98,7 +98,7 @@ class MetricsIntegrationTest {
         val fuelLevel = 0.6f
 
         // Calculate all metrics
-        val fuelRateEffective = fuelCalculator.effectiveFuelRate(fuelRateLh, null, profile.fuelType.mafLitreFactor)
+        val fuelRateEffective = fuelCalculator.effectiveFuelRate(fuelRateLh, null, profile.fuelType.mafMlPerGram)
         val (instantLpk, instantKpl) = fuelCalculator.instantaneous(fuelRateEffective, speedKmh)
         val (tripAvgLpk, tripAvgKpl) = fuelCalculator.tripAverages(8f, 100f) // 8L used in 100km (8.0 L/100km)
         val range = fuelCalculator.range(fuelLevel, profile.tankCapacityL, tripAvgLpk)

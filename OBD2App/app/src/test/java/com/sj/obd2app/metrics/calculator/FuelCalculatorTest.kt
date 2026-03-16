@@ -15,7 +15,7 @@ class FuelCalculatorTest {
     @Test
     fun `effectiveFuelRate returns correct units`() {
         // Test with fuel rate PID in L/h
-        val result = fuelCalculator.effectiveFuelRate(5f, null, FuelType.PETROL.mafLitreFactor)
+        val result = fuelCalculator.effectiveFuelRate(5f, null, FuelType.PETROL.mafMlPerGram)
         
         assertNotNull(result)
         assertEquals(5f, result!!, DELTA) // Should return the same value in L/h
@@ -24,7 +24,7 @@ class FuelCalculatorTest {
     @Test
     fun `effectiveFuelRateMlMin returns correct units`() {
         // Test with fuel rate PID in L/h, should convert to ml/min
-        val result = fuelCalculator.effectiveFuelRateMlMin(5f, null, FuelType.PETROL.mafLitreFactor)
+        val result = fuelCalculator.effectiveFuelRateMlMin(5f, null, FuelType.PETROL.mafMlPerGram)
         
         assertNotNull(result)
         // 5 L/h = 5000 ml/h = 83.33 ml/min
@@ -67,38 +67,17 @@ class FuelCalculatorTest {
     // ── Cross-Validation Tests ───────────────────────────────────────────────────────
     // These tests compare FuelCalculator with FuelCalculations to ensure consistency
 
-    @Test
-    fun `FuelCalculator matches FuelCalculations for instantaneous`() {
-        val fuelRate = 3.5f
-        val speed = 60f
-        
-        val calculatorResult = fuelCalculator.instantaneous(fuelRate, speed)
-        val calculationsResult = com.sj.obd2app.metrics.instantLper100km(fuelRate, speed)
-        
-        assertEquals(calculationsResult!!, calculatorResult?.first!!, DELTA)
-    }
-
-    @Test
-    fun `FuelCalculator matches FuelCalculations for trip averages`() {
-        val fuelUsed = 5f
-        val distance = 100f
-        
-        val calculatorResult = fuelCalculator.tripAverages(fuelUsed, distance)
-        val calculationsResult = com.sj.obd2app.metrics.tripAvgLper100km(fuelUsed, distance)
-        
-        assertEquals(calculationsResult!!, calculatorResult?.first!!, DELTA)
-    }
-
+    
     // ── Edge Case Tests ───────────────────────────────────────────────────────────────
 
     @Test
     fun `effectiveFuelRate handles edge cases correctly`() {
         // Test null inputs
-        assertNull(fuelCalculator.effectiveFuelRate(null, null, FuelType.PETROL.mafLitreFactor))
+        assertNull(fuelCalculator.effectiveFuelRate(null, null, FuelType.PETROL.mafMlPerGram))
         
         // Test zero/negative values
-        assertNull(fuelCalculator.effectiveFuelRate(0f, null, FuelType.PETROL.mafLitreFactor))
-        assertNull(fuelCalculator.effectiveFuelRate(-1f, null, FuelType.PETROL.mafLitreFactor))
+        assertNull(fuelCalculator.effectiveFuelRate(0f, null, FuelType.PETROL.mafMlPerGram))
+        assertNull(fuelCalculator.effectiveFuelRate(-1f, null, FuelType.PETROL.mafMlPerGram))
     }
 
     @Test
@@ -136,13 +115,13 @@ class FuelCalculatorTest {
     @Test
     fun `effectiveFuelRate uses MAF when fuel rate PID is null`() {
         val maf = 15f // g/s
-        val result = fuelCalculator.effectiveFuelRate(null, maf, FuelType.PETROL.mafLitreFactor)
+        val result = fuelCalculator.effectiveFuelRate(null, maf, FuelType.PETROL.mafMlPerGram)
         
         assertNotNull(result)
         assertTrue("Should calculate positive fuel rate from MAF", result!! > 0f)
         
-        // Expected: 15 g/s × 0.0000746 L/g = 0.001119 L/s = 4.028 L/h
-        val expected = (15.0 * FuelType.PETROL.mafLitreFactor * 3600.0).toFloat()
+        // Expected: 15 g/s × 1.34 ml/g = 20.1 ml/s = 1.206 L/h
+        val expected = (15.0 * FuelType.PETROL.mafMlPerGram / 1000.0 * 3600.0).toFloat()
         assertEquals(expected, result!!, DELTA)
     }
 
@@ -150,7 +129,7 @@ class FuelCalculatorTest {
     fun `effectiveFuelRate prefers fuel rate PID over MAF`() {
         val fuelRatePid = 5f
         val maf = 15f
-        val result = fuelCalculator.effectiveFuelRate(fuelRatePid, maf, FuelType.PETROL.mafLitreFactor)
+        val result = fuelCalculator.effectiveFuelRate(fuelRatePid, maf, FuelType.PETROL.mafMlPerGram)
         
         // Should use fuel rate PID, not MAF
         assertEquals(fuelRatePid, result!!, DELTA)

@@ -9,8 +9,8 @@ class FuelTypeConstantsTest {
     // ── PETROL ───────────────────────────────────────────────────────────────
 
     @Test
-    fun `PETROL mafLitreFactor is correct`() {
-        assertEquals(0.0000746, FuelType.PETROL.mafLitreFactor, 1e-8)
+    fun `PETROL mafMlPerGram is correct`() {
+        assertEquals(1.34, FuelType.PETROL.mafMlPerGram, 1e-8)
     }
 
     @Test
@@ -26,8 +26,8 @@ class FuelTypeConstantsTest {
     // ── DIESEL ───────────────────────────────────────────────────────────────
 
     @Test
-    fun `DIESEL mafLitreFactor is correct`() {
-        assertEquals(0.0000594, FuelType.DIESEL.mafLitreFactor, 1e-8)
+    fun `DIESEL mafMlPerGram is correct`() {
+        assertEquals(1.18, FuelType.DIESEL.mafMlPerGram, 1e-8)
     }
 
     @Test
@@ -43,8 +43,8 @@ class FuelTypeConstantsTest {
     // ── E20 ──────────────────────────────────────────────────────────────────
 
     @Test
-    fun `E20 mafLitreFactor is correct`() {
-        assertEquals(0.0000751, FuelType.E20.mafLitreFactor, 1e-8)
+    fun `E20 mafMlPerGram is correct`() {
+        assertEquals(1.34, FuelType.E20.mafMlPerGram, 1e-8)
     }
 
     @Test
@@ -60,8 +60,8 @@ class FuelTypeConstantsTest {
     // ── CNG ──────────────────────────────────────────────────────────────────
 
     @Test
-    fun `CNG mafLitreFactor is correct`() {
-        assertEquals(0.0000740, FuelType.CNG.mafLitreFactor, 1e-8)
+    fun `CNG mafMlPerGram is correct`() {
+        assertEquals(1.35, FuelType.CNG.mafMlPerGram, 1e-8)
     }
 
     @Test
@@ -77,9 +77,9 @@ class FuelTypeConstantsTest {
     // ── Invariants for all fuel types ─────────────────────────────────────────
 
     @Test
-    fun `all fuel types have positive mafLitreFactor`() {
+    fun `all fuel types have positive mafMlPerGram`() {
         FuelType.entries.forEach { ft ->
-            assertTrue("${ft.name} mafLitreFactor must be > 0", ft.mafLitreFactor > 0.0)
+            assertTrue("${ft.name} mafMlPerGram must be > 0", ft.mafMlPerGram > 0.0)
         }
     }
 

@@ -4,17 +4,17 @@ import java.util.UUID
 
 enum class FuelType(
     val displayName: String,
-    /** L/g conversion factor for MAF-based fuel rate fallback */
-    val mafLitreFactor: Double,
+    /** ml/g conversion factor for MAF-based fuel rate fallback (volume per mass) */
+    val mafMlPerGram: Double,
     /** g CO₂ per L/100km */
     val co2Factor: Double,
     /** Lower heating value (MJ/L) — used for thermodynamic power calculation */
     val energyDensityMJpL: Double
 ) {
-    PETROL("Petrol", 0.0000746, 23.1, 34.2),
-    E20("E20 Petrol", 0.0000751, 22.3, 27.4),
-    DIESEL("Diesel", 0.0000594, 26.4, 38.6),
-    CNG("CNG",    0.0000740, 16.0, 23.0)
+    PETROL("Petrol", 1.34, 23.1, 34.2),
+    E20("E20 Petrol", 1.34, 22.3, 27.4),
+    DIESEL("Diesel", 1.18, 26.4, 38.6),
+    CNG("CNG",    1.35, 16.0, 23.0)
 }
 
 /**
