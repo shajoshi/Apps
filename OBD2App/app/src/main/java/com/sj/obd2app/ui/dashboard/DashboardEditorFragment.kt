@@ -29,6 +29,7 @@ import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.ui.dashboard.data.LayoutRepository
 import com.sj.obd2app.ui.dashboard.model.DashboardMetric
+import com.sj.obd2app.ui.dashboard.model.DashboardOrientation
 import com.sj.obd2app.ui.dashboard.model.DashboardWidget
 import com.sj.obd2app.ui.dashboard.model.WidgetType
 import com.sj.obd2app.ui.dashboard.views.*
@@ -262,6 +263,12 @@ class DashboardEditorFragment : Fragment() {
     }
 
     private fun updateTripControls(phase: com.sj.obd2app.metrics.TripPhase = calculator.tripPhase.value) {
+        if (isEditMode) {
+            btnTripPlay.visibility  = View.GONE
+            btnTripPause.visibility = View.GONE
+            btnTripStop.visibility  = View.GONE
+            return
+        }
         btnTripPlay.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
         btnTripPause.visibility = if (phase == com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
         btnTripStop.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.IDLE)    View.VISIBLE else View.GONE
@@ -335,6 +342,7 @@ class DashboardEditorFragment : Fragment() {
         gridOverlay.visibility = if (isEditMode) View.VISIBLE else View.GONE
         badgeEditing.visibility = if (isEditMode) View.VISIBLE else View.GONE
         fabAddWidget.visibility = if (isEditMode) View.VISIBLE else View.GONE
+        updateTripControls()
 
         // Top strip tint: amber in edit mode, default in view mode
         val topStrip = view?.findViewById<View>(R.id.top_strip)
@@ -355,8 +363,7 @@ class DashboardEditorFragment : Fragment() {
     }
 
     private fun updateActionButtons() {
-        val showSave = isEditMode && hasUnsavedChanges
-        btnSave.visibility = if (showSave) View.VISIBLE else View.GONE
+        btnSave.visibility = if (isEditMode) View.VISIBLE else View.GONE
         btnUndo.visibility = if (isEditMode && viewModel.canUndo.value) View.VISIBLE else View.GONE
     }
 
@@ -386,24 +393,23 @@ class DashboardEditorFragment : Fragment() {
         // Propagate to ViewModel so addWidget can center new widgets
         viewModel.canvasGridW = canvasGridW
         viewModel.canvasGridH = canvasGridH
+        // For a new dashboard, lock orientation to match the current canvas aspect ratio
+        if (isNewLayout) {
+            val orient = if (canvasGridW >= canvasGridH) DashboardOrientation.LANDSCAPE
+                         else DashboardOrientation.PORTRAIT
+            viewModel.setOrientation(orient)
+        }
         // Clamp widgets that now fall outside the (possibly smaller) canvas
         clampWidgetsToBounds()
     }
 
     /**
      * Moves any widget whose position exceeds the current canvas bounds back inside.
-     * Called after orientation changes.
+     * Called only when the canvas genuinely shrinks (e.g. orientation change).
+     * Delegates to ViewModel which applies the clamp silently (no undo snapshot).
      */
     private fun clampWidgetsToBounds() {
-        val layout = viewModel.currentLayout.value
-        val clamped = layout.widgets.map { w ->
-            val maxX = (canvasGridW - w.gridW).coerceAtLeast(0)
-            val maxY = (canvasGridH - w.gridH).coerceAtLeast(0)
-            w.copy(gridX = w.gridX.coerceIn(0, maxX), gridY = w.gridY.coerceIn(0, maxY))
-        }
-        if (clamped != layout.widgets) {
-            viewModel.loadLayout(layout.copy(widgets = clamped))
-        }
+        viewModel.clampAllWidgetsToBounds(canvasGridW, canvasGridH)
     }
 
     // ── Save / back guard ─────────────────────────────────────────────────────
@@ -596,12 +602,7 @@ class DashboardEditorFragment : Fragment() {
                         gridSizePx       = gridSizePx,
                         onContextMenu    = { anchor -> showWidgetContextMenu(anchor, widget.id) },
                         getCanvasScale   = { canvasScale },
-                        isMoveResizeMode = isMoveResize,
-                        getCanvasBounds  = {
-                            val maxX = (canvasGridW - widget.gridW).coerceAtLeast(0)
-                            val maxY = (canvasGridH - widget.gridH).coerceAtLeast(0)
-                            maxX to maxY
-                        }
+                        isMoveResizeMode = isMoveResize
                     )
                 )
                 // Resize handles only active when move/resize mode explicitly enabled for this widget

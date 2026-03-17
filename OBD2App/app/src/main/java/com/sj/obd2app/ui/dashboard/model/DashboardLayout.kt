@@ -1,12 +1,16 @@
 package com.sj.obd2app.ui.dashboard.model
 
+/** Orientation the dashboard was designed for. Enforced at open time. */
+enum class DashboardOrientation { PORTRAIT, LANDSCAPE }
+
 /**
  * The complete, saveable dashboard state.
  */
 data class DashboardLayout(
     val name: String,
     val colorScheme: ColorScheme,
-    val widgets: List<DashboardWidget>
+    val widgets: List<DashboardWidget>,
+    val orientation: DashboardOrientation = DashboardOrientation.PORTRAIT
 )
 
 /**

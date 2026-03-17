@@ -42,7 +42,8 @@ class DashboardEditorViewModel : ViewModel() {
                         displayUnit = defaults.displayUnit
                     )
                 }
-            )
+            ),
+            orientation = DashboardOrientation.PORTRAIT
         )
     )
     val currentLayout: StateFlow<DashboardLayout> = _currentLayout.asStateFlow()
@@ -171,12 +172,27 @@ class DashboardEditorViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Clamps all widget positions to fit within the given canvas grid dimensions.
+     * Does NOT create an undo snapshot — this is a silent correction for canvas resize events.
+     */
+    fun clampAllWidgetsToBounds(gridW: Int, gridH: Int) {
+        val layout = _currentLayout.value
+        val clamped = layout.widgets.map { w ->
+            val maxX = (gridW - w.gridW).coerceAtLeast(0)
+            val maxY = (gridH - w.gridH).coerceAtLeast(0)
+            w.copy(gridX = w.gridX.coerceIn(0, maxX), gridY = w.gridY.coerceIn(0, maxY))
+        }
+        if (clamped != layout.widgets) {
+            _currentLayout.value = layout.copy(widgets = clamped)
+        }
+    }
+
     fun updateSelectedWidgetPosition(widgetId: String, newGridX: Int, newGridY: Int) {
         snapshot()
         val layout = _currentLayout.value
         val updatedWidgets = layout.widgets.map { w ->
             if (w.id == widgetId) {
-                // Prevent going completely off-screen (basic bounds)
                 w.copy(gridX = maxOf(0, newGridX), gridY = maxOf(0, newGridY))
             } else w
         }
@@ -292,6 +308,10 @@ class DashboardEditorViewModel : ViewModel() {
     fun setColorScheme(scheme: ColorScheme) {
         val layout = _currentLayout.value
         _currentLayout.value = layout.copy(colorScheme = scheme)
+    }
+
+    fun setOrientation(orient: DashboardOrientation) {
+        _currentLayout.value = _currentLayout.value.copy(orientation = orient)
     }
     
     fun loadLayout(layout: DashboardLayout) {

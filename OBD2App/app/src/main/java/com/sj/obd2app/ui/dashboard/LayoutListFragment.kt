@@ -1,6 +1,7 @@
 package com.sj.obd2app.ui.dashboard
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.LayoutInflater
@@ -23,6 +24,7 @@ import com.sj.obd2app.R
 import com.sj.obd2app.ui.attachNavOverflow
 import com.sj.obd2app.ui.dashboard.data.LayoutRepository
 import com.sj.obd2app.ui.dashboard.model.DashboardLayout
+import com.sj.obd2app.ui.dashboard.model.DashboardOrientation
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -97,7 +99,23 @@ class LayoutListFragment : Fragment() {
             .show()
     }
 
+    private fun currentOrientation(): DashboardOrientation {
+        return if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+            DashboardOrientation.LANDSCAPE else DashboardOrientation.PORTRAIT
+    }
+
     private fun openDashboard(name: String, mode: String) {
+        val layout = repo.getSavedLayouts().find { it.name == name }
+        if (layout != null && layout.orientation != currentOrientation()) {
+            val required = layout.orientation.name.lowercase()
+                .replaceFirstChar { it.uppercase() }
+            Toast.makeText(
+                requireContext(),
+                "\"$name\" requires $required mode. Please rotate your device.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
         val bundle = Bundle().apply {
             putString("layout_name", name)
             putString("mode", mode)
@@ -161,7 +179,8 @@ class LayoutListFragment : Fragment() {
                 SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(file.lastModified()))
             } else ""
             val widgetCount = layout.widgets.size
-            holder.txtMeta.text = "$widgetCount widget${if (widgetCount != 1) "s" else ""}  ·  $dateStr"
+            val orientLabel = layout.orientation.name.lowercase().replaceFirstChar { it.uppercase() }
+            holder.txtMeta.text = "$widgetCount widget${if (widgetCount != 1) "s" else ""}  ·  $orientLabel  ·  $dateStr"
 
             // Star
             holder.btnStar.setImageResource(

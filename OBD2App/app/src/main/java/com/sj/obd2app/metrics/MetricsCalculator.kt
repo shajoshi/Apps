@@ -281,7 +281,7 @@ class MetricsCalculator private constructor(private val context: Context) {
                 tripTimeSec = (System.currentTimeMillis() - tripState.tripStartMs) / 1000L,
                 movingTimeSec = tripState.movingTimeSec,
                 stoppedTimeSec = tripState.stoppedTimeSec,
-                tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, tripState.movingTimeSec),
+                tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, (System.currentTimeMillis() - tripState.tripStartMs) / 1000L),
                 tripMaxSpeedKmh = tripState.maxSpeedKmh,
                 spdDiffKmh = null,
                 pctCity = tripState.driveModePercents().first,
@@ -423,8 +423,7 @@ class MetricsCalculator private constructor(private val context: Context) {
         val tripTimeSec = tripTimeMs / 1000L
 
         // Average speed
-        val movingSec = tripState.movingTimeSec
-        val avgSpeed: Float = tripCalculator.averageSpeed(tripDist, movingSec)
+        val avgSpeed: Float = tripCalculator.averageSpeed(tripDist, tripTimeSec)
 
         // Speed diff
         val spdDiff: Float? = tripCalculator.speedDiff(gpsSpeed, obdSpeedKmh)
@@ -515,7 +514,7 @@ class MetricsCalculator private constructor(private val context: Context) {
             avgCo2gPerKm           = co2,
             tripDistanceKm         = tripDist,
             tripTimeSec            = tripTimeSec,
-            movingTimeSec          = movingSec,
+            movingTimeSec          = tripState.movingTimeSec,
             stoppedTimeSec         = tripState.stoppedTimeSec,
             tripAvgSpeedKmh        = avgSpeed,
             tripMaxSpeedKmh        = tripState.maxSpeedKmh,

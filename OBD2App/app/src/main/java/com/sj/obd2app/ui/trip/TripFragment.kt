@@ -112,6 +112,7 @@ class TripFragment : Fragment() {
         binding.tvTripDuration.text = state.duration
         binding.tvTripDistance.text = state.distanceKm
         binding.tvAvgSpeed.text = state.avgSpeed
+        binding.tvAltitude.text = state.altitude
         binding.tvCoolantTemp.text = state.coolantTemp
         binding.tvAvgFuelKmpl.text = state.avgFuelKmpl
         binding.tvFuelCost.text = state.fuelCost

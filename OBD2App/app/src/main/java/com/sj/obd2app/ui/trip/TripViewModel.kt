@@ -41,6 +41,7 @@ data class TripUiState(
     val duration: String = "00:00",
     val distanceKm: String = "0.0 km",
     val avgSpeed: String = "— km/h",
+    val altitude: String = "— m",
     val coolantTemp: String = "— °C",
     val avgFuelKmpl: String = "— kmpl",
     val fuelCost: String = "— ₹",
@@ -77,9 +78,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
                 buildUiState(metrics, phase, connState)
             }.collect { incoming ->
                 val current = _baseState.value
-                Log.d(TAG, "combine emit phase=${incoming.tripPhase} " +
-                    "keeping dur=${current.duration} samples=${current.sampleCount}")
-                _baseState.value = incoming.copy(
+                                _baseState.value = incoming.copy(
                     duration    = current.duration,
                     sampleCount = current.sampleCount
                 )
@@ -94,13 +93,12 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
                     TripPhase.RUNNING -> {
                         val d = formatDuration(calculator.elapsedTripSec())
                         val s = calculator.currentSampleNo.toString()
-                        Log.d(TAG, "ticker RUNNING dur=$d samples=$s")
                         _baseState.value = _baseState.value.copy(duration = d, sampleCount = s)
                     }
-                    TripPhase.PAUSED  -> Log.d(TAG, "ticker PAUSED frozen " +
-                        "dur=${_baseState.value.duration} samples=${_baseState.value.sampleCount}")
+                    TripPhase.PAUSED  -> {
+                        // Do nothing - keep current values
+                    }
                     TripPhase.IDLE    -> {
-                        Log.d(TAG, "ticker IDLE reset")
                         _baseState.value = _baseState.value.copy(duration = "00:00", sampleCount = "0")
                     }
                 }
@@ -186,6 +184,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
         // they are merged back in the collect lambda and owned by the 1-s ticker.
         val distance: String
         val avgSpeed: String
+        val altitude: String
         val coolantTemp: String
         val avgFuelKmpl: String
         val fuelCost: String
@@ -199,6 +198,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             // Show empty values when trip is stopped
             distance    = "0.0 km"
             avgSpeed    = "— km/h"
+            altitude    = "— m"
             coolantTemp = "— °C"
             avgFuelKmpl = "— kmpl"
             fuelCost    = "— ₹"
@@ -210,6 +210,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             distance    = "%.1f km".format(metrics.tripDistanceKm)
             avgSpeed    = "%.1f km/h".format(metrics.tripAvgSpeedKmh)
+            altitude    = metrics.altitudeMslM?.let { "%.0f m".format(it) } ?: "— m"
             coolantTemp = metrics.coolantTempC?.let { "%.0f °C".format(it) } ?: "— °C"
             avgFuelKmpl = metrics.tripAvgKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
             fuelCost    = metrics.fuelCostEstimate?.let { "₹%.2f".format(it) } ?: "— ₹"
@@ -223,10 +224,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
                 "%.1f BHP".format(bhp)
             } ?: "— BHP"
             
-            powerObdBhp = metrics.powerOBDKw?.let { 
-                val bhp = it * 1.341f  // Convert kW to BHP
-                "%.1f BHP".format(bhp)
-            } ?: "— BHP"
+            powerObdBhp = accelPowerStr.ifEmpty { "— BHP" }
         }
 
         return TripUiState(
@@ -248,6 +246,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             tripPhaseLabel  = phaseLabel,
             distanceKm      = distance,
             avgSpeed        = avgSpeed,
+            altitude        = altitude,
             coolantTemp     = coolantTemp,
             avgFuelKmpl     = avgFuelKmpl,
             fuelCost        = fuelCost,
@@ -261,31 +260,25 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startTrip() {
         if (_baseState.value.tripPhase != TripPhase.IDLE) {
-            Log.w(TAG, "startTrip ignored: not IDLE (phase=${_baseState.value.tripPhase})")
             return
         }
-        Log.d(TAG, "startTrip")
         calculator.startTrip()
         TripForegroundService.start(ctx)
         Toast.makeText(ctx, "Trip started", Toast.LENGTH_SHORT).show()
     }
 
     fun pauseTrip() {
-        Log.d(TAG, "pauseTrip dur=${_baseState.value.duration} samples=${_baseState.value.sampleCount}")
         calculator.pauseTrip()
     }
 
     fun resumeTrip() {
         if (_baseState.value.tripPhase != TripPhase.PAUSED) {
-            Log.w(TAG, "resumeTrip ignored: not PAUSED (phase=${_baseState.value.tripPhase})")
             return
         }
-        Log.d(TAG, "resumeTrip dur=${_baseState.value.duration} samples=${_baseState.value.sampleCount}")
         calculator.resumeTrip()
     }
 
     fun stopTrip() {
-        Log.d(TAG, "stopTrip")
         calculator.stopTrip()
         TripForegroundService.stop(ctx)
         Toast.makeText(ctx, "Trip stopped", Toast.LENGTH_SHORT).show()
@@ -293,10 +286,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
     fun getLogShareUri() = calculator.getLogShareUri()
 
-    companion object {
-        private const val TAG = "TripViewModel"
-    }
-
+    
     private fun formatDuration(totalSec: Long): String {
         val h = totalSec / 3600
         val m = (totalSec % 3600) / 60

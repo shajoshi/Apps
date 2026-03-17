@@ -17,8 +17,7 @@ class WidgetTouchHandler(
     private val gridSizePx: Int = 100,
     private val onContextMenu: ((anchor: View) -> Unit)? = null,
     private val getCanvasScale: (() -> Float)? = null,
-    private val isMoveResizeMode: Boolean = false,              // drag only when explicitly enabled
-    private val getCanvasBounds: (() -> Pair<Int, Int>)? = null  // returns (maxGridX, maxGridY)
+    private val isMoveResizeMode: Boolean = false               // drag only when explicitly enabled
 ) : View.OnTouchListener {
 
     private var downRawX = 0f       // raw screen X when finger went down
@@ -81,15 +80,9 @@ class WidgetTouchHandler(
                         onContextMenu.invoke(view)
                     }
                 } else if (lastAction == MotionEvent.ACTION_MOVE && isMoveResizeMode) {
-                    // Snap to nearest grid intersection, clamped inside canvas bounds
-                    val bounds = getCanvasBounds?.invoke()
-                    val maxGridX = bounds?.first ?: Int.MAX_VALUE
-                    val maxGridY = bounds?.second ?: Int.MAX_VALUE
-
-                    val gridX = Math.round(view.x / gridSizePx)
-                        .coerceIn(0, maxGridX)
-                    val gridY = Math.round(view.y / gridSizePx)
-                        .coerceIn(0, maxGridY)
+                    // Snap to nearest grid intersection; only clamp lower bound (no negative coords)
+                    val gridX = Math.round(view.x / gridSizePx).coerceAtLeast(0)
+                    val gridY = Math.round(view.y / gridSizePx).coerceAtLeast(0)
 
                     view.x = (gridX * gridSizePx).toFloat()
                     view.y = (gridY * gridSizePx).toFloat()

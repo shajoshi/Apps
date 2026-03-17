@@ -5,6 +5,7 @@ import androidx.core.content.FileProvider
 import com.google.gson.*
 import com.sj.obd2app.ui.dashboard.model.DashboardLayout
 import com.sj.obd2app.ui.dashboard.model.DashboardMetric
+import com.sj.obd2app.ui.dashboard.model.DashboardOrientation
 import java.io.File
 import java.lang.reflect.Type
 
@@ -65,7 +66,17 @@ class LayoutRepository(private val context: Context) {
             if (canonical != widget.type) { changed = true; widget.copy(type = canonical) }
             else widget
         }
-        return if (changed) layout.copy(widgets = migratedWidgets) else layout
+        return if (changed) {
+            layout.copy(
+                widgets = migratedWidgets,
+                orientation = layout.orientation ?: DashboardOrientation.PORTRAIT
+            )
+        } else {
+            // Even if no widget type changes, ensure orientation is not null for legacy layouts
+            layout.copy(
+                orientation = layout.orientation ?: DashboardOrientation.PORTRAIT
+            )
+        }
     }
 
     fun deleteLayout(name: String) {
