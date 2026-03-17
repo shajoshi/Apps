@@ -150,7 +150,10 @@ class MainActivity : AppCompatActivity() {
 
         // If OBD Connection is disabled, use mock/simulate mode — skip BT entirely
         if (!AppSettings.isObdConnectionEnabled(this)) {
-            Obd2ServiceProvider.getService().connect(null)
+            // Respect auto-connect setting for mock mode
+            if (AppSettings.isAutoConnect(this)) {
+                Obd2ServiceProvider.getService().connect(null)
+            }
             viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, false)  // Go directly to Trip
             return
         }
@@ -182,7 +185,10 @@ class MainActivity : AppCompatActivity() {
      * Navigates to the Trip screen.
      */
     fun onObd2Connected() {
-        viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, true)
+        // Only navigate to Trip if not in mock mode
+        if (!Obd2ServiceProvider.useMock) {
+            viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, true)
+        }
     }
 
     /** Navigate to a specific page by index — used by TopBarHelper overflow menu. */

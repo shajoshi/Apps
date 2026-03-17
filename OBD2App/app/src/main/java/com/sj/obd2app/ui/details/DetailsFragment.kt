@@ -85,6 +85,19 @@ class DetailsFragment : Fragment() {
             }
         }
 
+        // Observe mock mode changes to update connection status
+        val connectViewModel = ViewModelProvider(requireActivity())[com.sj.obd2app.ui.connect.ConnectViewModel::class.java]
+        connectViewModel.isMockMode.observe(viewLifecycleOwner) { isMock ->
+            // Refresh connection status to update color indicator
+            val connected = viewModel.isConnected.value
+            val color = when {
+                isMock -> Color.parseColor("#FFA000")
+                connected -> Color.parseColor("#4CAF50")
+                else -> Color.parseColor("#F44336")
+            }
+            binding.statusIndicator.setBackgroundColor(color)
+        }
+
         // Observe trip state to manage wake lock
         viewLifecycleOwner.lifecycleScope.launch {
             MetricsCalculator.getInstance(requireContext()).tripPhase.collect { phase ->

@@ -46,20 +46,61 @@ class ConnectFragment : Fragment() {
         binding.recyclerviewDevices.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerviewDiscovered.layoutManager = LinearLayoutManager(requireContext())
 
-        // NOTE: loadPairedDevices() is called after observers are registered below
-        //       so that LiveData delivery is guaranteed to reach the adapter.
-        if (viewModel.isMockMode) {
+        // Set up UI based on current mock mode
+        setupConnectUI(viewModel.currentMockMode)
+        
+        // Observe mock mode changes to refresh UI
+        viewModel.isMockMode.observe(viewLifecycleOwner) { isMock ->
+            setupConnectUI(isMock)
+            // Reload devices when mode changes
+            viewModel.loadPairedDevices(requireContext())
+        }
+        
+        // Observe mock device names (only once)
+        viewModel.mockDeviceNames.observe(viewLifecycleOwner) { names ->
+            // Update adapter if it's a mock adapter
+            val currentAdapter = binding.recyclerviewDevices.adapter as? MockDeviceAdapter
+            currentAdapter?.submitList(names)
+        }
+        
+        // Force immediate check of LiveData value in case it was updated before fragment was created
+        if (viewModel.isMockMode.value != viewModel.currentMockMode) {
+            setupConnectUI(viewModel.isMockMode.value ?: viewModel.currentMockMode)
+            viewModel.loadPairedDevices(requireContext())
+        }
+
+        return binding.root
+    }
+    
+    fun refreshUI() {
+        setupConnectUI(viewModel.currentMockMode)
+        viewModel.loadPairedDevices(requireContext())
+    }
+    
+    private fun setupConnectUI(isMock: Boolean) {
+        // Clear existing adapters but keep observers
+        binding.recyclerviewDevices.adapter = null
+        binding.recyclerviewDiscovered.adapter = null
+        pairedAdapter = null
+        discoveredAdapter = null
+        
+        if (isMock) {
             binding.btnScan.visibility = View.GONE
             binding.labelDiscovered.visibility = View.GONE
             binding.recyclerviewDiscovered.visibility = View.GONE
 
             val mockAdapter = MockDeviceAdapter { viewModel.connectMock() }
             binding.recyclerviewDevices.adapter = mockAdapter
-            viewModel.mockDeviceNames.observe(viewLifecycleOwner) { names ->
+            // Set initial data immediately
+            viewModel.mockDeviceNames.value?.let { names ->
                 mockAdapter.submitList(names)
             }
 
         } else {
+            binding.btnScan.visibility = View.VISIBLE
+            binding.labelPaired.visibility = View.VISIBLE
+            binding.recyclerviewDevices.visibility = View.VISIBLE
+
             // OBD devices list (filtered — likely OBD adapters)
             pairedAdapter = DeviceAdapter(
                 onDeviceClick = { device -> viewModel.connectToDevice(device, requireContext()) },
@@ -164,8 +205,6 @@ class ConnectFragment : Fragment() {
         binding.btnDisconnect.setOnClickListener {
             viewModel.disconnect()
         }
-
-        return binding.root
     }
 
     /**
@@ -174,9 +213,12 @@ class ConnectFragment : Fragment() {
      */
     override fun onResume() {
         super.onResume()
-        if (!viewModel.isMockMode) {
-            viewModel.loadPairedDevices(requireContext())
-        }
+        
+        // Force UI refresh since ViewPager2 reuses fragments
+        setupConnectUI(viewModel.currentMockMode)
+        
+        // Always load paired devices to ensure mock device names are populated
+        viewModel.loadPairedDevices(requireContext())
     }
 
     private fun registerDiscoveryReceiver() {

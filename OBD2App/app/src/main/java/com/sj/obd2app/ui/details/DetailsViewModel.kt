@@ -52,8 +52,7 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
                 service.connectedDeviceName
             ) { state, deviceName -> state to deviceName }
             .collect { (state, deviceName) ->
-                val isMock = !AppSettings.isObdConnectionEnabled(getApplication()) ||
-                    Obd2ServiceProvider.useMock
+                val isMock = Obd2ServiceProvider.useMock
                 _isConnected.value = state == Obd2Service.ConnectionState.CONNECTED
                 _connectionStatus.value = when {
                     isMock -> "Simulation Mode"

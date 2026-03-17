@@ -168,8 +168,34 @@ class SettingsFragment : Fragment() {
             com.sj.obd2app.obd.Obd2ServiceProvider.initMock(ctx)
         }
         
-        // Connect with new mode
-        com.sj.obd2app.obd.Obd2ServiceProvider.getService().connect(null)
+        // Notify ConnectViewModel to update UI if it exists
+        try {
+            val connectViewModel = androidx.lifecycle.ViewModelProvider(requireActivity())[com.sj.obd2app.ui.connect.ConnectViewModel::class.java]
+            connectViewModel.updateMockMode()
+            
+            // Also force a refresh if ConnectFragment is the current page
+            val mainActivity = requireActivity() as? com.sj.obd2app.MainActivity
+            val viewPager = mainActivity?.findViewById<androidx.viewpager2.widget.ViewPager2>(com.sj.obd2app.R.id.main_view_pager)
+            if (viewPager?.currentItem == com.sj.obd2app.MainPagerAdapter.PAGE_CONNECT) {
+                try {
+                    // Get the current ConnectFragment instance
+                    val connectFragment = mainActivity.supportFragmentManager.findFragmentByTag("f${viewPager.currentItem}")
+                    if (connectFragment is com.sj.obd2app.ui.connect.ConnectFragment) {
+                        connectFragment.refreshUI()
+                    }
+                } catch (e: Exception) {
+                    // ConnectFragment may not be created yet, that's fine
+                }
+            }
+        } catch (e: Exception) {
+            // ConnectFragment may not be created yet, that's fine
+        }
+        
+        // Connect with new mode (only for real OBD mode)
+        if (enableObdConnection) {
+            com.sj.obd2app.obd.Obd2ServiceProvider.getService().connect(null)
+        }
+        // Note: For mock mode, user must manually click "Mock OBD2 Adapter" to connect
     }
 
     // ── Vehicle Profiles ─────────────────────────────────────────────────────

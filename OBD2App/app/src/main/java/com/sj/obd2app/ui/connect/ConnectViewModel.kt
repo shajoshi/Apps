@@ -74,7 +74,17 @@ class ConnectViewModel : ViewModel() {
     private val _connectionLog = MutableLiveData<List<String>>(emptyList())
     val connectionLog: LiveData<List<String>> = _connectionLog
 
-    val isMockMode: Boolean get() = Obd2ServiceProvider.useMock
+    /** LiveData to track mock mode changes */
+    private val _isMockMode = MutableLiveData(Obd2ServiceProvider.useMock)
+    val isMockMode: LiveData<Boolean> = _isMockMode
+    
+    /** Current mock mode state (for immediate access) */
+    val currentMockMode: Boolean get() = Obd2ServiceProvider.useMock
+    
+    /** Call this when mock mode changes to update UI */
+    fun updateMockMode() {
+        _isMockMode.value = Obd2ServiceProvider.useMock
+    }
 
     private var btAdapter: BluetoothAdapter? = null
     private val discoveredSet = mutableSetOf<String>() // MAC addresses to avoid duplicates
