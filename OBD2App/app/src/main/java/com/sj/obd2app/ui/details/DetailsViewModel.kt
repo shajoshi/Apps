@@ -7,7 +7,7 @@ import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2DataItem
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
-import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.obd.ObdStateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -46,22 +46,33 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
                 _vehicleMetrics.value = metrics
             }
         }
+        // Observe OBD service connection state and update ObdStateManager
         viewModelScope.launch {
             combine(
                 service.connectionState,
                 service.connectedDeviceName
             ) { state, deviceName -> state to deviceName }
             .collect { (state, deviceName) ->
-                val isMock = Obd2ServiceProvider.useMock
-                _isConnected.value = state == Obd2Service.ConnectionState.CONNECTED
-                _connectionStatus.value = when {
-                    isMock -> "Simulation Mode"
-                    state == Obd2Service.ConnectionState.CONNECTED ->
-                        if (deviceName != null) "Connected \u00B7 $deviceName" else "Connected"
-                    state == Obd2Service.ConnectionState.CONNECTING -> "Connecting\u2026"
-                    state == Obd2Service.ConnectionState.ERROR -> "Error"
-                    else -> "Disconnected"
+                // Update centralized state manager
+                val obdState = when (state) {
+                    Obd2Service.ConnectionState.CONNECTED -> ObdStateManager.ConnectionState.CONNECTED
+                    Obd2Service.ConnectionState.CONNECTING -> ObdStateManager.ConnectionState.CONNECTING
+                    Obd2Service.ConnectionState.ERROR -> ObdStateManager.ConnectionState.ERROR
+                    else -> ObdStateManager.ConnectionState.DISCONNECTED
                 }
+                ObdStateManager.updateConnectionState(obdState, deviceName)
+            }
+        }
+        
+        // Observe centralized state for UI updates
+        viewModelScope.launch {
+            combine(
+                ObdStateManager.connectionState,
+                ObdStateManager.mode
+            ) { connState, mode -> connState to mode }
+            .collect { (connState, _) ->
+                _isConnected.value = connState == ObdStateManager.ConnectionState.CONNECTED
+                _connectionStatus.value = ObdStateManager.getConnectionStatusText()
             }
         }
     }

@@ -94,6 +94,9 @@ class MockObd2Service private constructor() : Obd2Service {
         _connectionState.value = Obd2Service.ConnectionState.CONNECTING
         _errorMessage.value = null
         _connectionLog.value = listOf("Connecting to Mock OBD2 Adapter…")
+        
+        // Update centralized state manager
+        ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTING)
 
         CoroutineScope(Dispatchers.IO).launch {
             delay(500)
@@ -103,6 +106,8 @@ class MockObd2Service private constructor() : Obd2Service {
             delay(500)
             _connectionLog.value = _connectionLog.value + "✓ 20 PIDs supported — starting data polling"
             _connectionState.value = Obd2Service.ConnectionState.CONNECTED
+            // Update centralized state manager
+            ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTED, "Mock OBD2 Adapter")
             startPolling()
         }
     }
@@ -113,6 +118,8 @@ class MockObd2Service private constructor() : Obd2Service {
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
         _connectionLog.value = emptyList()
+        // Update centralized state manager
+        ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.DISCONNECTED)
     }
 
     /**

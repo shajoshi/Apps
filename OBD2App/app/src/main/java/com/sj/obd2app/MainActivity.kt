@@ -22,6 +22,7 @@ import com.sj.obd2app.databinding.ActivityMainBinding
 import com.sj.obd2app.gps.GpsDataSource
 import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.metrics.TripPhase
+import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.storage.DataMigration
@@ -79,10 +80,13 @@ class MainActivity : AppCompatActivity() {
         // Setup notification channels
         setupNotificationChannels()
 
-        // Initialise OBD2 service mode BEFORE ViewPager/fragments are created,
-        // so MetricsCalculator singleton picks up the correct service instance.
-        Obd2ServiceProvider.useMock = USE_MOCK_OBD2 || !AppSettings.isObdConnectionEnabled(this)
-        if (Obd2ServiceProvider.useMock) {
+        // Initialize centralized OBD state manager
+        val obdConnectionEnabled = AppSettings.isObdConnectionEnabled(this)
+        val autoConnectEnabled = AppSettings.isAutoConnect(this)
+        ObdStateManager.initialize(autoConnectEnabled, obdConnectionEnabled || USE_MOCK_OBD2)
+        
+        // Initialise OBD2 service mode BEFORE ViewPager/fragments are created
+        if (ObdStateManager.isMockMode) {
             Obd2ServiceProvider.initMock(this)
         }
 
@@ -149,10 +153,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         // If OBD Connection is disabled, use mock/simulate mode — skip BT entirely
-        if (!AppSettings.isObdConnectionEnabled(this)) {
+        if (ObdStateManager.isMockMode) {
             // Respect auto-connect setting for mock mode
-            if (AppSettings.isAutoConnect(this)) {
+            if (ObdStateManager.shouldAutoConnect()) {
                 Obd2ServiceProvider.getService().connect(null)
+                ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTING)
             }
             viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, false)  // Go directly to Trip
             return

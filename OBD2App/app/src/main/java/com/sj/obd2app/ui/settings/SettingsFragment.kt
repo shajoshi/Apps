@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentSettingsBinding
 import com.sj.obd2app.databinding.ItemVehicleProfileBinding
+import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfile
 import com.sj.obd2app.settings.VehicleProfileEditSheet
@@ -157,42 +158,21 @@ class SettingsFragment : Fragment() {
     private fun restartObdService(enableObdConnection: Boolean) {
         val ctx = requireContext()
         
-        // Disconnect current service
+        // Disconnect current service to force service refresh
         com.sj.obd2app.obd.Obd2ServiceProvider.getService().disconnect()
         
-        // Update mock flag
-        com.sj.obd2app.obd.Obd2ServiceProvider.useMock = !enableObdConnection
+        // Switch mode using centralized state manager
+        val newMode = if (enableObdConnection) ObdStateManager.Mode.REAL else ObdStateManager.Mode.MOCK
+        ObdStateManager.switchMode(newMode)
         
         // Initialize mock service if needed
-        if (!enableObdConnection) {
+        if (ObdStateManager.isMockMode) {
             com.sj.obd2app.obd.Obd2ServiceProvider.initMock(ctx)
-        }
-        
-        // Notify ConnectViewModel to update UI if it exists
-        try {
-            val connectViewModel = androidx.lifecycle.ViewModelProvider(requireActivity())[com.sj.obd2app.ui.connect.ConnectViewModel::class.java]
-            connectViewModel.updateMockMode()
-            
-            // Also force a refresh if ConnectFragment is the current page
-            val mainActivity = requireActivity() as? com.sj.obd2app.MainActivity
-            val viewPager = mainActivity?.findViewById<androidx.viewpager2.widget.ViewPager2>(com.sj.obd2app.R.id.main_view_pager)
-            if (viewPager?.currentItem == com.sj.obd2app.MainPagerAdapter.PAGE_CONNECT) {
-                try {
-                    // Get the current ConnectFragment instance
-                    val connectFragment = mainActivity.supportFragmentManager.findFragmentByTag("f${viewPager.currentItem}")
-                    if (connectFragment is com.sj.obd2app.ui.connect.ConnectFragment) {
-                        connectFragment.refreshUI()
-                    }
-                } catch (e: Exception) {
-                    // ConnectFragment may not be created yet, that's fine
-                }
-            }
-        } catch (e: Exception) {
-            // ConnectFragment may not be created yet, that's fine
         }
         
         // Connect with new mode (only for real OBD mode)
         if (enableObdConnection) {
+            // Get the refreshed service (now real OBD service) and connect
             com.sj.obd2app.obd.Obd2ServiceProvider.getService().connect(null)
         }
         // Note: For mock mode, user must manually click "Mock OBD2 Adapter" to connect

@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.launch
 
@@ -29,7 +30,7 @@ import kotlinx.coroutines.launch
  */
 class ConnectViewModel : ViewModel() {
 
-    private val service = Obd2ServiceProvider.getService()
+    private val service get() = Obd2ServiceProvider.getService()
 
     private val _pairedDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
     val pairedDevices: LiveData<List<BluetoothDevice>> = _pairedDevices
@@ -74,17 +75,8 @@ class ConnectViewModel : ViewModel() {
     private val _connectionLog = MutableLiveData<List<String>>(emptyList())
     val connectionLog: LiveData<List<String>> = _connectionLog
 
-    /** LiveData to track mock mode changes */
-    private val _isMockMode = MutableLiveData(Obd2ServiceProvider.useMock)
-    val isMockMode: LiveData<Boolean> = _isMockMode
-    
     /** Current mock mode state (for immediate access) */
-    val currentMockMode: Boolean get() = Obd2ServiceProvider.useMock
-    
-    /** Call this when mock mode changes to update UI */
-    fun updateMockMode() {
-        _isMockMode.value = Obd2ServiceProvider.useMock
-    }
+    val currentMockMode: Boolean get() = ObdStateManager.isMockMode
 
     private var btAdapter: BluetoothAdapter? = null
     private val discoveredSet = mutableSetOf<String>() // MAC addresses to avoid duplicates

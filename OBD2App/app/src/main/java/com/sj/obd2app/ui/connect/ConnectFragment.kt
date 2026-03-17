@@ -9,14 +9,18 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentConnectBinding
 import com.sj.obd2app.databinding.ItemDeviceBinding
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.ui.attachNavOverflow
+import kotlinx.coroutines.launch
 
 /**
  * Connect screen — lists paired and discovered Bluetooth devices,
@@ -47,13 +51,43 @@ class ConnectFragment : Fragment() {
         binding.recyclerviewDiscovered.layoutManager = LinearLayoutManager(requireContext())
 
         // Set up UI based on current mock mode
-        setupConnectUI(viewModel.currentMockMode)
+        setupConnectUI(ObdStateManager.isMockMode)
         
-        // Observe mock mode changes to refresh UI
-        viewModel.isMockMode.observe(viewLifecycleOwner) { isMock ->
-            setupConnectUI(isMock)
-            // Reload devices when mode changes
-            viewModel.loadPairedDevices(requireContext())
+        // Observe mock mode changes from centralized state manager
+        viewLifecycleOwner.lifecycleScope.launch {
+            ObdStateManager.mode.collect { mode ->
+                val isMock = mode == ObdStateManager.Mode.MOCK
+                setupConnectUI(isMock)
+                // Reload devices when mode changes
+                viewModel.loadPairedDevices(requireContext())
+            }
+        }
+        
+        // Observe connection state from centralized state manager
+        viewLifecycleOwner.lifecycleScope.launch {
+            ObdStateManager.connectionState.collect { state ->
+                // Update UI based on connection state
+                when (state) {
+                    ObdStateManager.ConnectionState.CONNECTING -> {
+                        binding.textConnectStatus.text = "Connecting…"
+                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#FFC107"))
+                    }
+                    ObdStateManager.ConnectionState.CONNECTED -> {
+                        binding.textConnectStatus.text = "Connected"
+                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
+                        binding.btnDisconnect.visibility = View.VISIBLE
+                    }
+                    ObdStateManager.ConnectionState.DISCONNECTED -> {
+                        binding.textConnectStatus.text = "Disconnected"
+                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#888888"))
+                        binding.btnDisconnect.visibility = View.GONE
+                    }
+                    ObdStateManager.ConnectionState.ERROR -> {
+                        binding.textConnectStatus.text = "Error"
+                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#CF6679"))
+                    }
+                }
+            }
         }
         
         // Observe mock device names (only once)
@@ -61,12 +95,6 @@ class ConnectFragment : Fragment() {
             // Update adapter if it's a mock adapter
             val currentAdapter = binding.recyclerviewDevices.adapter as? MockDeviceAdapter
             currentAdapter?.submitList(names)
-        }
-        
-        // Force immediate check of LiveData value in case it was updated before fragment was created
-        if (viewModel.isMockMode.value != viewModel.currentMockMode) {
-            setupConnectUI(viewModel.isMockMode.value ?: viewModel.currentMockMode)
-            viewModel.loadPairedDevices(requireContext())
         }
 
         return binding.root
@@ -89,7 +117,9 @@ class ConnectFragment : Fragment() {
             binding.labelDiscovered.visibility = View.GONE
             binding.recyclerviewDiscovered.visibility = View.GONE
 
-            val mockAdapter = MockDeviceAdapter { viewModel.connectMock() }
+            val mockAdapter = MockDeviceAdapter { 
+                viewModel.connectMock() 
+            }
             binding.recyclerviewDevices.adapter = mockAdapter
             // Set initial data immediately
             viewModel.mockDeviceNames.value?.let { names ->
