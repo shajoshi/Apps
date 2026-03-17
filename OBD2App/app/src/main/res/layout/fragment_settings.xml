@@ -512,4 +512,19 @@
     </LinearLayout>
 </ScrollView>
 
+    <!-- Save Button (appears when changes are made) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_save_settings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:text="Save Settings"
+        android:textColor="#FFFFFF"
+        android:visibility="gone"
+        app:backgroundTint="#4FC3F7"
+        app:cornerRadius="8dp"
+        app:icon="@android:drawable/ic_menu_save"
+        app:iconTint="#FFFFFF"
+        tools:visibility="visible" />
+
 </LinearLayout>

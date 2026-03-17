@@ -1,13 +1,14 @@
 package com.sj.obd2app.metrics
 
 import android.content.Context
+import com.sj.obd2app.storage.AppDataDirectory
 import org.json.JSONObject
 
 /**
  * Persists the last-known non-null OBD2 PID values seen per vehicle profile.
  *
- * Key structure in SharedPreferences("pid_availability"):
- *   "<profileId>"  →  JSON object  { "<pid>": "<lastValue>", … }
+ * If external storage (.obd directory) is available, data is stored in per-profile JSON files.
+ * Otherwise, falls back to SharedPreferences for backward compatibility.
  *
  * A PID is considered "available for this vehicle" once it has been seen
  * with a non-empty, non-error response at least once.
@@ -25,6 +26,29 @@ object PidAvailabilityStore {
      */
     fun getKnownPids(context: Context, profileId: String?): Set<String> {
         profileId ?: return emptySet()
+        
+        return if (AppDataDirectory.isUsingExternalStorage(context)) {
+            getKnownPidsFromFile(context, profileId)
+        } else {
+            getKnownPidsFromPreferences(context, profileId)
+        }
+    }
+
+    private fun getKnownPidsFromFile(context: Context, profileId: String): Set<String> {
+        val pidsFile = AppDataDirectory.getProfilePidsFileDocumentFile(context, profileId)
+        if (pidsFile == null || !pidsFile.exists()) return emptySet()
+        
+        return try {
+            val content = context.contentResolver.openInputStream(pidsFile.uri)?.use {
+                it.readBytes().toString(Charsets.UTF_8)
+            } ?: return emptySet()
+            
+            val obj = JSONObject(content)
+            (0 until obj.length()).map { obj.names()?.getString(it) ?: "" }.filter { it.isNotEmpty() }.toSet()
+        } catch (_: Exception) { emptySet() }
+    }
+
+    private fun getKnownPidsFromPreferences(context: Context, profileId: String): Set<String> {
         val json = prefs(context).getString(profileId, null) ?: return emptySet()
         return try {
             val obj = JSONObject(json)
@@ -38,6 +62,35 @@ object PidAvailabilityStore {
      */
     fun getLastValues(context: Context, profileId: String?): Map<String, String> {
         profileId ?: return emptyMap()
+        
+        return if (AppDataDirectory.isUsingExternalStorage(context)) {
+            getLastValuesFromFile(context, profileId)
+        } else {
+            getLastValuesFromPreferences(context, profileId)
+        }
+    }
+
+    private fun getLastValuesFromFile(context: Context, profileId: String): Map<String, String> {
+        val pidsFile = AppDataDirectory.getProfilePidsFileDocumentFile(context, profileId)
+        if (pidsFile == null || !pidsFile.exists()) return emptyMap()
+        
+        return try {
+            val content = context.contentResolver.openInputStream(pidsFile.uri)?.use {
+                it.readBytes().toString(Charsets.UTF_8)
+            } ?: return emptyMap()
+            
+            val obj = JSONObject(content)
+            buildMap {
+                val names = obj.names() ?: return emptyMap()
+                for (i in 0 until names.length()) {
+                    val key = names.getString(i)
+                    put(key, obj.getString(key))
+                }
+            }
+        } catch (_: Exception) { emptyMap() }
+    }
+
+    private fun getLastValuesFromPreferences(context: Context, profileId: String): Map<String, String> {
         val json = prefs(context).getString(profileId, null) ?: return emptyMap()
         return try {
             val obj = JSONObject(json)
@@ -54,7 +107,13 @@ object PidAvailabilityStore {
     /** Returns true if at least one PID has been recorded for [profileId]. */
     fun hasData(context: Context, profileId: String?): Boolean {
         profileId ?: return false
-        return prefs(context).contains(profileId)
+        
+        return if (AppDataDirectory.isUsingExternalStorage(context)) {
+            val pidsFile = AppDataDirectory.getProfilePidsFileDocumentFile(context, profileId)
+            pidsFile != null && pidsFile.exists()
+        } else {
+            prefs(context).contains(profileId)
+        }
     }
 
     // ── Write ─────────────────────────────────────────────────────────────────
@@ -82,6 +141,24 @@ object PidAvailabilityStore {
 
         val obj = JSONObject()
         existing.forEach { (k, v) -> obj.put(k, v) }
+        
+        if (AppDataDirectory.isUsingExternalStorage(context)) {
+            updateFile(context, profileId, obj)
+        } else {
+            updatePreferences(context, profileId, obj)
+        }
+    }
+
+    private fun updateFile(context: Context, profileId: String, obj: JSONObject) {
+        val pidsFile = AppDataDirectory.getProfilePidsFileDocumentFile(context, profileId)
+        if (pidsFile != null) {
+            context.contentResolver.openOutputStream(pidsFile.uri, "wt")?.use { output ->
+                output.write(obj.toString(2).toByteArray())
+            }
+        }
+    }
+
+    private fun updatePreferences(context: Context, profileId: String, obj: JSONObject) {
         prefs(context).edit().putString(profileId, obj.toString()).apply()
     }
 
@@ -90,7 +167,11 @@ object PidAvailabilityStore {
      * Call when the user deletes or resets a vehicle profile.
      */
     fun clear(context: Context, profileId: String) {
-        prefs(context).edit().remove(profileId).apply()
+        if (AppDataDirectory.isUsingExternalStorage(context)) {
+            AppDataDirectory.deleteProfilePidsFile(context, profileId)
+        } else {
+            prefs(context).edit().remove(profileId).apply()
+        }
     }
 
     // ── Internal ──────────────────────────────────────────────────────────────

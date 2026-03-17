@@ -792,6 +792,7 @@ class DashboardEditorFragment : Fragment() {
         "DERIVED_LPK"       -> m.instantLper100km
         "DERIVED_KPL"       -> m.instantKpl
         "DERIVED_AVG_LPK"   -> m.tripAvgLper100km
+        "DERIVED_AVG_KPL"   -> m.tripAvgKpl
         "DERIVED_FUEL_USED" -> m.tripFuelUsedL
         "DERIVED_RANGE"     -> m.rangeRemainingKm
         "DERIVED_FUEL_COST" -> m.fuelCostEstimate

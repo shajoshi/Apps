@@ -120,6 +120,7 @@ class Step2MetricPage : Fragment() {
                 DashboardMetric.DerivedMetric("DERIVED_LPK",       "Instant Consumption",   "L/100km"),
                 DashboardMetric.DerivedMetric("DERIVED_KPL",       "Instant Efficiency",    "km/L"),
                 DashboardMetric.DerivedMetric("DERIVED_AVG_LPK",   "Trip Avg Consumption",  "L/100km"),
+                DashboardMetric.DerivedMetric("DERIVED_AVG_KPL",   "Trip Avg Efficiency",   "km/L"),
                 DashboardMetric.DerivedMetric("DERIVED_FUEL_USED", "Trip Fuel Used",        "L"),
                 DashboardMetric.DerivedMetric("DERIVED_RANGE",     "Range Remaining",       "km"),
                 DashboardMetric.DerivedMetric("DERIVED_FUEL_COST", "Fuel Cost",             "")

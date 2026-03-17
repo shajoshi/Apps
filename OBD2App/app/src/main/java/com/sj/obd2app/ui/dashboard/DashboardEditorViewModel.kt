@@ -106,14 +106,8 @@ class DashboardEditorViewModel : ViewModel() {
         val newZ = (layout.widgets.maxOfOrNull { it.zOrder } ?: -1) + 1
         val defaults = MetricDefaults.get(metric)
 
-        // Place at canvas center; fall back to first free slot if canvas size unknown
-        val (slotX, slotY) = if (canvasGridW > 0 && canvasGridH > 0) {
-            val cx = ((canvasGridW - gridW) / 2).coerceAtLeast(0)
-            val cy = ((canvasGridH - gridH) / 2).coerceAtLeast(0)
-            cx to cy
-        } else {
-            findFirstFreeSlot(layout, gridW, gridH)
-        }
+        // Always place at first free slot to avoid overlaps
+        val (slotX, slotY) = findFirstFreeSlot(layout, gridW, gridH)
 
         val newWidget = DashboardWidget(
             id = UUID.randomUUID().toString(),
@@ -262,15 +256,23 @@ class DashboardEditorViewModel : ViewModel() {
     ) {
         val layout = _currentLayout.value
         val updated = layout.widgets.map { w ->
-            if (w.id == widgetId) w.copy(
-                rangeMin = rangeMin,
-                rangeMax = rangeMax,
-                majorTickInterval = majorTickInterval,
-                minorTickCount = minorTickCount,
-                warningThreshold = warningThreshold,
-                decimalPlaces = decimalPlaces,
-                displayUnit = displayUnit
-            ) else w
+            if (w.id == widgetId) {
+                w.copy(
+                    gridX = w.gridX,  // Preserve position
+                    gridY = w.gridY,  // Preserve position
+                    gridW = w.gridW,  // Preserve size
+                    gridH = w.gridH,  // Preserve size
+                    zOrder = w.zOrder,  // Preserve drawing order
+                    alpha = w.alpha,  // Preserve transparency
+                    rangeMin = rangeMin,
+                    rangeMax = rangeMax,
+                    majorTickInterval = majorTickInterval,
+                    minorTickCount = minorTickCount,
+                    warningThreshold = warningThreshold,
+                    decimalPlaces = decimalPlaces,
+                    displayUnit = displayUnit
+                )
+            } else w
         }
         _currentLayout.value = layout.copy(widgets = updated)
     }
@@ -278,6 +280,7 @@ class DashboardEditorViewModel : ViewModel() {
     /** Updates all user-editable properties of a widget, including size preset. */
     fun updateWidgetProperties(
         widgetId: String,
+        metric: DashboardMetric,
         rangeMin: Float,
         rangeMax: Float,
         majorTickInterval: Float,
@@ -288,9 +291,15 @@ class DashboardEditorViewModel : ViewModel() {
         gridW: Int,
         gridH: Int
     ) {
+        snapshot()  // Create undo point before editing
         val layout = _currentLayout.value
         val updated = layout.widgets.map { w ->
             if (w.id == widgetId) w.copy(
+                metric            = metric,
+                gridX             = w.gridX,  // Preserve position
+                gridY             = w.gridY,  // Preserve position
+                zOrder            = w.zOrder, // Preserve drawing order
+                alpha             = w.alpha,  // Preserve transparency
                 rangeMin          = rangeMin,
                 rangeMax          = rangeMax,
                 majorTickInterval = majorTickInterval,

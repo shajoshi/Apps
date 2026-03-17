@@ -203,6 +203,12 @@ object MetricDefaults {
             warningThreshold = null, decimalPlaces = 1,
             displayUnit = "L/100km", suggestedWidgetType = WidgetType.NUMERIC_DISPLAY
         ),
+        "DERIVED_AVG_KPL" to MetricConfig(
+            rangeMin = 0f, rangeMax = 30f,
+            majorTickInterval = 5f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "km/L", suggestedWidgetType = WidgetType.NUMERIC_DISPLAY
+        ),
         "DERIVED_FUEL_USED" to MetricConfig(
             rangeMin = 0f, rangeMax = 60f,
             majorTickInterval = 10f, minorTickCount = 4,

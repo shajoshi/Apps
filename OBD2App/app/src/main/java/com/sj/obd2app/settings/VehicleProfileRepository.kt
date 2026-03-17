@@ -2,12 +2,15 @@ package com.sj.obd2app.settings
 
 import android.content.Context
 import com.sj.obd2app.metrics.PidAvailabilityStore
+import com.sj.obd2app.storage.AppDataDirectory
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * CRUD repository for [VehicleProfile] objects.
- * Profiles are serialised as a JSON array in SharedPreferences("obd2_prefs").
+ * 
+ * If external storage (.obd directory) is available, profiles are stored as individual JSON files.
+ * Otherwise, falls back to SharedPreferences for backward compatibility.
  */
 class VehicleProfileRepository private constructor(private val context: Context) {
 
@@ -29,6 +32,28 @@ class VehicleProfileRepository private constructor(private val context: Context)
     // ── Read ──────────────────────────────────────────────────────────────────
 
     fun getAll(): List<VehicleProfile> {
+        return if (AppDataDirectory.isUsingExternalStorage(context)) {
+            getAllFromFiles()
+        } else {
+            getAllFromPreferences()
+        }
+    }
+
+    private fun getAllFromFiles(): List<VehicleProfile> {
+        val profileFiles = AppDataDirectory.listProfileFilesDocumentFile(context)
+        return profileFiles.mapNotNull { file ->
+            try {
+                val content = context.contentResolver.openInputStream(file.uri)?.use {
+                    it.readBytes().toString(Charsets.UTF_8)
+                }
+                content?.let { JSONObject(it).toProfile() }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun getAllFromPreferences(): List<VehicleProfile> {
         val json = prefs.getString(KEY_PROFILES, null) ?: return emptyList()
         return try {
             val arr = JSONArray(json)
@@ -49,19 +74,50 @@ class VehicleProfileRepository private constructor(private val context: Context)
     // ── Write ─────────────────────────────────────────────────────────────────
 
     fun save(profile: VehicleProfile) {
-        val all = getAll().toMutableList()
+        if (AppDataDirectory.isUsingExternalStorage(context)) {
+            saveToFile(profile)
+        } else {
+            saveToPreferences(profile)
+        }
+    }
+
+    private fun saveToFile(profile: VehicleProfile) {
+        val profileFile = AppDataDirectory.getProfileFileDocumentFile(context, profile.id)
+        if (profileFile != null) {
+            val json = profile.toJson()
+            context.contentResolver.openOutputStream(profileFile.uri, "wt")?.use { output ->
+                output.write(json.toString(2).toByteArray())
+            }
+        }
+    }
+
+    private fun saveToPreferences(profile: VehicleProfile) {
+        val all = getAllFromPreferences().toMutableList()
         val idx = all.indexOfFirst { it.id == profile.id }
         if (idx >= 0) all[idx] = profile else all.add(profile)
-        persist(all)
+        persistToPreferences(all)
     }
 
     fun delete(id: String) {
-        val all = getAll().filter { it.id != id }
-        persist(all)
+        if (AppDataDirectory.isUsingExternalStorage(context)) {
+            deleteFromFile(id)
+        } else {
+            deleteFromPreferences(id)
+        }
+        
         if (AppSettings.getActiveProfileId(context) == id) {
-            AppSettings.setActiveProfileId(context, all.firstOrNull()?.id)
+            AppSettings.setActiveProfileId(context, getAll().firstOrNull()?.id)
         }
         PidAvailabilityStore.clear(context, id)
+    }
+
+    private fun deleteFromFile(id: String) {
+        AppDataDirectory.deleteProfileFile(context, id)
+    }
+
+    private fun deleteFromPreferences(id: String) {
+        val all = getAllFromPreferences().filter { it.id != id }
+        persistToPreferences(all)
     }
 
     fun setActive(id: String) {
@@ -70,7 +126,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
 
     // ── Serialisation ─────────────────────────────────────────────────────────
 
-    private fun persist(profiles: List<VehicleProfile>) {
+    private fun persistToPreferences(profiles: List<VehicleProfile>) {
         val arr = JSONArray()
         profiles.forEach { arr.put(it.toJson()) }
         prefs.edit().putString(KEY_PROFILES, arr.toString()).apply()

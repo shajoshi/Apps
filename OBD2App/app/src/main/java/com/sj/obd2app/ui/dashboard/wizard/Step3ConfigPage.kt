@@ -101,21 +101,26 @@ class Step3ConfigPage : Fragment() {
     }
 
     /**
-     * Hides fields that are not applicable to the chosen widget type:
-     * - SEVEN_SEGMENT / NUMERIC_DISPLAY: tick marks and warning threshold are unused
-     * - BAR_GAUGE_H / BAR_GAUGE_V: warning threshold only; ticks row still useful
+     * Show/hide rows that are not relevant for the selected widget type.
+     * - SEVEN_SEGMENT: tick marks and warning threshold are unused (7-segment can't change colors)
+     * - NUMERIC_DISPLAY: warning threshold useful for font color changes; tick marks not needed
+     * - BAR_GAUGE_H / BAR_GAUGE_V: warning threshold useful for bar color changes; tick marks not needed
+     * - GAUGE types: both tick marks and warning threshold are useful
      */
     private fun applyFieldVisibility(type: WidgetType?) {
         when (type?.canonical()) {
-            WidgetType.SEVEN_SEGMENT,
+            WidgetType.SEVEN_SEGMENT -> {
+                rowTicks.visibility          = View.GONE
+                rowWarningDecimals.visibility = View.GONE  // 7-segment can't change colors
+            }
             WidgetType.NUMERIC_DISPLAY -> {
                 rowTicks.visibility          = View.GONE
-                rowWarningDecimals.visibility = View.GONE
+                rowWarningDecimals.visibility = View.VISIBLE  // Can change font color when threshold exceeded
             }
             WidgetType.BAR_GAUGE_H,
             WidgetType.BAR_GAUGE_V -> {
-                rowTicks.visibility          = View.VISIBLE
-                rowWarningDecimals.visibility = View.GONE
+                rowTicks.visibility          = View.GONE  // Bar gauges don't need tick marks
+                rowWarningDecimals.visibility = View.VISIBLE  // Can change bar color when threshold exceeded
             }
             else -> {
                 rowTicks.visibility          = View.VISIBLE

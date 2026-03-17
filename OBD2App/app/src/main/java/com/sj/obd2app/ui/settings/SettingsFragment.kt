@@ -28,6 +28,7 @@ class SettingsFragment : Fragment() {
 
     private lateinit var repo: VehicleProfileRepository
     private lateinit var profileAdapter: ProfileAdapter
+    private var hasUnsavedChanges = false
 
     /** Polling seekbar: maps 0..999 → 2ms..2000ms (step 2ms) */
     private fun seekToPollingMs(progress: Int): Long = (2L + progress * 2L)
@@ -67,6 +68,7 @@ class SettingsFragment : Fragment() {
         binding.topBarInclude.txtTopBarTitle.text = getString(R.string.menu_settings)
         attachNavOverflow(binding.topBarInclude.btnTopOverflow)
 
+        setupSaveButton()
         setupProfileList()
         setupPollingSliders()
         setupConnectionToggles()
@@ -76,6 +78,98 @@ class SettingsFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         profileAdapter.refresh()
+        loadCurrentSettings()
+        updateSaveButtonVisibility()
+    }
+
+    // ── Save/Discard ─────────────────────────────────────────────────────────
+
+    private fun setupSaveButton() {
+        binding.btnSaveSettings.setOnClickListener {
+            saveSettings()
+        }
+        updateSaveButtonVisibility()
+    }
+
+    private fun markAsChanged() {
+        hasUnsavedChanges = true
+        updateSaveButtonVisibility()
+    }
+
+    private fun updateSaveButtonVisibility() {
+        binding.btnSaveSettings.visibility = if (hasUnsavedChanges) View.VISIBLE else View.GONE
+    }
+
+    private fun loadCurrentSettings() {
+        val ctx = requireContext()
+        
+        // Load current values without marking as changed
+        val pollingMs = AppSettings.getGlobalPollingDelayMs(ctx)
+        binding.seekbarPolling.progress = pollingMsToSeek(pollingMs)
+        binding.tvPollingValue.text = "${pollingMs}ms"
+
+        val commandMs = AppSettings.getGlobalCommandDelayMs(ctx)
+        binding.seekbarCommand.progress = commandMsToSeek(commandMs)
+        binding.tvCommandValue.text = "${commandMs}ms"
+
+        binding.switchObdConnection.isChecked = AppSettings.isObdConnectionEnabled(ctx)
+        binding.switchAutoConnect.isChecked = AppSettings.isAutoConnect(ctx)
+        binding.switchLoggingEnabled.isChecked = AppSettings.isLoggingEnabled(ctx)
+        binding.switchAutoShareLog.isChecked = AppSettings.isAutoShareLogEnabled(ctx)
+        
+        val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
+        if (accelAvailable) {
+            binding.switchAccelerometerEnabled.isChecked = AppSettings.isAccelerometerEnabled(ctx)
+        }
+    }
+
+    private fun saveSettings() {
+        val ctx = requireContext()
+        
+        // Check if OBD connection setting is changing
+        val oldObdEnabled = AppSettings.isObdConnectionEnabled(ctx)
+        val newObdEnabled = binding.switchObdConnection.isChecked
+        val obdSettingChanged = oldObdEnabled != newObdEnabled
+        
+        AppSettings.updatePendingSettings(ctx) { settings ->
+            settings.globalPollingDelayMs = seekToPollingMs(binding.seekbarPolling.progress)
+            settings.globalCommandDelayMs = seekToCommandMs(binding.seekbarCommand.progress)
+            settings.obdConnectionEnabled = newObdEnabled
+            settings.autoConnect = binding.switchAutoConnect.isChecked
+            settings.loggingEnabled = binding.switchLoggingEnabled.isChecked
+            settings.autoShareLog = binding.switchAutoShareLog.isChecked
+            settings.accelerometerEnabled = binding.switchAccelerometerEnabled.isChecked
+        }
+        
+        AppSettings.savePendingSettings(ctx)
+        hasUnsavedChanges = false
+        updateSaveButtonVisibility()
+        
+        // Restart OBD service if setting changed
+        if (obdSettingChanged) {
+            restartObdService(newObdEnabled)
+            Toast.makeText(ctx, "Settings saved - OBD mode updated", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(ctx, "Settings saved", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun restartObdService(enableObdConnection: Boolean) {
+        val ctx = requireContext()
+        
+        // Disconnect current service
+        com.sj.obd2app.obd.Obd2ServiceProvider.getService().disconnect()
+        
+        // Update mock flag
+        com.sj.obd2app.obd.Obd2ServiceProvider.useMock = !enableObdConnection
+        
+        // Initialize mock service if needed
+        if (!enableObdConnection) {
+            com.sj.obd2app.obd.Obd2ServiceProvider.initMock(ctx)
+        }
+        
+        // Connect with new mode
+        com.sj.obd2app.obd.Obd2ServiceProvider.getService().connect(null)
     }
 
     // ── Vehicle Profiles ─────────────────────────────────────────────────────
@@ -123,7 +217,7 @@ class SettingsFragment : Fragment() {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
                 val ms = seekToPollingMs(progress)
                 binding.tvPollingValue.text = "${ms}ms"
-                if (fromUser) AppSettings.setGlobalPollingDelayMs(ctx, ms)
+                if (fromUser) markAsChanged()
             }
             override fun onStartTrackingTouch(sb: SeekBar) {}
             override fun onStopTrackingTouch(sb: SeekBar) {}
@@ -133,7 +227,7 @@ class SettingsFragment : Fragment() {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
                 val ms = seekToCommandMs(progress)
                 binding.tvCommandValue.text = "${ms}ms"
-                if (fromUser) AppSettings.setGlobalCommandDelayMs(ctx, ms)
+                if (fromUser) markAsChanged()
             }
             override fun onStartTrackingTouch(sb: SeekBar) {}
             override fun onStopTrackingTouch(sb: SeekBar) {}
@@ -145,37 +239,18 @@ class SettingsFragment : Fragment() {
     private fun setupConnectionToggles() {
         val ctx = requireContext()
 
-        binding.switchObdConnection.isChecked = AppSettings.isObdConnectionEnabled(ctx)
-        binding.switchObdConnection.setOnCheckedChangeListener { _, checked ->
-            AppSettings.setObdConnectionEnabled(ctx, checked)
-        }
-
-        binding.switchAutoConnect.isChecked = AppSettings.isAutoConnect(ctx)
-        binding.switchAutoConnect.setOnCheckedChangeListener { _, checked ->
-            AppSettings.setAutoConnect(ctx, checked)
-        }
-
-        binding.switchLoggingEnabled.isChecked = AppSettings.isLoggingEnabled(ctx)
-        binding.switchLoggingEnabled.setOnCheckedChangeListener { _, checked ->
-            AppSettings.setLoggingEnabled(ctx, checked)
-        }
-
-        binding.switchAutoShareLog.isChecked = AppSettings.isAutoShareLogEnabled(ctx)
-        binding.switchAutoShareLog.setOnCheckedChangeListener { _, checked ->
-            AppSettings.setAutoShareLogEnabled(ctx, checked)
-        }
+        binding.switchObdConnection.setOnCheckedChangeListener { _, _ -> markAsChanged() }
+        binding.switchAutoConnect.setOnCheckedChangeListener { _, _ -> markAsChanged() }
+        binding.switchLoggingEnabled.setOnCheckedChangeListener { _, _ -> markAsChanged() }
+        binding.switchAutoShareLog.setOnCheckedChangeListener { _, _ -> markAsChanged() }
 
         val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
         if (!accelAvailable) {
-            binding.switchAccelerometerEnabled.isChecked = false
             binding.switchAccelerometerEnabled.isEnabled = false
             binding.tvAccelerometerLabel.text = "Log accelerometer data (no sensor)"
             binding.tvAccelerometerLabel.setTextColor(android.graphics.Color.parseColor("#888888"))
         } else {
-            binding.switchAccelerometerEnabled.isChecked = AppSettings.isAccelerometerEnabled(ctx)
-            binding.switchAccelerometerEnabled.setOnCheckedChangeListener { _, checked ->
-                AppSettings.setAccelerometerEnabled(ctx, checked)
-            }
+            binding.switchAccelerometerEnabled.setOnCheckedChangeListener { _, _ -> markAsChanged() }
         }
     }
 

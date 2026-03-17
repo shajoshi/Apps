@@ -2,7 +2,10 @@ package com.sj.obd2app.ui.dashboard.data
 
 import android.content.Context
 import androidx.core.content.FileProvider
+import androidx.documentfile.provider.DocumentFile
 import com.google.gson.*
+import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.storage.AppDataDirectory
 import com.sj.obd2app.ui.dashboard.model.DashboardLayout
 import com.sj.obd2app.ui.dashboard.model.DashboardMetric
 import com.sj.obd2app.ui.dashboard.model.DashboardOrientation
@@ -10,10 +13,15 @@ import java.io.File
 import java.lang.reflect.Type
 
 /**
- * Handles saving and loading DashboardLayout instances to/from JSON files
- * using Google's Gson library.
+ * Handles saving and loading DashboardLayout instances to/from JSON files.
+ * 
+ * If external storage (.obd directory) is available, layouts are stored there.
+ * Otherwise, falls back to app-private storage for backward compatibility.
  */
 class LayoutRepository(private val context: Context) {
+
+    private val useExternalStorage: Boolean
+        get() = AppDataDirectory.isUsingExternalStorage(context)
 
     private val layoutsDir = File(context.filesDir, "layouts").apply {
         if (!exists()) mkdirs()
@@ -26,27 +34,70 @@ class LayoutRepository(private val context: Context) {
         .create()
 
     /**
-     * Serialise the layout to a JSON file in the private app storage.
+     * Serialise the layout to a JSON file.
      */
     fun saveLayout(layout: DashboardLayout): Result<File> {
         return try {
             val json = gson.toJson(layout)
-            // Use alpha-numeric name to prevent path injection
-            val safeName = layout.name.replace(Regex("[^A-Za-z0-9 _-]"), "")
-            val file = File(layoutsDir, "$safeName.json")
-            file.writeText(json)
-            Result.success(file)
+            
+            if (useExternalStorage) {
+                saveToExternalStorage(layout.name, json)
+            } else {
+                saveToAppStorage(layout.name, json)
+            }
+            
+            Result.success(File("")) // Return dummy file for compatibility
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    private fun saveToExternalStorage(layoutName: String, json: String) {
+        val layoutFile = AppDataDirectory.getLayoutFileDocumentFile(context, layoutName)
+        if (layoutFile != null) {
+            context.contentResolver.openOutputStream(layoutFile.uri, "wt")?.use { output ->
+                output.write(json.toByteArray())
+            }
+        }
+    }
+
+    private fun saveToAppStorage(layoutName: String, json: String) {
+        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "")
+        val file = File(layoutsDir, "$safeName.json")
+        file.writeText(json)
+    }
+
     /**
-     * Deserialize all JSON layouts from the local directory.
+     * Deserialize all JSON layouts.
      * Legacy WidgetType names (REV_COUNTER, SPEEDOMETER_7SEG, FUEL_BAR, IFC_BAR) are
      * automatically migrated to their canonical equivalents on load.
      */
     fun getSavedLayouts(): List<DashboardLayout> {
+        return if (useExternalStorage) {
+            getLayoutsFromExternalStorage()
+        } else {
+            getLayoutsFromAppStorage()
+        }
+    }
+
+    private fun getLayoutsFromExternalStorage(): List<DashboardLayout> {
+        val files = AppDataDirectory.listLayoutFilesDocumentFile(context)
+        return files.mapNotNull { file ->
+            try {
+                val content = context.contentResolver.openInputStream(file.uri)?.use {
+                    it.readBytes().toString(Charsets.UTF_8)
+                }
+                content?.let {
+                    val layout = gson.fromJson(it, DashboardLayout::class.java)
+                    migrateLegacyTypes(layout)
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun getLayoutsFromAppStorage(): List<DashboardLayout> {
         val files = layoutsDir.listFiles { _, name -> name.endsWith(".json") } ?: return emptyList()
         return files.mapNotNull { file ->
             try {
@@ -80,28 +131,25 @@ class LayoutRepository(private val context: Context) {
     }
 
     fun deleteLayout(name: String) {
-        val safeName = name.replace(Regex("[^A-Za-z0-9 _-]"), "")
-        val file = File(layoutsDir, "$safeName.json")
-        if (file.exists()) file.delete()
+        if (useExternalStorage) {
+            AppDataDirectory.deleteLayoutFile(context, name)
+        } else {
+            val safeName = name.replace(Regex("[^A-Za-z0-9 _-]"), "")
+            val file = File(layoutsDir, "$safeName.json")
+            if (file.exists()) file.delete()
+        }
+        
         if (getDefaultLayoutName() == name) clearDefaultLayout()
     }
 
     fun getDefaultLayoutName(): String? =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_DEFAULT_LAYOUT, null)
+        AppSettings.getDefaultLayoutName(context)
 
     fun setDefaultLayoutName(name: String) =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_DEFAULT_LAYOUT, name).apply()
+        AppSettings.setDefaultLayoutName(context, name)
 
     fun clearDefaultLayout() =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().remove(KEY_DEFAULT_LAYOUT).apply()
-
-    companion object {
-        private const val PREFS_NAME = "dashboard_prefs"
-        private const val KEY_DEFAULT_LAYOUT = "default_layout_name"
-    }
+        AppSettings.setDefaultLayoutName(context, null)
 }
 
 /**

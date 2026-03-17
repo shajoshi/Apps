@@ -14,8 +14,17 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.sj.obd2app.R
 import com.sj.obd2app.ui.dashboard.model.DashboardWidget
+import com.sj.obd2app.ui.dashboard.model.DashboardMetric
 import com.sj.obd2app.ui.dashboard.model.WidgetType
+import com.sj.obd2app.ui.dashboard.model.MetricDefaults
 import com.sj.obd2app.ui.dashboard.wizard.SizePreset
+import com.sj.obd2app.ui.dashboard.MetricListAdapter
+import com.sj.obd2app.ui.dashboard.MetricListItem
+import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.metrics.PidAvailabilityStore
+import com.sj.obd2app.settings.VehicleProfileRepository
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 /**
  * Bottom-sheet dialog that lets the user edit an existing widget's properties:
@@ -52,6 +61,11 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     private lateinit var tvSizeHint: TextView
     private lateinit var rowTicks: LinearLayout
     private lateinit var rowWarningDecimals: LinearLayout
+    private lateinit var tvCurrentMetric: TextView
+    private var metricSelectionDialog: androidx.appcompat.app.AlertDialog? = null
+    
+    // Working copy of the editable values
+    private var currentMetric: DashboardMetric? = null
 
     // Working copy of the editable values
     private var rangeMin = 0f
@@ -105,8 +119,10 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         tvSizeHint        = view.findViewById(R.id.tv_size_hint)
         rowTicks          = view.findViewById(R.id.row_ticks)
         rowWarningDecimals = view.findViewById(R.id.row_warning_decimals)
+        tvCurrentMetric   = view.findViewById(R.id.tv_current_metric)
 
         // Initialise working copy from widget
+        currentMetric     = widget.metric
         rangeMin          = widget.rangeMin
         rangeMax          = widget.rangeMax
         majorTickInterval = widget.majorTickInterval
@@ -116,6 +132,10 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         displayUnit       = widget.displayUnit
         gridW             = widget.gridW
         gridH             = widget.gridH
+        
+        // Setup metric selection
+        updateMetricDisplay()
+        tvCurrentMetric.setOnClickListener { showMetricSelectionDialog() }
 
         // Pre-fill fields
         etMin.setText(formatFloat(rangeMin))
@@ -164,6 +184,7 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         view.findViewById<Button>(R.id.btn_edit_save).setOnClickListener {
             viewModel.updateWidgetProperties(
                 widgetId      = widgetId,
+                metric        = currentMetric!!,
                 rangeMin      = rangeMin,
                 rangeMax      = rangeMax,
                 majorTickInterval = majorTickInterval,
@@ -181,15 +202,18 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
 
     private fun applyFieldVisibility(type: WidgetType) {
         when (type.canonical()) {
-            WidgetType.SEVEN_SEGMENT,
+            WidgetType.SEVEN_SEGMENT -> {
+                rowTicks.visibility           = View.GONE
+                rowWarningDecimals.visibility = View.GONE  // Seven segment doesn't support warning colors
+            }
             WidgetType.NUMERIC_DISPLAY -> {
                 rowTicks.visibility           = View.GONE
-                rowWarningDecimals.visibility = View.GONE
+                rowWarningDecimals.visibility = View.VISIBLE  // Can change font color when threshold exceeded
             }
             WidgetType.BAR_GAUGE_H,
             WidgetType.BAR_GAUGE_V -> {
-                rowTicks.visibility           = View.VISIBLE
-                rowWarningDecimals.visibility = View.GONE
+                rowTicks.visibility           = View.GONE  // Bar gauges don't need tick marks
+                rowWarningDecimals.visibility = View.VISIBLE  // Can change bar color when threshold exceeded
             }
             else -> {
                 rowTicks.visibility           = View.VISIBLE
@@ -206,6 +230,154 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         }
     }
 
+    private fun updateMetricDisplay() {
+        currentMetric?.let { metric ->
+            tvCurrentMetric.text = when (metric) {
+                is DashboardMetric.Obd2Pid -> "${metric.name} (${metric.pid})"
+                is DashboardMetric.GpsSpeed -> "GPS Speed"
+                is DashboardMetric.GpsAltitude -> "GPS Altitude"
+                is DashboardMetric.DerivedMetric -> metric.name
+            }
+        }
+    }
+    
+    private fun showMetricSelectionDialog() {
+        val ctx = requireContext()
+        val metrics = buildMetricItems()
+        
+        // Create dialog with RecyclerView
+        val dialogView = LayoutInflater.from(ctx).inflate(R.layout.dialog_metric_selection, null)
+        val recyclerView = dialogView.findViewById<RecyclerView>(R.id.rv_metrics)
+        recyclerView.layoutManager = LinearLayoutManager(ctx)
+        
+        // PIDs seen live in this session
+        val livePids = Obd2ServiceProvider.getService().obd2Data.value.map { it.pid }.toSet()
+        
+        // PIDs ever confirmed for the active vehicle profile
+        val activeProfileId = VehicleProfileRepository.getInstance(ctx).activeProfile?.id
+        val profileKnownPids = PidAvailabilityStore.getKnownPids(ctx, activeProfileId)
+        val profileLastValues = PidAvailabilityStore.getLastValues(ctx, activeProfileId)
+        val hasProfileData = PidAvailabilityStore.hasData(ctx, activeProfileId)
+        
+        val adapter = MetricListAdapter(
+            items = metrics,
+            livePids = livePids,
+            profileKnownPids = profileKnownPids,
+            profileLastValues = profileLastValues,
+            hasProfileData = hasProfileData,
+            selected = currentMetric,
+            onSelect = { metric ->
+                currentMetric = metric
+                updateMetricDisplay()
+                
+                // Update scale defaults for new metric
+                val defaults = MetricDefaults.get(metric)
+                rangeMin = defaults.rangeMin
+                rangeMax = defaults.rangeMax
+                majorTickInterval = defaults.majorTickInterval
+                minorTickCount = defaults.minorTickCount
+                warningThreshold = defaults.warningThreshold
+                decimalPlaces = defaults.decimalPlaces
+                displayUnit = defaults.displayUnit
+                
+                // Update UI fields
+                etMin.setText(formatFloat(rangeMin))
+                etMax.setText(formatFloat(rangeMax))
+                etMajorTick.setText(formatFloat(majorTickInterval))
+                etMinorTicks.setText(minorTickCount.toString())
+                etWarning.setText(warningThreshold?.let { formatFloat(it) } ?: "")
+                etDecimalPlaces.setText(decimalPlaces.toString())
+                etDisplayUnit.setText(displayUnit)
+                
+                metricSelectionDialog?.dismiss()
+            }
+        )
+        recyclerView.adapter = adapter
+        
+        metricSelectionDialog = androidx.appcompat.app.AlertDialog.Builder(ctx)
+            .setTitle("Select Data Source")
+            .setView(dialogView)
+            .setNegativeButton("Cancel", null)
+            .create()
+        
+        metricSelectionDialog?.show()
+    }
+    
+    private fun buildMetricItems(): List<MetricListItem> {
+        val items = mutableListOf<MetricListItem>()
+        data class Group(val header: String, val metrics: List<DashboardMetric>)
+        val groups = listOf(
+            Group("OBD-II — Engine", listOf(
+                DashboardMetric.Obd2Pid("010C", "Engine RPM", "rpm"),
+                DashboardMetric.Obd2Pid("0104", "Engine Load", "%"),
+                DashboardMetric.Obd2Pid("0111", "Throttle Position", "%"),
+                DashboardMetric.Obd2Pid("010E", "Timing Advance", "° BTDC"),
+                DashboardMetric.Obd2Pid("015C", "Oil Temperature", "°C"),
+                DashboardMetric.Obd2Pid("011F", "Run Time Since Start", "sec")
+            )),
+            Group("OBD-II — Speed & Distance", listOf(
+                DashboardMetric.Obd2Pid("010D", "Vehicle Speed", "km/h"),
+                DashboardMetric.Obd2Pid("0121", "Distance with MIL On", "km"),
+                DashboardMetric.Obd2Pid("0131", "Distance Since Codes Cleared", "km")
+            )),
+            Group("OBD-II — Fuel", listOf(
+                DashboardMetric.Obd2Pid("012F", "Fuel Tank Level", "%"),
+                DashboardMetric.Obd2Pid("010A", "Fuel Pressure", "kPa"),
+                DashboardMetric.Obd2Pid("015E", "Engine Fuel Rate", "L/h"),
+                DashboardMetric.Obd2Pid("0110", "MAF", "g/s"),
+                DashboardMetric.Obd2Pid("0151", "Fuel Type", ""),
+                DashboardMetric.Obd2Pid("0146", "A/F Ratio", ""),
+                DashboardMetric.Obd2Pid("0144", "Commanded Equivalence Ratio", "")
+            )),
+            Group("OBD-II — Intake & Air", listOf(
+                DashboardMetric.Obd2Pid("010B", "Intake Manifold Pressure", "kPa"),
+                DashboardMetric.Obd2Pid("010F", "Intake Air Temperature", "°C"),
+                DashboardMetric.Obd2Pid("0110", "MAF", "g/s"),
+                DashboardMetric.Obd2Pid("0166", "Ambient Air Temperature", "°C")
+            )),
+            Group("OBD-II — System", listOf(
+                DashboardMetric.Obd2Pid("0105", "Engine Coolant Temperature", "°C"),
+                DashboardMetric.Obd2Pid("0101", "Monitor Status", ""),
+                DashboardMetric.Obd2Pid("0143", "Fuel System Status", ""),
+                DashboardMetric.Obd2Pid("0106", "Short Term Fuel Trim 1", "%"),
+                DashboardMetric.Obd2Pid("0107", "Long Term Fuel Trim 1", "%"),
+                DashboardMetric.Obd2Pid("0108", "Short Term Fuel Trim 2", "%"),
+                DashboardMetric.Obd2Pid("0109", "Long Term Fuel Trim 2", "%")
+            )),
+            Group("GPS", listOf(
+                DashboardMetric.GpsSpeed,
+                DashboardMetric.GpsAltitude
+            )),
+            Group("Derived — Fuel Efficiency", listOf(
+                DashboardMetric.DerivedMetric("DERIVED_LPK",       "Instant Consumption",   "L/100km"),
+                DashboardMetric.DerivedMetric("DERIVED_KPL",       "Instant Efficiency",    "km/L"),
+                DashboardMetric.DerivedMetric("DERIVED_AVG_LPK",   "Trip Avg Consumption",  "L/100km"),
+                DashboardMetric.DerivedMetric("DERIVED_AVG_KPL",   "Trip Avg Efficiency",   "km/L"),
+                DashboardMetric.DerivedMetric("DERIVED_FUEL_USED", "Trip Fuel Used",        "L"),
+                DashboardMetric.DerivedMetric("DERIVED_RANGE",     "Range Remaining",       "km"),
+                DashboardMetric.DerivedMetric("DERIVED_FUEL_COST", "Fuel Cost",             "")
+            )),
+            Group("Derived — Trip Computer", listOf(
+                DashboardMetric.DerivedMetric("DERIVED_TRIP_DIST", "Trip Distance",         "km"),
+                DashboardMetric.DerivedMetric("DERIVED_TRIP_TIME", "Trip Time",             "sec"),
+                DashboardMetric.DerivedMetric("DERIVED_AVG_SPD",   "Trip Avg Speed",        "km/h"),
+                DashboardMetric.DerivedMetric("DERIVED_MAX_SPD",   "Trip Max Speed",        "km/h")
+            )),
+            Group("Derived — Emissions & Drive", listOf(
+                DashboardMetric.DerivedMetric("DERIVED_CO2",       "Avg CO₂",               "g/km"),
+                DashboardMetric.DerivedMetric("DERIVED_PCT_CITY",  "% City Driving",        "%"),
+                DashboardMetric.DerivedMetric("DERIVED_PCT_IDLE",  "% Idle",                "%")
+            ))
+        )
+        
+        for (group in groups) {
+            items.add(MetricListItem.Header(group.header))
+            items.addAll(group.metrics.map { MetricListItem.Entry(it) })
+        }
+        
+        return items
+    }
+    
     private fun formatFloat(f: Float): String =
         if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
 }

@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
+import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.launch
 
 /**
@@ -224,11 +225,7 @@ class ConnectViewModel : ViewModel() {
 
     @SuppressLint("MissingPermission")
     private fun saveLastDevice(context: Context, device: BluetoothDevice) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(KEY_LAST_DEVICE_MAC, device.address)
-            .putString(KEY_LAST_DEVICE_NAME, device.name ?: "Unknown")
-            .apply()
+        AppSettings.setLastDevice(context, device.address, device.name ?: "Unknown")
     }
 
     /**
@@ -243,8 +240,7 @@ class ConnectViewModel : ViewModel() {
             service.connectionState.value == Obd2Service.ConnectionState.CONNECTING
         ) return false
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val lastMac = prefs.getString(KEY_LAST_DEVICE_MAC, null) ?: return false
+        val lastMac = AppSettings.getLastDeviceMac(context) ?: return false
 
         // Look for the device in paired list first
         val device = _pairedDevices.value?.find { it.address == lastMac }
@@ -265,8 +261,7 @@ class ConnectViewModel : ViewModel() {
     }
 
     fun getLastDeviceName(context: Context): String? {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_LAST_DEVICE_NAME, null)
+        return AppSettings.getLastDeviceName(context)
     }
 
     @SuppressLint("MissingPermission")
@@ -276,10 +271,10 @@ class ConnectViewModel : ViewModel() {
     }
 
     companion object {
-        private const val PREFS_NAME = "obd2_prefs"
-        private const val KEY_LAST_DEVICE_MAC = "last_device_mac"
-        private const val KEY_LAST_DEVICE_NAME = "last_device_name"
-
         private val OBD_KEYWORDS = listOf("OBD", "ELM", "OBDII", "VGATE", "ICAR", "VEEPEAK", "KONNWEI", "CARISTA", "BLUEDRIVER", "CARLY")
+        
+        fun isObdLikelyDevice(name: String?): Boolean {
+            return OBD_KEYWORDS.any { name?.uppercase()?.contains(it) ?: false }
+        }
     }
 }
