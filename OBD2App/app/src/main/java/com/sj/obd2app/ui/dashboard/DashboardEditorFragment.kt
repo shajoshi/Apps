@@ -874,14 +874,13 @@ class DashboardEditorFragment : Fragment() {
 
     private fun createViewForWidgetType(type: WidgetType): DashboardGaugeView {
         val ctx = requireContext()
-        return when (type.canonical()) {
+        return when (type) {
             WidgetType.DIAL             -> DialView(ctx)
             WidgetType.SEVEN_SEGMENT    -> SevenSegmentView(ctx)
             WidgetType.BAR_GAUGE_H,
             WidgetType.BAR_GAUGE_V      -> BarGaugeView(ctx)
             WidgetType.NUMERIC_DISPLAY  -> NumericDisplayView(ctx)
             WidgetType.TEMPERATURE_ARC  -> TemperatureGaugeView(ctx)
-            else                        -> NumericDisplayView(ctx)
         }
     }
 

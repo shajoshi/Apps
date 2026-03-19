@@ -17,7 +17,9 @@ object AppDataDirectory {
     private const val OBD_DIR_NAME = ".obd"
     private const val PROFILES_DIR_NAME = "profiles"
     private const val LAYOUTS_DIR_NAME = "layouts"
-    private const val SETTINGS_FILE_NAME = "settings.json"
+    private const val SETTINGS_FILE_NAME = "obdapp_settings.json"
+    private const val PROFILE_FILE_PREFIX = "vehicle_profile_"
+    private const val DASHBOARD_FILE_PREFIX = "dashboard_"
 
     /**
      * Returns true if external storage (.obd directory) is available and should be used.
@@ -78,35 +80,27 @@ object AppDataDirectory {
     /**
      * Returns a DocumentFile for a specific profile file.
      * Creates the file if it doesn't exist.
+     * Uses format: vehicle_profile_<name>.json
      */
-    fun getProfileFileDocumentFile(context: Context, profileId: String): DocumentFile? {
+    fun getProfileFileDocumentFile(context: Context, profileName: String): DocumentFile? {
         val profilesDir = getProfilesDirectoryDocumentFile(context) ?: return null
-        val fileName = "$profileId.json"
+        val safeName = profileName.replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        val fileName = "${PROFILE_FILE_PREFIX}${safeName}.json"
         
         return profilesDir.findFile(fileName) 
             ?: profilesDir.createFile("application/json", fileName)
     }
 
-    /**
-     * Returns a DocumentFile for a specific profile's PID availability file.
-     * Creates the file if it doesn't exist.
-     */
-    fun getProfilePidsFileDocumentFile(context: Context, profileId: String): DocumentFile? {
-        val profilesDir = getProfilesDirectoryDocumentFile(context) ?: return null
-        val fileName = "${profileId}_pids.json"
-        
-        return profilesDir.findFile(fileName)
-            ?: profilesDir.createFile("application/json", fileName)
-    }
 
     /**
      * Returns a DocumentFile for a specific layout file.
      * Creates the file if it doesn't exist.
+     * Uses format: dashboard_<name>.json
      */
     fun getLayoutFileDocumentFile(context: Context, layoutName: String): DocumentFile? {
         val layoutsDir = getLayoutsDirectoryDocumentFile(context) ?: return null
-        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "")
-        val fileName = "$safeName.json"
+        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        val fileName = "${DASHBOARD_FILE_PREFIX}${safeName}.json"
         
         return layoutsDir.findFile(fileName)
             ?: layoutsDir.createFile("application/json", fileName)
@@ -125,53 +119,51 @@ object AppDataDirectory {
 
     /**
      * Lists all profile files in the profiles directory.
+     * Matches pattern: vehicle_profile_*.json (excluding *_pids.json)
      */
     fun listProfileFilesDocumentFile(context: Context): List<DocumentFile> {
         val profilesDir = getProfilesDirectoryDocumentFile(context) ?: return emptyList()
         
         return profilesDir.listFiles().filter { 
-            it.isFile && it.name?.endsWith(".json") == true && !it.name!!.endsWith("_pids.json")
+            it.isFile && 
+            it.name?.startsWith(PROFILE_FILE_PREFIX) == true && 
+            it.name?.endsWith(".json") == true
         }
     }
 
     /**
      * Lists all layout files in the layouts directory.
+     * Matches pattern: dashboard_*.json
      */
     fun listLayoutFilesDocumentFile(context: Context): List<DocumentFile> {
         val layoutsDir = getLayoutsDirectoryDocumentFile(context) ?: return emptyList()
         
         return layoutsDir.listFiles().filter { 
-            it.isFile && it.name?.endsWith(".json") == true
+            it.isFile && 
+            it.name?.startsWith(DASHBOARD_FILE_PREFIX) == true && 
+            it.name?.endsWith(".json") == true
         }
     }
 
     /**
      * Deletes a specific profile file.
      */
-    fun deleteProfileFile(context: Context, profileId: String): Boolean {
+    fun deleteProfileFile(context: Context, profileName: String): Boolean {
         val profilesDir = getProfilesDirectoryDocumentFile(context) ?: return false
-        val fileName = "$profileId.json"
+        val safeName = profileName.replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        val fileName = "${PROFILE_FILE_PREFIX}${safeName}.json"
         val file = profilesDir.findFile(fileName)
         return file?.delete() ?: false
     }
 
-    /**
-     * Deletes a specific profile's PID file.
-     */
-    fun deleteProfilePidsFile(context: Context, profileId: String): Boolean {
-        val profilesDir = getProfilesDirectoryDocumentFile(context) ?: return false
-        val fileName = "${profileId}_pids.json"
-        val file = profilesDir.findFile(fileName)
-        return file?.delete() ?: false
-    }
 
     /**
      * Deletes a specific layout file.
      */
     fun deleteLayoutFile(context: Context, layoutName: String): Boolean {
         val layoutsDir = getLayoutsDirectoryDocumentFile(context) ?: return false
-        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "")
-        val fileName = "$safeName.json"
+        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        val fileName = "${DASHBOARD_FILE_PREFIX}${safeName}.json"
         val file = layoutsDir.findFile(fileName)
         return file?.delete() ?: false
     }
@@ -180,7 +172,7 @@ object AppDataDirectory {
      * Returns the fallback directory for profiles in app-private storage.
      */
     fun getFallbackProfilesDir(context: Context): File {
-        return File(context.filesDir, "profiles_fallback").apply {
+        return File(context.filesDir, "profiles").apply {
             if (!exists()) mkdirs()
         }
     }
@@ -192,5 +184,58 @@ object AppDataDirectory {
         return File(context.filesDir, "layouts").apply {
             if (!exists()) mkdirs()
         }
+    }
+    
+    /**
+     * Returns a File for a specific profile in app-private storage.
+     * Uses format: vehicle_profile_<name>.json
+     */
+    fun getProfileFilePrivate(context: Context, profileName: String): File {
+        val safeName = profileName.replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        return File(getFallbackProfilesDir(context), "${PROFILE_FILE_PREFIX}${safeName}.json")
+    }
+    
+    
+    /**
+     * Returns a File for a specific layout in app-private storage.
+     * Uses format: dashboard_<name>.json
+     */
+    fun getLayoutFilePrivate(context: Context, layoutName: String): File {
+        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "_")
+        return File(getFallbackLayoutsDir(context), "${DASHBOARD_FILE_PREFIX}${safeName}.json")
+    }
+    
+    /**
+     * Returns a File for settings in app-private storage.
+     * Uses format: obdapp_settings.json
+     */
+    fun getSettingsFilePrivate(context: Context): File {
+        return File(context.filesDir, SETTINGS_FILE_NAME)
+    }
+    
+    /**
+     * Lists all profile files in app-private storage.
+     * Matches pattern: vehicle_profile_*.json (excluding *_pids.json)
+     */
+    fun listProfileFilesPrivate(context: Context): List<File> {
+        val profilesDir = getFallbackProfilesDir(context)
+        return profilesDir.listFiles { file ->
+            file.isFile && 
+            file.name.startsWith(PROFILE_FILE_PREFIX) && 
+            file.name.endsWith(".json")
+        }?.toList() ?: emptyList()
+    }
+    
+    /**
+     * Lists all layout files in app-private storage.
+     * Matches pattern: dashboard_*.json
+     */
+    fun listLayoutFilesPrivate(context: Context): List<File> {
+        val layoutsDir = getFallbackLayoutsDir(context)
+        return layoutsDir.listFiles { file ->
+            file.isFile && 
+            file.name.startsWith(DASHBOARD_FILE_PREFIX) && 
+            file.name.endsWith(".json")
+        }?.toList() ?: emptyList()
     }
 }

@@ -111,7 +111,7 @@ class DashboardEditorViewModel : ViewModel() {
 
         val newWidget = DashboardWidget(
             id = UUID.randomUUID().toString(),
-            type = type.canonical(),
+            type = type,
             metric = metric,
             gridX = slotX,
             gridY = slotY,

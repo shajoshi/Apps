@@ -60,25 +60,25 @@ object MetricDefaults {
 
         // ── Temperature ───────────────────────────────────────────
         "0105" to MetricConfig(
-            rangeMin = -40f, rangeMax = 130f,
+            rangeMin = -40f, rangeMax = 180f,
             majorTickInterval = 20f, minorTickCount = 4,
-            warningThreshold = 105f, decimalPlaces = 0,
+            warningThreshold = 130f, decimalPlaces = 0,
             displayUnit = "°C", suggestedWidgetType = WidgetType.TEMPERATURE_ARC
         ),
         "010F" to MetricConfig(
-            rangeMin = -40f, rangeMax = 130f,
+            rangeMin = -40f, rangeMax = 80f,
             majorTickInterval = 20f, minorTickCount = 4,
             warningThreshold = 60f, decimalPlaces = 0,
             displayUnit = "°C", suggestedWidgetType = WidgetType.TEMPERATURE_ARC
         ),
         "0146" to MetricConfig(
             rangeMin = -40f, rangeMax = 80f,
-            majorTickInterval = 20f, minorTickCount = 4,
+            majorTickInterval = 60f, minorTickCount = 4,
             warningThreshold = null, decimalPlaces = 0,
             displayUnit = "°C", suggestedWidgetType = WidgetType.TEMPERATURE_ARC
         ),
         "015C" to MetricConfig(
-            rangeMin = -40f, rangeMax = 150f,
+            rangeMin = -40f, rangeMax = 180f,
             majorTickInterval = 20f, minorTickCount = 4,
             warningThreshold = 130f, decimalPlaces = 0,
             displayUnit = "°C", suggestedWidgetType = WidgetType.TEMPERATURE_ARC
@@ -204,7 +204,7 @@ object MetricDefaults {
             displayUnit = "L/100km", suggestedWidgetType = WidgetType.NUMERIC_DISPLAY
         ),
         "DERIVED_AVG_KPL" to MetricConfig(
-            rangeMin = 0f, rangeMax = 30f,
+            rangeMin = 0f, rangeMax = 100f,
             majorTickInterval = 5f, minorTickCount = 4,
             warningThreshold = null, decimalPlaces = 1,
             displayUnit = "km/L", suggestedWidgetType = WidgetType.NUMERIC_DISPLAY

@@ -203,14 +203,23 @@
             android:textSize="12sp"
             android:layout_marginBottom="4dp" />
 
+        <Spinner
+            android:id="@+id/spinner_display_unit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:backgroundTint="#444456" />
+
         <EditText
-            android:id="@+id/et_display_unit"
+            android:id="@+id/et_custom_unit"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="#FFFFFF"
             android:backgroundTint="#444456"
             android:padding="10dp"
-            android:hint="Optional" />
+            android:hint="Enter custom unit"
+            android:layout_marginTop="8dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- Size presets -->

@@ -1,7 +1,8 @@
 package com.sj.obd2app.settings
 
 import android.content.Context
-import com.sj.obd2app.metrics.PidAvailabilityStore
+import android.util.Log
+import android.widget.Toast
 import com.sj.obd2app.storage.AppDataDirectory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -9,12 +10,14 @@ import org.json.JSONObject
 /**
  * CRUD repository for [VehicleProfile] objects.
  * 
- * If external storage (.obd directory) is available, profiles are stored as individual JSON files.
- * Otherwise, falls back to SharedPreferences for backward compatibility.
+ * If external storage (.obd directory) is available, profiles are stored as individual JSON files
+ * with format: vehicle_profile_<name>.json
+ * Otherwise, stored in app-private storage with the same naming convention.
  */
 class VehicleProfileRepository private constructor(private val context: Context) {
 
     companion object {
+        private const val TAG = "VehicleProfileRepository"
         private const val PREFS_NAME = "obd2_prefs"
         private const val KEY_PROFILES = "vehicle_profiles"
 
@@ -41,19 +44,57 @@ class VehicleProfileRepository private constructor(private val context: Context)
 
     private fun getAllFromFiles(): List<VehicleProfile> {
         val profileFiles = AppDataDirectory.listProfileFilesDocumentFile(context)
-        return profileFiles.mapNotNull { file ->
+        val profiles = mutableListOf<VehicleProfile>()
+        var errorCount = 0
+        
+        profileFiles.forEach { file ->
             try {
                 val content = context.contentResolver.openInputStream(file.uri)?.use {
                     it.readBytes().toString(Charsets.UTF_8)
                 }
-                content?.let { JSONObject(it).toProfile() }
+                content?.let { 
+                    val profile = JSONObject(it).toProfile()
+                    profiles.add(profile)
+                }
             } catch (e: Exception) {
-                null
+                Log.e(TAG, "Failed to load profile from ${file.name}", e)
+                errorCount++
             }
         }
+        
+        if (errorCount > 0) {
+            Toast.makeText(context, "$errorCount profile(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+        }
+        
+        return profiles
     }
 
     private fun getAllFromPreferences(): List<VehicleProfile> {
+        // First try to load from app-private files with new naming convention
+        val profileFiles = AppDataDirectory.listProfileFilesPrivate(context)
+        if (profileFiles.isNotEmpty()) {
+            val profiles = mutableListOf<VehicleProfile>()
+            var errorCount = 0
+            
+            profileFiles.forEach { file ->
+                try {
+                    val content = file.readText()
+                    val profile = JSONObject(content).toProfile()
+                    profiles.add(profile)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load profile from ${file.name}", e)
+                    errorCount++
+                }
+            }
+            
+            if (errorCount > 0) {
+                Toast.makeText(context, "$errorCount profile(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+            }
+            
+            return profiles
+        }
+        
+        // Fallback to old SharedPreferences format for backward compatibility
         val json = prefs.getString(KEY_PROFILES, null) ?: return emptyList()
         return try {
             val arr = JSONArray(json)
@@ -82,7 +123,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
     }
 
     private fun saveToFile(profile: VehicleProfile) {
-        val profileFile = AppDataDirectory.getProfileFileDocumentFile(context, profile.id)
+        val profileFile = AppDataDirectory.getProfileFileDocumentFile(context, profile.name)
         if (profileFile != null) {
             val json = profile.toJson()
             context.contentResolver.openOutputStream(profileFile.uri, "wt")?.use { output ->
@@ -92,36 +133,97 @@ class VehicleProfileRepository private constructor(private val context: Context)
     }
 
     private fun saveToPreferences(profile: VehicleProfile) {
-        val all = getAllFromPreferences().toMutableList()
-        val idx = all.indexOfFirst { it.id == profile.id }
-        if (idx >= 0) all[idx] = profile else all.add(profile)
-        persistToPreferences(all)
+        // Save to app-private file with new naming convention
+        val profileFile = AppDataDirectory.getProfileFilePrivate(context, profile.name)
+        val json = profile.toJson()
+        profileFile.writeText(json.toString(2))
     }
 
     fun delete(id: String) {
-        if (AppDataDirectory.isUsingExternalStorage(context)) {
-            deleteFromFile(id)
-        } else {
-            deleteFromPreferences(id)
+        // Find profile by ID to get its name
+        val profile = getById(id)
+        if (profile != null) {
+            if (AppDataDirectory.isUsingExternalStorage(context)) {
+                deleteFromFile(profile.name)
+            } else {
+                deleteFromPreferences(profile.name)
+            }
+            
+            if (AppSettings.getActiveProfileId(context) == id) {
+                AppSettings.setActiveProfileId(context, getAll().firstOrNull()?.id)
+            }
+            // PIDs are now part of the profile JSON, so they're automatically deleted
         }
-        
-        if (AppSettings.getActiveProfileId(context) == id) {
-            AppSettings.setActiveProfileId(context, getAll().firstOrNull()?.id)
-        }
-        PidAvailabilityStore.clear(context, id)
     }
 
-    private fun deleteFromFile(id: String) {
-        AppDataDirectory.deleteProfileFile(context, id)
+    private fun deleteFromFile(profileName: String) {
+        AppDataDirectory.deleteProfileFile(context, profileName)
     }
 
-    private fun deleteFromPreferences(id: String) {
-        val all = getAllFromPreferences().filter { it.id != id }
-        persistToPreferences(all)
+    private fun deleteFromPreferences(profileName: String) {
+        // Delete from app-private file
+        val profileFile = AppDataDirectory.getProfileFilePrivate(context, profileName)
+        if (profileFile.exists()) {
+            profileFile.delete()
+        }
     }
 
     fun setActive(id: String) {
         AppSettings.setActiveProfileId(context, id)
+    }
+
+    // ── PID Management ────────────────────────────────────────────────────────
+
+    /**
+     * Updates available PIDs for a profile.
+     * Merges new PID values with existing ones, skipping error values.
+     */
+    fun updatePids(profileId: String, newPids: Map<String, String>) {
+        if (newPids.isEmpty()) return
+        
+        val profile = getById(profileId) ?: return
+        val errorValues = setOf("NODATA", "ERROR", "?", "UNABLE TO CONNECT", "BUS INIT")
+        
+        val updatedPids = profile.availablePids.toMutableMap()
+        var changed = false
+        
+        for ((pid, value) in newPids) {
+            val v = value.trim().uppercase()
+            if (v.isEmpty() || errorValues.any { v.startsWith(it) }) continue
+            if (updatedPids[pid] != value) {
+                updatedPids[pid] = value
+                changed = true
+            }
+        }
+        
+        if (changed) {
+            val updatedProfile = profile.copy(availablePids = updatedPids)
+            save(updatedProfile)
+        }
+    }
+
+    /**
+     * Returns the set of known PIDs for a profile.
+     */
+    fun getKnownPids(profileId: String?): Set<String> {
+        profileId ?: return emptySet()
+        return getById(profileId)?.availablePids?.keys ?: emptySet()
+    }
+
+    /**
+     * Returns all PID -> value pairs for a profile.
+     */
+    fun getLastPidValues(profileId: String?): Map<String, String> {
+        profileId ?: return emptyMap()
+        return getById(profileId)?.availablePids ?: emptyMap()
+    }
+
+    /**
+     * Returns true if profile has any discovered PIDs.
+     */
+    fun hasDiscoveredPids(profileId: String?): Boolean {
+        profileId ?: return false
+        return getById(profileId)?.availablePids?.isNotEmpty() ?: false
     }
 
     // ── Serialisation ─────────────────────────────────────────────────────────
@@ -142,17 +244,41 @@ class VehicleProfileRepository private constructor(private val context: Context)
         if (vehicleMassKg > 0f) put("vehicleMassKg", vehicleMassKg.toDouble())
         if (obdPollingDelayMs != null) put("obdPollingDelayMs", obdPollingDelayMs)
         if (obdCommandDelayMs != null) put("obdCommandDelayMs", obdCommandDelayMs)
+        
+        // Serialize availablePids
+        if (availablePids.isNotEmpty()) {
+            val pidsObj = JSONObject()
+            availablePids.forEach { (pid, value) -> pidsObj.put(pid, value) }
+            put("availablePids", pidsObj)
+        }
     }
 
-    private fun JSONObject.toProfile(): VehicleProfile = VehicleProfile(
-        id                = getString("id"),
-        name              = getString("name"),
-        fuelType          = try { FuelType.valueOf(getString("fuelType")) } catch (_: Exception) { FuelType.PETROL },
-        tankCapacityL     = getDouble("tankCapacityL").toFloat(),
-        fuelPricePerLitre = getDouble("fuelPricePerLitre").toFloat(),
-        enginePowerBhp    = optDouble("enginePowerBhp", 0.0).toFloat(),
-        vehicleMassKg     = optDouble("vehicleMassKg", 0.0).toFloat(),
-        obdPollingDelayMs = if (has("obdPollingDelayMs")) getLong("obdPollingDelayMs") else null,
-        obdCommandDelayMs = if (has("obdCommandDelayMs")) getLong("obdCommandDelayMs") else null
-    )
+    private fun JSONObject.toProfile(): VehicleProfile {
+        // Deserialize availablePids
+        val pidsMap = if (has("availablePids")) {
+            val pidsObj = getJSONObject("availablePids")
+            buildMap {
+                val names = pidsObj.names() ?: return@buildMap
+                for (i in 0 until names.length()) {
+                    val key = names.getString(i)
+                    put(key, pidsObj.getString(key))
+                }
+            }
+        } else {
+            emptyMap()
+        }
+        
+        return VehicleProfile(
+            id                = getString("id"),
+            name              = getString("name"),
+            fuelType          = try { FuelType.valueOf(getString("fuelType")) } catch (_: Exception) { FuelType.PETROL },
+            tankCapacityL     = getDouble("tankCapacityL").toFloat(),
+            fuelPricePerLitre = getDouble("fuelPricePerLitre").toFloat(),
+            enginePowerBhp    = optDouble("enginePowerBhp", 0.0).toFloat(),
+            vehicleMassKg     = optDouble("vehicleMassKg", 0.0).toFloat(),
+            obdPollingDelayMs = if (has("obdPollingDelayMs")) getLong("obdPollingDelayMs") else null,
+            obdCommandDelayMs = if (has("obdCommandDelayMs")) getLong("obdCommandDelayMs") else null,
+            availablePids     = pidsMap
+        )
+    }
 }

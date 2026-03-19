@@ -74,8 +74,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Migrate data to .obd directory if needed
-        DataMigration.migrateIfNeeded(this)
+        // Check for existing data in .obd directory
+        DataMigration.checkExistingData(this)
 
         // Setup notification channels
         setupNotificationChannels()

@@ -4,12 +4,18 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.sj.obd2app.R
 import com.sj.obd2app.ui.dashboard.model.WidgetType
 
@@ -26,10 +32,13 @@ class Step3ConfigPage : Fragment() {
     private lateinit var etMinorTicks: EditText
     private lateinit var etWarning: EditText
     private lateinit var etDecimalPlaces: EditText
-    private lateinit var etDisplayUnit: EditText
+    private lateinit var spinnerDisplayUnit: Spinner
+    private lateinit var etCustomUnit: EditText
     private lateinit var tvSizeHint: TextView
     private lateinit var rowTicks: LinearLayout
     private lateinit var rowWarningDecimals: LinearLayout
+    
+    private var unitOptions: Array<String> = emptyArray()
 
     private var selectedPreset: SizePreset = SizePreset.MEDIUM
     private val presetButtonIds = listOf(
@@ -50,7 +59,8 @@ class Step3ConfigPage : Fragment() {
         etMinorTicks      = view.findViewById(R.id.et_minor_ticks)
         etWarning         = view.findViewById(R.id.et_warning)
         etDecimalPlaces   = view.findViewById(R.id.et_decimal_places)
-        etDisplayUnit     = view.findViewById(R.id.et_display_unit)
+        spinnerDisplayUnit = view.findViewById(R.id.spinner_display_unit)
+        etCustomUnit      = view.findViewById(R.id.et_custom_unit)
         tvSizeHint        = view.findViewById(R.id.tv_size_hint)
         rowTicks          = view.findViewById(R.id.row_ticks)
         rowWarningDecimals = view.findViewById(R.id.row_warning_decimals)
@@ -59,6 +69,12 @@ class Step3ConfigPage : Fragment() {
 
         applyFieldVisibility(state.selectedType)
 
+        // Setup unit spinner
+        unitOptions = resources.getStringArray(R.array.display_unit_options)
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, unitOptions)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerDisplayUnit.adapter = adapter
+
         // Pre-fill from WizardState
         etMin.setText(formatFloat(state.rangeMin))
         etMax.setText(formatFloat(state.rangeMax))
@@ -66,7 +82,9 @@ class Step3ConfigPage : Fragment() {
         etMinorTicks.setText(state.minorTickCount.toString())
         etWarning.setText(state.warningThreshold?.let { formatFloat(it) } ?: "")
         etDecimalPlaces.setText(state.decimalPlaces.toString())
-        etDisplayUnit.setText(state.displayUnit)
+        
+        // Set initial unit selection
+        setUnitSelection(state.displayUnit)
 
         // Update state on text change
         etMin.doAfterTextChanged           { state.rangeMin = it.toString().toFloatOrNull() ?: state.rangeMin }
@@ -75,7 +93,29 @@ class Step3ConfigPage : Fragment() {
         etMinorTicks.doAfterTextChanged    { state.minorTickCount = it.toString().toIntOrNull() ?: state.minorTickCount }
         etWarning.doAfterTextChanged       { state.warningThreshold = it.toString().toFloatOrNull() }
         etDecimalPlaces.doAfterTextChanged { state.decimalPlaces = it.toString().toIntOrNull() ?: state.decimalPlaces }
-        etDisplayUnit.doAfterTextChanged   { state.displayUnit = it.toString() }
+        etCustomUnit.doAfterTextChanged    { state.displayUnit = it.toString() }
+        
+        // Handle unit spinner selection
+        spinnerDisplayUnit.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = unitOptions[position]
+                when (selected) {
+                    "Custom..." -> {
+                        etCustomUnit.visibility = View.VISIBLE
+                        etCustomUnit.requestFocus()
+                    }
+                    "(none)" -> {
+                        etCustomUnit.visibility = View.GONE
+                        state.displayUnit = ""
+                    }
+                    else -> {
+                        etCustomUnit.visibility = View.GONE
+                        state.displayUnit = selected
+                    }
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
 
         // Wire size preset buttons
         presets.forEachIndexed { idx, preset ->
@@ -108,7 +148,7 @@ class Step3ConfigPage : Fragment() {
      * - GAUGE types: both tick marks and warning threshold are useful
      */
     private fun applyFieldVisibility(type: WidgetType?) {
-        when (type?.canonical()) {
+        when (type) {
             WidgetType.SEVEN_SEGMENT -> {
                 rowTicks.visibility          = View.GONE
                 rowWarningDecimals.visibility = View.GONE  // 7-segment can't change colors
@@ -140,4 +180,21 @@ class Step3ConfigPage : Fragment() {
 
     private fun formatFloat(f: Float): String =
         if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
+    
+    private fun setUnitSelection(unit: String) {
+        val index = unitOptions.indexOf(unit)
+        if (index >= 0) {
+            spinnerDisplayUnit.setSelection(index)
+            etCustomUnit.visibility = View.GONE
+        } else if (unit.isNotEmpty()) {
+            // Custom unit
+            spinnerDisplayUnit.setSelection(unitOptions.indexOf("Custom..."))
+            etCustomUnit.setText(unit)
+            etCustomUnit.visibility = View.VISIBLE
+        } else {
+            // Empty/none
+            spinnerDisplayUnit.setSelection(0)
+            etCustomUnit.visibility = View.GONE
+        }
+    }
 }

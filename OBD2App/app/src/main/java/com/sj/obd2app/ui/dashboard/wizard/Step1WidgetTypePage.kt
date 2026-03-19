@@ -128,7 +128,6 @@ class Step1WidgetTypePage : Fragment() {
                     WidgetType.BAR_GAUGE_V     -> BarGaugeView(ctx).also { it.isVertical = true }
                     WidgetType.NUMERIC_DISPLAY -> NumericDisplayView(ctx)
                     WidgetType.TEMPERATURE_ARC -> TemperatureGaugeView(ctx)
-                    else                       -> NumericDisplayView(ctx)
                 }
 
                 view.colorScheme       = scheme

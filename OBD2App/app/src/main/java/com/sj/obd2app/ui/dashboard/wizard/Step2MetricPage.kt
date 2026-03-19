@@ -12,7 +12,6 @@ import com.sj.obd2app.R
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.ui.dashboard.model.DashboardMetric
 import com.sj.obd2app.ui.dashboard.model.MetricDefaults
-import com.sj.obd2app.metrics.PidAvailabilityStore
 import com.sj.obd2app.settings.VehicleProfileRepository
 
 /**
@@ -37,10 +36,11 @@ class Step2MetricPage : Fragment() {
 
         // PIDs ever confirmed for the active vehicle profile (persisted across sessions)
         val ctx = requireContext()
-        val activeProfileId = VehicleProfileRepository.getInstance(ctx).activeProfile?.id
-        val profileKnownPids = PidAvailabilityStore.getKnownPids(ctx, activeProfileId)
-        val profileLastValues = PidAvailabilityStore.getLastValues(ctx, activeProfileId)
-        val hasProfileData = PidAvailabilityStore.hasData(ctx, activeProfileId)
+        val repo = VehicleProfileRepository.getInstance(ctx)
+        val activeProfileId = repo.activeProfile?.id
+        val profileKnownPids = repo.getKnownPids(activeProfileId)
+        val profileLastValues = repo.getLastPidValues(activeProfileId)
+        val hasProfileData = repo.hasDiscoveredPids(activeProfileId)
 
         recyclerView.adapter = MetricListAdapter(
             items = buildMetricItems(),

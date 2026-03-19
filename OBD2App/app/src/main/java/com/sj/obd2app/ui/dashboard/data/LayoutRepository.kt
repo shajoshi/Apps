@@ -1,6 +1,8 @@
 package com.sj.obd2app.ui.dashboard.data
 
 import android.content.Context
+import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import com.google.gson.*
@@ -15,10 +17,14 @@ import java.lang.reflect.Type
 /**
  * Handles saving and loading DashboardLayout instances to/from JSON files.
  * 
- * If external storage (.obd directory) is available, layouts are stored there.
- * Otherwise, falls back to app-private storage for backward compatibility.
+ * If external storage (.obd directory) is available, layouts are stored there with format: dashboard_<name>.json
+ * Otherwise, stored in app-private storage with the same naming convention.
  */
 class LayoutRepository(private val context: Context) {
+
+    companion object {
+        private const val TAG = "LayoutRepository"
+    }
 
     private val useExternalStorage: Boolean
         get() = AppDataDirectory.isUsingExternalStorage(context)
@@ -62,15 +68,12 @@ class LayoutRepository(private val context: Context) {
     }
 
     private fun saveToAppStorage(layoutName: String, json: String) {
-        val safeName = layoutName.replace(Regex("[^A-Za-z0-9 _-]"), "")
-        val file = File(layoutsDir, "$safeName.json")
+        val file = AppDataDirectory.getLayoutFilePrivate(context, layoutName)
         file.writeText(json)
     }
 
     /**
      * Deserialize all JSON layouts.
-     * Legacy WidgetType names (REV_COUNTER, SPEEDOMETER_7SEG, FUEL_BAR, IFC_BAR) are
-     * automatically migrated to their canonical equivalents on load.
      */
     fun getSavedLayouts(): List<DashboardLayout> {
         return if (useExternalStorage) {
@@ -82,60 +85,59 @@ class LayoutRepository(private val context: Context) {
 
     private fun getLayoutsFromExternalStorage(): List<DashboardLayout> {
         val files = AppDataDirectory.listLayoutFilesDocumentFile(context)
-        return files.mapNotNull { file ->
+        val layouts = mutableListOf<DashboardLayout>()
+        var errorCount = 0
+        
+        files.forEach { file ->
             try {
                 val content = context.contentResolver.openInputStream(file.uri)?.use {
                     it.readBytes().toString(Charsets.UTF_8)
                 }
                 content?.let {
                     val layout = gson.fromJson(it, DashboardLayout::class.java)
-                    migrateLegacyTypes(layout)
+                    layouts.add(layout)
                 }
             } catch (e: Exception) {
-                null
+                Log.e(TAG, "Failed to load layout from ${file.name}", e)
+                errorCount++
             }
         }
+        
+        if (errorCount > 0) {
+            Toast.makeText(context, "$errorCount dashboard(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+        }
+        
+        return layouts
     }
 
     private fun getLayoutsFromAppStorage(): List<DashboardLayout> {
-        val files = layoutsDir.listFiles { _, name -> name.endsWith(".json") } ?: return emptyList()
-        return files.mapNotNull { file ->
+        val files = AppDataDirectory.listLayoutFilesPrivate(context)
+        val layouts = mutableListOf<DashboardLayout>()
+        var errorCount = 0
+        
+        files.forEach { file ->
             try {
                 val layout = gson.fromJson(file.readText(), DashboardLayout::class.java)
-                migrateLegacyTypes(layout)
+                layouts.add(layout)
             } catch (e: Exception) {
-                null
+                Log.e(TAG, "Failed to load layout from ${file.name}", e)
+                errorCount++
             }
         }
+        
+        if (errorCount > 0) {
+            Toast.makeText(context, "$errorCount dashboard(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+        }
+        
+        return layouts
     }
 
-    /** Replaces deprecated WidgetType values with their canonical counterparts. */
-    private fun migrateLegacyTypes(layout: DashboardLayout): DashboardLayout {
-        var changed = false
-        val migratedWidgets = layout.widgets.map { widget ->
-            val canonical = widget.type.canonical()
-            if (canonical != widget.type) { changed = true; widget.copy(type = canonical) }
-            else widget
-        }
-        return if (changed) {
-            layout.copy(
-                widgets = migratedWidgets,
-                orientation = layout.orientation ?: DashboardOrientation.PORTRAIT
-            )
-        } else {
-            // Even if no widget type changes, ensure orientation is not null for legacy layouts
-            layout.copy(
-                orientation = layout.orientation ?: DashboardOrientation.PORTRAIT
-            )
-        }
-    }
-
+    
     fun deleteLayout(name: String) {
         if (useExternalStorage) {
             AppDataDirectory.deleteLayoutFile(context, name)
         } else {
-            val safeName = name.replace(Regex("[^A-Za-z0-9 _-]"), "")
-            val file = File(layoutsDir, "$safeName.json")
+            val file = AppDataDirectory.getLayoutFilePrivate(context, name)
             if (file.exists()) file.delete()
         }
         

@@ -4,9 +4,12 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.ViewModelProvider
@@ -21,7 +24,6 @@ import com.sj.obd2app.ui.dashboard.wizard.SizePreset
 import com.sj.obd2app.ui.dashboard.MetricListAdapter
 import com.sj.obd2app.ui.dashboard.MetricListItem
 import com.sj.obd2app.obd.Obd2ServiceProvider
-import com.sj.obd2app.metrics.PidAvailabilityStore
 import com.sj.obd2app.settings.VehicleProfileRepository
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -57,12 +59,15 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     private lateinit var etMinorTicks: EditText
     private lateinit var etWarning: EditText
     private lateinit var etDecimalPlaces: EditText
-    private lateinit var etDisplayUnit: EditText
+    private lateinit var spinnerDisplayUnit: Spinner
+    private lateinit var etCustomUnit: EditText
     private lateinit var tvSizeHint: TextView
     private lateinit var rowTicks: LinearLayout
     private lateinit var rowWarningDecimals: LinearLayout
     private lateinit var tvCurrentMetric: TextView
     private var metricSelectionDialog: androidx.appcompat.app.AlertDialog? = null
+    
+    private var unitOptions: Array<String> = emptyArray()
     
     // Working copy of the editable values
     private var currentMetric: DashboardMetric? = null
@@ -115,7 +120,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         etMinorTicks      = view.findViewById(R.id.et_minor_ticks)
         etWarning         = view.findViewById(R.id.et_warning)
         etDecimalPlaces   = view.findViewById(R.id.et_decimal_places)
-        etDisplayUnit     = view.findViewById(R.id.et_display_unit)
+        spinnerDisplayUnit = view.findViewById(R.id.spinner_display_unit)
+        etCustomUnit      = view.findViewById(R.id.et_custom_unit)
         tvSizeHint        = view.findViewById(R.id.tv_size_hint)
         rowTicks          = view.findViewById(R.id.row_ticks)
         rowWarningDecimals = view.findViewById(R.id.row_warning_decimals)
@@ -137,6 +143,12 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         updateMetricDisplay()
         tvCurrentMetric.setOnClickListener { showMetricSelectionDialog() }
 
+        // Setup unit spinner
+        unitOptions = resources.getStringArray(R.array.display_unit_options)
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, unitOptions)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerDisplayUnit.adapter = adapter
+
         // Pre-fill fields
         etMin.setText(formatFloat(rangeMin))
         etMax.setText(formatFloat(rangeMax))
@@ -144,7 +156,9 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         etMinorTicks.setText(minorTickCount.toString())
         etWarning.setText(warningThreshold?.let { formatFloat(it) } ?: "")
         etDecimalPlaces.setText(decimalPlaces.toString())
-        etDisplayUnit.setText(displayUnit)
+        
+        // Set initial unit selection
+        setUnitSelection(displayUnit)
 
         // Wire text change listeners
         etMin.doAfterTextChanged           { rangeMin = it.toString().toFloatOrNull() ?: rangeMin }
@@ -153,7 +167,29 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         etMinorTicks.doAfterTextChanged    { minorTickCount = it.toString().toIntOrNull() ?: minorTickCount }
         etWarning.doAfterTextChanged       { warningThreshold = it.toString().toFloatOrNull() }
         etDecimalPlaces.doAfterTextChanged { decimalPlaces = it.toString().toIntOrNull() ?: decimalPlaces }
-        etDisplayUnit.doAfterTextChanged   { displayUnit = it.toString() }
+        etCustomUnit.doAfterTextChanged    { displayUnit = it.toString() }
+        
+        // Handle unit spinner selection
+        spinnerDisplayUnit.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = unitOptions[position]
+                when (selected) {
+                    "Custom..." -> {
+                        etCustomUnit.visibility = View.VISIBLE
+                        etCustomUnit.requestFocus()
+                    }
+                    "(none)" -> {
+                        etCustomUnit.visibility = View.GONE
+                        displayUnit = ""
+                    }
+                    else -> {
+                        etCustomUnit.visibility = View.GONE
+                        displayUnit = selected
+                    }
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
 
         // Show/hide tick & warning rows based on widget type
         applyFieldVisibility(widget.type)
@@ -177,7 +213,7 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
 
         // Header widget-type label
         val tvWidgetType = view.findViewById<TextView>(R.id.tv_edit_widget_type)
-        tvWidgetType?.text = widget.type.canonical().name
+        tvWidgetType?.text = widget.type.name
             .replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }
 
         // Save / Cancel buttons
@@ -201,7 +237,7 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     }
 
     private fun applyFieldVisibility(type: WidgetType) {
-        when (type.canonical()) {
+        when (type) {
             WidgetType.SEVEN_SEGMENT -> {
                 rowTicks.visibility           = View.GONE
                 rowWarningDecimals.visibility = View.GONE  // Seven segment doesn't support warning colors
@@ -254,10 +290,11 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         val livePids = Obd2ServiceProvider.getService().obd2Data.value.map { it.pid }.toSet()
         
         // PIDs ever confirmed for the active vehicle profile
-        val activeProfileId = VehicleProfileRepository.getInstance(ctx).activeProfile?.id
-        val profileKnownPids = PidAvailabilityStore.getKnownPids(ctx, activeProfileId)
-        val profileLastValues = PidAvailabilityStore.getLastValues(ctx, activeProfileId)
-        val hasProfileData = PidAvailabilityStore.hasData(ctx, activeProfileId)
+        val repo = VehicleProfileRepository.getInstance(ctx)
+        val activeProfileId = repo.activeProfile?.id
+        val profileKnownPids = repo.getKnownPids(activeProfileId)
+        val profileLastValues = repo.getLastPidValues(activeProfileId)
+        val hasProfileData = repo.hasDiscoveredPids(activeProfileId)
         
         val adapter = MetricListAdapter(
             items = metrics,
@@ -287,7 +324,7 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                 etMinorTicks.setText(minorTickCount.toString())
                 etWarning.setText(warningThreshold?.let { formatFloat(it) } ?: "")
                 etDecimalPlaces.setText(decimalPlaces.toString())
-                etDisplayUnit.setText(displayUnit)
+                setUnitSelection(displayUnit)
                 
                 metricSelectionDialog?.dismiss()
             }
@@ -380,4 +417,21 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     
     private fun formatFloat(f: Float): String =
         if (f == f.toLong().toFloat()) f.toLong().toString() else f.toString()
+    
+    private fun setUnitSelection(unit: String) {
+        val index = unitOptions.indexOf(unit)
+        if (index >= 0) {
+            spinnerDisplayUnit.setSelection(index)
+            etCustomUnit.visibility = View.GONE
+        } else if (unit.isNotEmpty()) {
+            // Custom unit
+            spinnerDisplayUnit.setSelection(unitOptions.indexOf("Custom..."))
+            etCustomUnit.setText(unit)
+            etCustomUnit.visibility = View.VISIBLE
+        } else {
+            // Empty/none
+            spinnerDisplayUnit.setSelection(0)
+            etCustomUnit.visibility = View.GONE
+        }
+    }
 }

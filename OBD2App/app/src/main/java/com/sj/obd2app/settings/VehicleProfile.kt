@@ -29,7 +29,7 @@ enum class FuelType(
 
 /**
  * Vehicle-specific configuration profile.
- * Stored as JSON in SharedPreferences via [VehicleProfileRepository].
+ * Stored as JSON file with format: vehicle_profile_<name>.json
  */
 data class VehicleProfile(
     val id: String = UUID.randomUUID().toString(),
@@ -43,7 +43,13 @@ data class VehicleProfile(
     /** null = use global default from AppSettings */
     val obdPollingDelayMs: Long? = null,
     /** null = use global default from AppSettings */
-    val obdCommandDelayMs: Long? = null
+    val obdCommandDelayMs: Long? = null,
+    /** 
+     * Available PIDs discovered for this vehicle's ECU.
+     * Map of PID name -> last known value.
+     * PIDs are constant per ECU, so they logically belong with the vehicle profile.
+     */
+    val availablePids: Map<String, String> = emptyMap()
 ) {
     /** Filesystem-safe name: spaces → underscores, non-alphanumeric stripped */
     val sanitisedName: String

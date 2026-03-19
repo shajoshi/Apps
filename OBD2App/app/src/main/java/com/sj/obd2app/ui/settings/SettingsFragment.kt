@@ -47,8 +47,15 @@ class SettingsFragment : Fragment() {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            AppSettings.setLogFolderUri(requireContext(), uri.toString())
-            updateLogFolderLabel()
+            
+            // Check if there's an existing folder with data to migrate
+            val oldFolderUri = AppSettings.getLogFolderUri(requireContext())
+            if (oldFolderUri != null && oldFolderUri != uri.toString()) {
+                showMigrationDialog(oldFolderUri, uri.toString())
+            } else {
+                AppSettings.setLogFolderUri(requireContext(), uri.toString())
+                updateLogFolderLabel()
+            }
         }
     }
 
@@ -278,6 +285,126 @@ class SettingsFragment : Fragment() {
             Uri.parse(uriStr).lastPathSegment ?: uriStr
         } else {
             "Downloads (default)"
+        }
+    }
+    
+    private fun showMigrationDialog(oldFolderUri: String, newFolderUri: String) {
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Migrate Data to New Folder?")
+            .setMessage("Would you like to copy your settings, vehicle profiles, and dashboards from the old folder to the new folder?\n\nThis will not delete data from the old folder.")
+            .setPositiveButton("Migrate") { _, _ ->
+                // Set new folder first
+                AppSettings.setLogFolderUri(requireContext(), newFolderUri)
+                updateLogFolderLabel()
+                
+                // Perform migration
+                migrateDataBetweenFolders(oldFolderUri, newFolderUri)
+            }
+            .setNegativeButton("Skip") { _, _ ->
+                // Just set new folder without migration
+                AppSettings.setLogFolderUri(requireContext(), newFolderUri)
+                updateLogFolderLabel()
+                Toast.makeText(requireContext(), "Folder changed. Old data not migrated.", Toast.LENGTH_SHORT).show()
+            }
+            .setCancelable(false)
+            .show()
+    }
+    
+    private fun migrateDataBetweenFolders(oldFolderUri: String, newFolderUri: String) {
+        try {
+            val ctx = requireContext()
+            val oldUri = Uri.parse(oldFolderUri)
+            val newUri = Uri.parse(newFolderUri)
+            
+            val oldRoot = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, oldUri)
+            val newRoot = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, newUri)
+            
+            if (oldRoot == null || newRoot == null) {
+                Toast.makeText(ctx, "Migration failed: Cannot access folders", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            // Find .obd directory in old folder
+            val oldObdDir = oldRoot.findFile(".obd")
+            if (oldObdDir == null || !oldObdDir.isDirectory) {
+                Toast.makeText(ctx, "No data to migrate from old folder", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            // Create .obd directory in new folder
+            var newObdDir = newRoot.findFile(".obd")
+            if (newObdDir == null) {
+                newObdDir = newRoot.createDirectory(".obd")
+            }
+            
+            if (newObdDir == null) {
+                Toast.makeText(ctx, "Migration failed: Cannot create .obd directory", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            var filesCopied = 0
+            
+            // Copy all subdirectories and files
+            oldObdDir.listFiles().forEach { oldItem ->
+                if (oldItem.isDirectory) {
+                    // Copy directory
+                    var newSubDir = newObdDir.findFile(oldItem.name ?: "")
+                    if (newSubDir == null) {
+                        newSubDir = newObdDir.createDirectory(oldItem.name ?: "")
+                    }
+                    
+                    if (newSubDir != null) {
+                        oldItem.listFiles().forEach { oldFile ->
+                            if (oldFile.isFile) {
+                                copyFile(ctx, oldFile, newSubDir)
+                                filesCopied++
+                            }
+                        }
+                    }
+                } else if (oldItem.isFile) {
+                    // Copy file directly in .obd directory
+                    copyFile(ctx, oldItem, newObdDir)
+                    filesCopied++
+                }
+            }
+            
+            Toast.makeText(ctx, "Migration complete: $filesCopied file(s) copied", Toast.LENGTH_LONG).show()
+            
+            // Refresh profile list to show migrated profiles
+            profileAdapter.refresh()
+            
+        } catch (e: Exception) {
+            Toast.makeText(requireContext(), "Migration failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    private fun copyFile(
+        context: android.content.Context,
+        sourceFile: androidx.documentfile.provider.DocumentFile,
+        targetDir: androidx.documentfile.provider.DocumentFile
+    ) {
+        try {
+            val fileName = sourceFile.name ?: return
+            
+            // Check if file already exists in target
+            var targetFile = targetDir.findFile(fileName)
+            if (targetFile == null) {
+                // Create new file
+                val mimeType = sourceFile.type ?: "application/octet-stream"
+                targetFile = targetDir.createFile(mimeType, fileName)
+            }
+            
+            if (targetFile != null) {
+                // Copy content
+                context.contentResolver.openInputStream(sourceFile.uri)?.use { input ->
+                    context.contentResolver.openOutputStream(targetFile.uri, "wt")?.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Log error but continue with other files
+            android.util.Log.e("SettingsFragment", "Failed to copy file: ${sourceFile.name}", e)
         }
     }
 

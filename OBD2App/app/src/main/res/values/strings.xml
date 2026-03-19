@@ -60,4 +60,36 @@
     <string name="notification_disconnected_text">Vehicle connection lost • Tap to reconnect</string>
 
     <string name="fab_content_description">Represents a view to invoke an action</string>
+
+    <!-- Display unit options for widget configuration -->
+    <string-array name="display_unit_options">
+        <item>(none)</item>
+        <item>%</item>
+        <item>°C</item>
+        <item>°F</item>
+        <item>km/h</item>
+        <item>mph</item>
+        <item>km</item>
+        <item>mi</item>
+        <item>km/L</item>
+        <item>L/100km</item>
+        <item>mpg</item>
+        <item>L</item>
+        <item>gal</item>
+        <item>L/h</item>
+        <item>rpm</item>
+        <item>kPa</item>
+        <item>psi</item>
+        <item>bar</item>
+        <item>V</item>
+        <item>A</item>
+        <item>g/s</item>
+        <item>sec</item>
+        <item>min</item>
+        <item>m</item>
+        <item>ft</item>
+        <item>g/km</item>
+        <item>° BTDC</item>
+        <item>Custom...</item>
+    </string-array>
 </resources>
