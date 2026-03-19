@@ -41,7 +41,16 @@ class WidgetTouchHandler(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 wasAlreadySelected = (viewModel.selectedWidgetId.value == widgetId)
-                viewModel.selectWidget(widgetId)
+                
+                // Only allow selection change if no widget is currently selected
+                // This prevents accidental selection changes when dragging resize handles over other widgets
+                val currentlySelectedId = viewModel.selectedWidgetId.value
+                if (currentlySelectedId == null || currentlySelectedId == widgetId) {
+                    viewModel.selectWidget(widgetId)
+                } else {
+                    // Another widget is selected - ignore this touch to prevent selection change
+                    return false
+                }
 
                 // Capture raw screen position and current view position in canvas space.
                 downRawX  = event.rawX

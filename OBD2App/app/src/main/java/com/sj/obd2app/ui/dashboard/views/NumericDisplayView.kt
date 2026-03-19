@@ -40,40 +40,41 @@ class NumericDisplayView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val cx = width / 2f
+        val cy = height / 2f
         val minDim = minOf(width, height).toFloat()
 
         // ── Background ────────────────────────────────────────
         bgPaint.color = colorScheme.surface
-        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 15f, 15f, bgPaint)
+        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
 
         val isWarning = warningThreshold?.let { currentValue >= it } ?: false
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
 
-        // ── Layout ────────────────────────────────────────
-        val nameSize  = minDim * 0.10f // Increased from 0.08f
-        val valueSize = minDim * 0.48f
-        val unitSize  = valueSize * 0.32f
+        // ── Optimized Layout - minimal padding ────────────────────────────────────────
+        val nameSize  = minDim * 0.12f  // Slightly larger name
+        val valueSize = minDim * 0.55f  // Larger value to fill space
+        val unitSize  = valueSize * 0.30f
 
-        // Name at top-center
+        // Name at top - minimal top margin
         labelPaint.textAlign = Paint.Align.CENTER
         labelPaint.textSize  = nameSize
-        val nameBaseline = nameSize * 1.3f
+        val nameBaseline = nameSize * 0.95f  // Reduced top margin
 
-        // Value baseline: roughly mid-height, shifted up a little to leave room for name below
+        // Value baseline: centered vertically
         valuePaint.textSize = valueSize
-        val valueBaseline = nameBaseline + nameSize * 0.6f + valueSize * 0.82f
+        val valueBaseline = cy + valueSize * 0.35f
 
         // Unit superscript: top-right of value block
-        valuePaint.textSize = valueSize   // measure at value size first
+        valuePaint.textSize = valueSize
         val valueBlockW = valuePaint.measureText(valueStr)
-        val unitX = cx + valueBlockW / 2f + unitSize * 0.2f
-        val unitBaseline = valueBaseline - valueSize * 0.62f   // raised to cap-height
+        val unitX = cx + valueBlockW / 2f + unitSize * 0.15f
+        val unitBaseline = valueBaseline - valueSize * 0.60f
 
-        // Name below value
-        val nameBottomBaseline = valueBaseline + nameSize * 1.5f
+        // Name below value - minimal bottom margin
+        val nameBottomBaseline = height - nameSize * 0.35f  // Reduced bottom margin
 
-        // ── Trend arrow — top-left corner, small ────────────────────
+        // ── Trend arrow — top-left corner, smaller ────────────────────
         val trend = when {
             previousValue.isNaN() -> 0
             currentValue > previousValue + 0.01f ->  1
@@ -81,9 +82,9 @@ class NumericDisplayView @JvmOverloads constructor(
             else -> 0
         }
         if (trend != 0) {
-            val as_ = minDim * 0.10f          // arrow size
-            val ax  = as_ * 0.5f             // left margin
-            val ay  = nameBaseline - as_ * 0.8f
+            val as_ = minDim * 0.08f          // Smaller arrow
+            val ax  = as_ * 0.3f              // Reduced left margin
+            val ay  = nameBaseline - as_ * 0.6f
             arrowPaint.color = if (trend > 0) colorScheme.accent else colorScheme.warning
             arrowPath.reset()
             if (trend > 0) {

@@ -49,8 +49,8 @@ class BarGaugeView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val pad = minOf(width, height) * 0.06f
-        val cornerR = minOf(width, height) * 0.06f
+        val pad = minOf(width, height) * 0.03f  // Reduced from 0.06f
+        val cornerR = minOf(width, height) * 0.04f  // Reduced from 0.06f
 
         val range = (rangeMax - rangeMin).takeIf { it > 0f } ?: 1f
         val fraction = ((currentValue - rangeMin) / range).coerceIn(0f, 1f)
@@ -59,11 +59,11 @@ class BarGaugeView @JvmOverloads constructor(
             if (isVertical) currentValue <= it else currentValue >= it
         } ?: false
 
-        // ── Track area bounds ─────────────────────────────────────
-        val labelH = if (isVertical) height * 0.12f else height * 0.28f
-        val trackL = if (isVertical) pad * 2.5f else pad
+        // ── Track area bounds - minimized padding ─────────────────────────────────────
+        val labelH = if (isVertical) height * 0.10f else height * 0.22f  // Reduced label height
+        val trackL = if (isVertical) pad * 1.5f else pad  // Reduced side padding
         val trackT = if (isVertical) pad else height - labelH - pad - (height * 0.35f)
-        val trackR = if (isVertical) width - pad * 2.5f else width - pad
+        val trackR = if (isVertical) width - pad * 1.5f else width - pad  // Reduced side padding
         val trackB = if (isVertical) height - labelH - pad else height - labelH
 
         trackRect.set(trackL, trackT, trackR, trackB)

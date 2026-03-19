@@ -20,7 +20,7 @@ class GridOverlayView @JvmOverloads constructor(
         set(value) { field = value; invalidate() }
 
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x88FFB74D.toInt() // amber-tinted dots, 53% opacity
+        color = 0xCCFFB74D.toInt() // amber-tinted dots, 80% opacity
         style = Paint.Style.FILL
     }
 
@@ -32,17 +32,19 @@ class GridOverlayView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        android.util.Log.e("DashUIEdit", "GridOverlayView.onDraw: width=$width height=$height gridSizePx=$gridSizePx visibility=$visibility")
         if (gridSizePx <= 0) return
 
         val cols = width / gridSizePx
         val rows = height / gridSizePx
+        android.util.Log.e("DashUIEdit", "GridOverlayView.onDraw: Drawing grid with cols=$cols rows=$rows")
 
         for (x in 0..cols) {
             for (y in 0..rows) {
                 canvas.drawCircle(
                     (x * gridSizePx).toFloat(),
                     (y * gridSizePx).toFloat(),
-                    3f,
+                    5f,
                     dotPaint
                 )
             }

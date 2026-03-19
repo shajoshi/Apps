@@ -54,7 +54,7 @@ class SevenSegmentView @JvmOverloads constructor(
 
         // ── Background box ────────────────────────────────────────
         bgPaint.color = colorScheme.surface
-        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 20f, 20f, bgPaint)
+        canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
 
         // ── Determine digit count & format ───────────────────────
         val absMax = maxOf(kotlin.math.abs(rangeMin), kotlin.math.abs(rangeMax))
@@ -65,12 +65,10 @@ class SevenSegmentView @JvmOverloads constructor(
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
 
-        // ── Layout constants ──────────────────────────────────────
-        // Digits occupy a band from ~10% to ~75% of height (centered in upper 3/4).
-        val digitAreaH  = height * 0.62f
-        val digitSize   = minOf(width / (totalChars.coerceAtLeast(1) * 0.68f), digitAreaH * 0.85f)
-        // Baseline of the digit glyphs — sits at ~72% of height
-        val digitBaseline = height * 0.72f
+        // ── Optimized Layout - minimal padding ──────────────────────────────────────
+        val digitAreaH  = height * 0.75f  // Increased from 0.62f to use more vertical space
+        val digitSize   = minOf(width / (totalChars.coerceAtLeast(1) * 0.60f), digitAreaH * 0.90f)  // Optimized sizing
+        val digitBaseline = height * 0.68f  // Adjusted for better centering
 
         // Measure the actual pixel width of the digit string at this size
         digitPaint.textSize = digitSize

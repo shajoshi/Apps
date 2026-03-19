@@ -55,7 +55,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Min value"
-                android:textColor="#AAAACC"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:layout_marginBottom="4dp" />
 
@@ -79,7 +79,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Max value"
-                android:textColor="#AAAACC"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:layout_marginBottom="4dp" />
 
@@ -113,7 +113,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Major tick interval"
-                android:textColor="#AAAACC"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:layout_marginBottom="4dp" />
 
@@ -137,7 +137,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Minor tick count"
-                android:textColor="#AAAACC"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:layout_marginBottom="4dp" />
 
@@ -171,7 +171,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Warning threshold"
-                android:textColor="#AAAACC"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:layout_marginBottom="4dp" />
 
@@ -196,7 +196,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Decimal places"
-                android:textColor="#AAAACC"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:layout_marginBottom="4dp" />
 
@@ -222,7 +222,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Display unit"
-            android:textColor="#AAAACC"
+            android:textColor="#FFFFFF"
             android:textSize="12sp"
             android:layout_marginBottom="4dp" />
 

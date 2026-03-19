@@ -72,10 +72,10 @@ class TemperatureGaugeView @JvmOverloads constructor(
 
         val range = (rangeMax - rangeMin).takeIf { it > 0f } ?: 1f
 
-        // Arc centre shifted up to 55% — reclaims dead space at bottom
+        // Arc centre optimized - minimal padding
         val cx = width / 2f
-        val cy = height * 0.55f
-        val radius = min(width / 2f, cy) * 0.82f
+        val cy = height * 0.52f  // Adjusted from 0.55f for better centering
+        val radius = min(width / 2f, cy) * 0.92f  // Increased from 0.82f to use more space
         val strokeW = radius * 0.10f
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius)

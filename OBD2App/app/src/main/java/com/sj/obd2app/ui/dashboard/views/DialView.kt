@@ -72,7 +72,7 @@ class DialView @JvmOverloads constructor(
 
         val cx = width / 2f
         val cy = height / 2f
-        val radius = min(width, height) / 2f * 0.78f
+        val radius = min(width, height) / 2f * 0.88f  // Increased from 0.78f to use more space
         val strokeW = radius * 0.09f
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius)
