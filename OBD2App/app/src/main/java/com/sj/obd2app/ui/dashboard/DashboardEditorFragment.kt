@@ -28,6 +28,8 @@ import com.sj.obd2app.metrics.TripPhase
 import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.ui.dashboard.data.LayoutRepository
+import com.sj.obd2app.ui.dashboard.model.ColorScheme
+import com.sj.obd2app.ui.dashboard.model.DashboardLayout
 import com.sj.obd2app.ui.dashboard.model.DashboardMetric
 import com.sj.obd2app.ui.dashboard.model.DashboardOrientation
 import com.sj.obd2app.ui.dashboard.model.DashboardWidget
@@ -155,7 +157,15 @@ class DashboardEditorFragment : Fragment() {
                 val layout = repo.getSavedLayouts().find { it.name == layoutName }
                 if (layout != null) viewModel.loadLayout(layout)
             } else {
-                // New dashboard — start immediately in edit mode
+                // New dashboard — start with empty canvas
+                viewModel.loadLayout(
+                    DashboardLayout(
+                        name = layoutName,
+                        colorScheme = ColorScheme.DEFAULT_DARK,
+                        widgets = emptyList(),
+                        orientation = DashboardOrientation.PORTRAIT
+                    )
+                )
                 isEditMode = true
                 hasUnsavedChanges = true
                 // Notify MetricsCalculator of edit mode
@@ -303,8 +313,11 @@ class DashboardEditorFragment : Fragment() {
         val inputLayout = com.google.android.material.textfield.TextInputLayout(ctx).apply {
             hint = "Dashboard name"
             setPadding(48, 16, 48, 0)
+            setHintTextColor(android.content.res.ColorStateList.valueOf(0x66FFFFFF.toInt())) // 40% opacity white
         }
-        val input = com.google.android.material.textfield.TextInputEditText(ctx)
+        val input = com.google.android.material.textfield.TextInputEditText(ctx).apply {
+            setHintTextColor(0x66FFFFFF.toInt()) // 40% opacity white for input hint
+        }
         inputLayout.addView(input)
 
         com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)

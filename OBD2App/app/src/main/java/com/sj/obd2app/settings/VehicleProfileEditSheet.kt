@@ -49,12 +49,6 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             editingProfile = repo.getById(profileId)
         }
 
-        // Update hints with global defaults
-        val globalPollMs = AppSettings.getGlobalPollingDelayMs(requireContext())
-        val globalCmdMs  = AppSettings.getGlobalCommandDelayMs(requireContext())
-        binding.tvPollingHint.text = "Global default: ${globalPollMs}ms"
-        binding.tvCommandHint.text  = "Global default: ${globalCmdMs}ms"
-
         editingProfile?.let { p ->
             binding.tvSheetTitle.text = "Edit Profile"
             binding.etProfileName.setText(p.name)
@@ -68,8 +62,6 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             binding.etFuelPrice.setText(if (p.fuelPricePerLitre > 0f) p.fuelPricePerLitre.toString() else "")
             binding.etEnginePower.setText(if (p.enginePowerBhp > 0f) p.enginePowerBhp.toString() else "")
             binding.etVehicleMass.setText(if (p.vehicleMassKg > 0f) p.vehicleMassKg.toString() else "")
-            p.obdPollingDelayMs?.let { binding.etPollingDelay.setText(it.toString()) }
-            p.obdCommandDelayMs?.let { binding.etCommandDelay.setText(it.toString()) }
             binding.btnDeleteProfile.visibility = View.VISIBLE
         } ?: run {
             binding.tvSheetTitle.text = "New Profile"
@@ -103,8 +95,6 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
         val price   = binding.etFuelPrice.text?.toString()?.toFloatOrNull() ?: 0f
         val power   = binding.etEnginePower.text?.toString()?.toFloatOrNull() ?: 0f
         val mass    = binding.etVehicleMass.text?.toString()?.toFloatOrNull() ?: 0f
-        val polling = binding.etPollingDelay.text?.toString()?.toLongOrNull()
-        val command = binding.etCommandDelay.text?.toString()?.toLongOrNull()
 
         val profile = (editingProfile ?: VehicleProfile()).copy(
             name              = name,
@@ -112,9 +102,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             tankCapacityL     = tank,
             fuelPricePerLitre = price,
             enginePowerBhp    = power,
-            vehicleMassKg     = mass,
-            obdPollingDelayMs = polling,
-            obdCommandDelayMs = command
+            vehicleMassKg     = mass
         )
 
         repo.save(profile)

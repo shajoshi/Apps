@@ -161,6 +161,8 @@ class MetricsCalculator private constructor(private val context: Context) {
             val profile = VehicleProfileRepository.getInstance(context).activeProfile
             logger.open(context, profile, supportedPids)
         }
+        // Start OBD connection monitoring for auto-reconnect during trip
+        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).startMonitoring()
     }
 
     fun pauseTrip() {
@@ -198,6 +200,8 @@ class MetricsCalculator private constructor(private val context: Context) {
         capturedGravityVector = null
         waitingForGravityCapture = false
         logger.close()
+        // Stop OBD connection monitoring when trip ends
+        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).stopMonitoring()
     }
 
     fun getLogShareUri() = logger.getShareUri()

@@ -347,15 +347,4 @@ object AppSettings {
         saveSettings(context, settings)
     }
 
-    // ── Effective polling delays (merges profile override + global) ───────────
-
-    fun effectivePollingDelayMs(context: Context): Long {
-        val profile = VehicleProfileRepository.getInstance(context).activeProfile
-        return profile?.obdPollingDelayMs ?: getGlobalPollingDelayMs(context)
-    }
-
-    fun effectiveCommandDelayMs(context: Context): Long {
-        val profile = VehicleProfileRepository.getInstance(context).activeProfile
-        return profile?.obdCommandDelayMs ?: getGlobalCommandDelayMs(context)
-    }
 }

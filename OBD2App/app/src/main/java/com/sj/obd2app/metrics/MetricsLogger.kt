@@ -174,8 +174,6 @@ class MetricsLogger {
                 put("fuelPricePerLitre", profile.fuelPricePerLitre)
                 put("enginePowerBhp", profile.enginePowerBhp)
                 if (profile.vehicleMassKg > 0f) put("vehicleMassKg", profile.vehicleMassKg)
-                put("obdPollingDelayMs", profile.obdPollingDelayMs ?: AppSettings.getGlobalPollingDelayMs(context))
-                put("obdCommandDelayMs", profile.obdCommandDelayMs ?: AppSettings.getGlobalCommandDelayMs(context))
             }
         } else JSONObject()
 

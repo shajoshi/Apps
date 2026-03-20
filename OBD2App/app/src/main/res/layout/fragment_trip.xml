@@ -624,15 +624,15 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Power - Accel"
+                            android:text="FE n kmpl"
                             android:textColor="#888888"
                             android:textSize="15sp" />
 
                         <TextView
-                            android:id="@+id/tv_power_obd_bhp"
+                            android:id="@+id/tv_instant_kmpl"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="— BHP"
+                            android:text="— kmpl"
                             android:textColor="#FFFFFF"
                             android:textSize="21sp"
                             android:textStyle="bold" />

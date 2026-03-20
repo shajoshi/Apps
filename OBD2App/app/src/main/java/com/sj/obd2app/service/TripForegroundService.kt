@@ -15,6 +15,8 @@ import com.sj.obd2app.MainActivity
 import com.sj.obd2app.R
 import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.metrics.TripPhase
+import com.sj.obd2app.obd.Obd2Service
+import com.sj.obd2app.obd.Obd2ServiceProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -95,16 +97,20 @@ class TripForegroundService : Service() {
     }
 
     private fun observeTripState() {
-        // Combine trip phase, duration, and distance for live updates
+        // Combine trip phase, metrics, and OBD connection state for live updates
         serviceScope.launch {
-            combine(calculator.tripPhase, calculator.metrics) { phase, metrics ->
-                updateNotification(phase, metrics)
+            combine(
+                calculator.tripPhase,
+                calculator.metrics,
+                Obd2ServiceProvider.getService().connectionState
+            ) { phase, metrics, obdState ->
+                updateNotification(phase, metrics, obdState)
             }.collect { /* just collect, updateNotification handles it */ }
         }
     }
 
-    private fun ensureForeground(status: String, duration: String, distance: String) {
-        val notification = createNotification(status, duration, distance)
+    private fun ensureForeground(status: String, duration: String, distance: String, obdStatus: String = "") {
+        val notification = createNotification(status, duration, distance, obdStatus)
         if (!isForeground) {
             startForeground(NOTIFICATION_ID, notification)
             isForeground = true
@@ -113,30 +119,48 @@ class TripForegroundService : Service() {
         }
     }
 
-    private fun updateNotification(phase: TripPhase, metrics: com.sj.obd2app.metrics.VehicleMetrics) {
+    private fun updateNotification(
+        phase: TripPhase,
+        metrics: com.sj.obd2app.metrics.VehicleMetrics,
+        obdState: Obd2Service.ConnectionState
+    ) {
         val statusText = when (phase) {
             TripPhase.RUNNING -> "Trip in progress"
             TripPhase.PAUSED  -> "Trip paused"
             TripPhase.IDLE    -> "Trip stopped"
         }
 
+        val obdStatusText = when (obdState) {
+            Obd2Service.ConnectionState.CONNECTED -> ""
+            Obd2Service.ConnectionState.CONNECTING -> "OBD Connecting..."
+            Obd2Service.ConnectionState.DISCONNECTED -> "OBD Disconnected - Reconnecting..."
+            Obd2Service.ConnectionState.ERROR -> "OBD Disconnected - Reconnecting..."
+        }
+
         val duration = formatDuration(calculator.elapsedTripSec())
         val distance = "%.1f km".format(metrics.tripDistanceKm)
 
-        Log.d(TAG, "Notification update: $statusText, $duration, $distance")
-        ensureForeground(statusText, duration, distance)
+        Log.d(TAG, "Notification update: $statusText, $duration, $distance, OBD: $obdStatusText")
+        ensureForeground(statusText, duration, distance, obdStatusText)
     }
 
-    private fun createNotification(status: String, duration: String, distance: String): Notification {
+    private fun createNotification(status: String, duration: String, distance: String, obdStatus: String = ""): Notification {
         // Intent to open app when notification is tapped
         val pendingIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val contentText = if (obdStatus.isNotEmpty()) {
+            "$status • $duration • $distance\n$obdStatus"
+        } else {
+            "$status • $duration • $distance"
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("OBD2 Trip Tracker")
-            .setContentText("$status • $duration • $distance")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true) // Cannot be swiped away

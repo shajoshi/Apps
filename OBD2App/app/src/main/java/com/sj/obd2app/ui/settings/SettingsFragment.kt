@@ -31,14 +31,6 @@ class SettingsFragment : Fragment() {
     private lateinit var profileAdapter: ProfileAdapter
     private var hasUnsavedChanges = false
 
-    /** Polling seekbar: maps 0..999 → 2ms..2000ms (step 2ms) */
-    private fun seekToPollingMs(progress: Int): Long = (2L + progress * 2L)
-    private fun pollingMsToSeek(ms: Long): Int = ((ms - 2L) / 2L).toInt().coerceIn(0, 999)
-
-    /** Command seekbar: maps 0..249 → 2ms..500ms (step 2ms) */
-    private fun seekToCommandMs(progress: Int): Long = (2L + progress * 2L)
-    private fun commandMsToSeek(ms: Long): Int = ((ms - 2L) / 2L).toInt().coerceIn(0, 249)
-
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
@@ -78,7 +70,6 @@ class SettingsFragment : Fragment() {
 
         setupSaveButton()
         setupProfileList()
-        setupPollingSliders()
         setupConnectionToggles()
         setupDataLogging()
     }
@@ -111,15 +102,6 @@ class SettingsFragment : Fragment() {
     private fun loadCurrentSettings() {
         val ctx = requireContext()
         
-        // Load current values without marking as changed
-        val pollingMs = AppSettings.getGlobalPollingDelayMs(ctx)
-        binding.seekbarPolling.progress = pollingMsToSeek(pollingMs)
-        binding.tvPollingValue.text = "${pollingMs}ms"
-
-        val commandMs = AppSettings.getGlobalCommandDelayMs(ctx)
-        binding.seekbarCommand.progress = commandMsToSeek(commandMs)
-        binding.tvCommandValue.text = "${commandMs}ms"
-
         binding.switchObdConnection.isChecked = AppSettings.isObdConnectionEnabled(ctx)
         binding.switchAutoConnect.isChecked = AppSettings.isAutoConnect(ctx)
         binding.switchLoggingEnabled.isChecked = AppSettings.isLoggingEnabled(ctx)
@@ -140,8 +122,6 @@ class SettingsFragment : Fragment() {
         val obdSettingChanged = oldObdEnabled != newObdEnabled
         
         AppSettings.updatePendingSettings(ctx) { settings ->
-            settings.globalPollingDelayMs = seekToPollingMs(binding.seekbarPolling.progress)
-            settings.globalCommandDelayMs = seekToCommandMs(binding.seekbarCommand.progress)
             settings.obdConnectionEnabled = newObdEnabled
             settings.autoConnect = binding.switchAutoConnect.isChecked
             settings.loggingEnabled = binding.switchLoggingEnabled.isChecked
@@ -211,40 +191,6 @@ class SettingsFragment : Fragment() {
                 sheet.show(parentFragmentManager, null)
             }
         }
-    }
-
-    // ── OBD2 Polling Sliders ─────────────────────────────────────────────────
-
-    private fun setupPollingSliders() {
-        val ctx = requireContext()
-
-        val pollingMs = AppSettings.getGlobalPollingDelayMs(ctx)
-        binding.seekbarPolling.progress = pollingMsToSeek(pollingMs)
-        binding.tvPollingValue.text = "${pollingMs}ms"
-
-        val commandMs = AppSettings.getGlobalCommandDelayMs(ctx)
-        binding.seekbarCommand.progress = commandMsToSeek(commandMs)
-        binding.tvCommandValue.text = "${commandMs}ms"
-
-        binding.seekbarPolling.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
-                val ms = seekToPollingMs(progress)
-                binding.tvPollingValue.text = "${ms}ms"
-                if (fromUser) markAsChanged()
-            }
-            override fun onStartTrackingTouch(sb: SeekBar) {}
-            override fun onStopTrackingTouch(sb: SeekBar) {}
-        })
-
-        binding.seekbarCommand.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
-                val ms = seekToCommandMs(progress)
-                binding.tvCommandValue.text = "${ms}ms"
-                if (fromUser) markAsChanged()
-            }
-            override fun onStartTrackingTouch(sb: SeekBar) {}
-            override fun onStopTrackingTouch(sb: SeekBar) {}
-        })
     }
 
     // ── Connection Toggles ────────────────────────────────────────────────────

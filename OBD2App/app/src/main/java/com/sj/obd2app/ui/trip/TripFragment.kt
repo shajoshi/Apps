@@ -120,7 +120,7 @@ class TripFragment : Fragment() {
         binding.tvHighwayPercent.text = state.highwayPercent
         binding.tvIdlePercent.text = state.idlePercent
         binding.tvPowerThermoBhp.text = state.powerThermoBhp
-        binding.tvPowerObdBhp.text = state.powerObdBhp
+        binding.tvInstantKmpl.text = state.instantKmpl
 
         // Phase colour on trip phase label
         binding.tvTripPhase.setTextColor(

@@ -40,10 +40,6 @@ data class VehicleProfile(
     val enginePowerBhp: Float = 0f,
     /** Vehicle kerb mass in kg — used for acceleration-based power. 0 = not set */
     val vehicleMassKg: Float = 0f,
-    /** null = use global default from AppSettings */
-    val obdPollingDelayMs: Long? = null,
-    /** null = use global default from AppSettings */
-    val obdCommandDelayMs: Long? = null,
     /** 
      * Available PIDs discovered for this vehicle's ECU.
      * Map of PID name -> last known value.

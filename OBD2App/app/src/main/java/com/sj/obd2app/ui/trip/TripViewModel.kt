@@ -49,7 +49,7 @@ data class TripUiState(
     val highwayPercent: String = "— %",
     val idlePercent: String = "— %",
     val powerThermoBhp: String = "— BHP",
-    val powerObdBhp: String = "— BHP"
+    val instantKmpl: String = "— kmpl"
 )
 
 
@@ -192,7 +192,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
         val highwayPercent: String
         val idlePercent: String
         val powerThermoBhp: String
-        val powerObdBhp: String
+        val instantKmpl: String
 
         if (phase == TripPhase.IDLE) {
             // Show empty values when trip is stopped
@@ -206,7 +206,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             highwayPercent = "— %"
             idlePercent = "— %"
             powerThermoBhp = "— BHP"
-            powerObdBhp = "— BHP"
+            instantKmpl = "— kmpl"
         } else {
             distance    = "%.1f km".format(metrics.tripDistanceKm)
             avgSpeed    = "%.1f km/h".format(metrics.tripAvgSpeedKmh)
@@ -224,7 +224,8 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
                 "%.1f BHP".format(bhp)
             } ?: "— BHP"
             
-            powerObdBhp = accelPowerStr.ifEmpty { "— BHP" }
+            // Instantaneous fuel economy
+            instantKmpl = metrics.instantKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
         }
 
         return TripUiState(
@@ -254,7 +255,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             highwayPercent  = highwayPercent,
             idlePercent     = idlePercent,
             powerThermoBhp  = powerThermoBhp,
-            powerObdBhp     = powerObdBhp
+            instantKmpl     = instantKmpl
         )
     }
 

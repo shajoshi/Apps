@@ -115,10 +115,19 @@ class VehicleProfileRepository private constructor(private val context: Context)
     // ── Write ─────────────────────────────────────────────────────────────────
 
     fun save(profile: VehicleProfile) {
+        // Check if this is the first profile being created
+        val existingProfiles = getAll()
+        val isFirstProfile = existingProfiles.isEmpty()
+        
         if (AppDataDirectory.isUsingExternalStorage(context)) {
             saveToFile(profile)
         } else {
             saveToPreferences(profile)
+        }
+        
+        // Automatically set the first profile as active
+        if (isFirstProfile) {
+            AppSettings.setActiveProfileId(context, profile.id)
         }
     }
 
@@ -242,8 +251,6 @@ class VehicleProfileRepository private constructor(private val context: Context)
         put("fuelPricePerLitre", fuelPricePerLitre.toDouble())
         put("enginePowerBhp", enginePowerBhp.toDouble())
         if (vehicleMassKg > 0f) put("vehicleMassKg", vehicleMassKg.toDouble())
-        if (obdPollingDelayMs != null) put("obdPollingDelayMs", obdPollingDelayMs)
-        if (obdCommandDelayMs != null) put("obdCommandDelayMs", obdCommandDelayMs)
         
         // Serialize availablePids
         if (availablePids.isNotEmpty()) {
@@ -276,8 +283,6 @@ class VehicleProfileRepository private constructor(private val context: Context)
             fuelPricePerLitre = getDouble("fuelPricePerLitre").toFloat(),
             enginePowerBhp    = optDouble("enginePowerBhp", 0.0).toFloat(),
             vehicleMassKg     = optDouble("vehicleMassKg", 0.0).toFloat(),
-            obdPollingDelayMs = if (has("obdPollingDelayMs")) getLong("obdPollingDelayMs") else null,
-            obdCommandDelayMs = if (has("obdCommandDelayMs")) getLong("obdCommandDelayMs") else null,
             availablePids     = pidsMap
         )
     }
