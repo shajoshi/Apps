@@ -64,6 +64,7 @@ class LayoutListFragment : Fragment() {
     }
 
     private fun loadLayouts() {
+        repo.seedDefaultDashboards()
         val layouts = repo.getSavedLayouts()
         val defaultName = repo.getDefaultLayoutName()
         adapter = LayoutsAdapter(layouts.toMutableList(), defaultName)

@@ -1,0 +1,207 @@
+{
+  "colorScheme": {
+    "accent": -11549705,
+    "background": -15066578,
+    "surface": -14013890,
+    "text": -5592372,
+    "warning": -36797
+  },
+  "name": "D1",
+  "orientation": "PORTRAIT",
+  "widgets": [
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 0,
+      "displayUnit": "rpm",
+      "gridH": 13,
+      "gridW": 18,
+      "gridX": 0,
+      "gridY": 0,
+      "id": "126d911a-613c-4de1-9e88-82c059c93f0e",
+      "majorTickInterval": 1000.0,
+      "metric": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "Engine RPM",
+          "pid": "010C",
+          "unit": "rpm"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 8000.0,
+      "rangeMin": 0.0,
+      "type": "DIAL",
+      "warningThreshold": 6000.0,
+      "zOrder": 0
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 1,
+      "displayUnit": "%",
+      "gridH": 5,
+      "gridW": 18,
+      "gridX": 0,
+      "gridY": 12,
+      "id": "c49e3f2f-a873-4fca-baa2-5c6fbbe55dbf",
+      "majorTickInterval": 25.0,
+      "metric": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "Throttle Position",
+          "pid": "0111",
+          "unit": "%"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 100.0,
+      "rangeMin": 0.0,
+      "type": "BAR_GAUGE_H",
+      "warningThreshold": 60.0,
+      "zOrder": 1
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 1,
+      "displayUnit": "km/L",
+      "gridH": 5,
+      "gridW": 18,
+      "gridX": 0,
+      "gridY": 15,
+      "id": "34a36a60-0cb5-4f07-a353-2eb54f2be7c4",
+      "majorTickInterval": 5.0,
+      "metric": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_KPL",
+          "name": "Instant Efficiency",
+          "unit": "km/L"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 180.0,
+      "rangeMin": 0.0,
+      "type": "BAR_GAUGE_H",
+      "warningThreshold": 40.0,
+      "zOrder": 2
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 2,
+      "displayUnit": "g/s",
+      "gridH": 5,
+      "gridW": 18,
+      "gridX": 0,
+      "gridY": 18,
+      "id": "a7e15581-44cf-4e43-8e05-3782876d0f97",
+      "majorTickInterval": 100.0,
+      "metric": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "MAF Air Flow Rate",
+          "pid": "0110",
+          "unit": "g/s"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 655.0,
+      "rangeMin": 0.0,
+      "type": "BAR_GAUGE_H",
+      "zOrder": 3
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 0,
+      "displayUnit": "km/h",
+      "gridH": 4,
+      "gridW": 8,
+      "gridX": 0,
+      "gridY": 23,
+      "id": "71b60c6b-51fa-430f-b7b7-feffd0b2b607",
+      "majorTickInterval": 20.0,
+      "metric": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "Vehicle Speed",
+          "pid": "010D",
+          "unit": "km/h"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 120.0,
+      "rangeMin": 0.0,
+      "type": "SEVEN_SEGMENT",
+      "warningThreshold": 180.0,
+      "zOrder": 4
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 0,
+      "displayUnit": "\u00b0C",
+      "gridH": 4,
+      "gridW": 10,
+      "gridX": 8,
+      "gridY": 23,
+      "id": "d3ce06aa-a83f-4151-b29f-69b35e32f19b",
+      "majorTickInterval": 20.0,
+      "metric": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "Engine Coolant Temperature",
+          "pid": "0105",
+          "unit": "\u00b0C"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 180.0,
+      "rangeMin": 0.0,
+      "type": "SEVEN_SEGMENT",
+      "warningThreshold": 130.0,
+      "zOrder": 5
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 1,
+      "displayUnit": "km/L",
+      "gridH": 5,
+      "gridW": 9,
+      "gridX": 0,
+      "gridY": 27,
+      "id": "4adf3b98-0297-41f8-b962-d549ab570364",
+      "majorTickInterval": 5.0,
+      "metric": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_AVG_KPL",
+          "name": "Trip Avg Efficiency",
+          "unit": "km/L"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 100.0,
+      "rangeMin": 0.0,
+      "type": "NUMERIC_DISPLAY",
+      "warningThreshold": 50.0,
+      "zOrder": 6
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 0,
+      "displayUnit": "m",
+      "gridH": 5,
+      "gridW": 9,
+      "gridX": 9,
+      "gridY": 27,
+      "id": "f34f489d-e5fc-4746-866c-b0df5bf13fbb",
+      "majorTickInterval": 500.0,
+      "metric": {
+        "type": "GpsAltitude"
+      },
+      "minorTickCount": 4,
+      "rangeMax": 7000.0,
+      "rangeMin": -500.0,
+      "type": "NUMERIC_DISPLAY",
+      "warningThreshold": 1000.0,
+      "zOrder": 7
+    }
+  ]
+}
