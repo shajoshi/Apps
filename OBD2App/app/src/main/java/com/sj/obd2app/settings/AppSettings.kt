@@ -25,6 +25,7 @@ object AppSettings {
         var accelerometerEnabled: Boolean = false,
         var autoConnect: Boolean = true,
         var obdConnectionEnabled: Boolean = true,
+        var btLoggingEnabled: Boolean = false,
         var lastDeviceMac: String? = null,
         var lastDeviceName: String? = null
     )
@@ -46,6 +47,7 @@ object AppSettings {
     private const val KEY_ACTIVE_PROFILE_ID         = "active_profile_id"
     const val KEY_AUTO_CONNECT                      = "auto_connect_last_device"
     private const val KEY_OBD_CONNECTION_ENABLED    = "obd_connection_enabled"
+    private const val KEY_BT_LOGGING_ENABLED        = "bt_logging_enabled"
 
     val DEFAULT_POLLING_DELAY_MS = 500L
     val DEFAULT_COMMAND_DELAY_MS = 50L
@@ -92,6 +94,7 @@ object AppSettings {
                 accelerometerEnabled = json.optBoolean("accelerometerEnabled", false),
                 autoConnect = json.optBoolean("autoConnect", true),
                 obdConnectionEnabled = json.optBoolean("obdConnectionEnabled", true),
+                btLoggingEnabled = json.optBoolean("btLoggingEnabled", false),
                 lastDeviceMac = json.optString("lastDeviceMac", "").takeIf { it.isNotEmpty() },
                 lastDeviceName = json.optString("lastDeviceName", "").takeIf { it.isNotEmpty() }
             )
@@ -110,6 +113,7 @@ object AppSettings {
             loggingEnabled = p.getBoolean(KEY_LOGGING_ENABLED, false),
             autoShareLog = p.getBoolean(KEY_AUTO_SHARE_LOG, false),
             accelerometerEnabled = p.getBoolean(KEY_ACCELEROMETER_ENABLED, false),
+            btLoggingEnabled = p.getBoolean(KEY_BT_LOGGING_ENABLED, false),
             autoConnect = p.getBoolean(KEY_AUTO_CONNECT, true),
             obdConnectionEnabled = p.getBoolean(KEY_OBD_CONNECTION_ENABLED, true),
             lastDeviceMac = p.getString("last_device_mac", null),
@@ -142,6 +146,7 @@ object AppSettings {
             put("accelerometerEnabled", settings.accelerometerEnabled)
             put("autoConnect", settings.autoConnect)
             put("obdConnectionEnabled", settings.obdConnectionEnabled)
+            put("btLoggingEnabled", settings.btLoggingEnabled)
             settings.lastDeviceMac?.let { put("lastDeviceMac", it) }
             settings.lastDeviceName?.let { put("lastDeviceName", it) }
         }
@@ -158,6 +163,7 @@ object AppSettings {
 
     private fun saveToPreferences(context: Context, settings: SettingsData) {
         prefs(context).edit().apply {
+            putBoolean(KEY_BT_LOGGING_ENABLED, settings.btLoggingEnabled)
             settings.activeProfileId?.let { putString(KEY_ACTIVE_PROFILE_ID, it) } ?: remove(KEY_ACTIVE_PROFILE_ID)
             putLong(KEY_GLOBAL_POLLING_DELAY_MS, settings.globalPollingDelayMs)
             putLong(KEY_GLOBAL_COMMAND_DELAY_MS, settings.globalCommandDelayMs)
@@ -239,6 +245,17 @@ object AppSettings {
     fun setObdConnectionEnabled(context: Context, value: Boolean) {
         val settings = loadSettings(context)
         settings.obdConnectionEnabled = value
+        saveSettings(context, settings)
+    }
+
+    // ── Bluetooth Logging ─────────────────────────────────────────────────────
+
+    fun isBtLoggingEnabled(context: Context): Boolean =
+        loadSettings(context).btLoggingEnabled
+
+    fun setBtLoggingEnabled(context: Context, value: Boolean) {
+        val settings = loadSettings(context)
+        settings.btLoggingEnabled = value
         saveSettings(context, settings)
     }
 

@@ -24,6 +24,8 @@ import java.util.UUID
 class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     companion object {
+        private const val TAG = "BluetoothObd2Service"
+        
         /** Standard SPP (Serial Port Profile) UUID */
         private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
@@ -85,6 +87,13 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     private var outputStream: OutputStream? = null
     private var pollingJob: Job? = null
     private var supportedPids: Set<Int> = emptySet()
+    
+    // Connection health monitoring
+    private var consecutiveFailures = 0
+    private val MAX_CONSECUTIVE_FAILURES = 10  // ~2-3 seconds of failures
+    
+    // Bluetooth connection logger
+    private val btLogger = context?.let { BluetoothConnectionLogger.getInstance(it) }
 
     private val _connectionState = MutableStateFlow(Obd2Service.ConnectionState.DISCONNECTED)
     override val connectionState: StateFlow<Obd2Service.ConnectionState> = _connectionState
@@ -119,6 +128,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         _errorMessage.value = null
         _connectionLog.value = emptyList()
         log("Connecting to ${btDevice.name ?: btDevice.address}…")
+        btLogger?.logConnectionAttempt(btDevice.name ?: "Unknown", btDevice.address)
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -161,6 +171,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
                 _connectedDeviceName.value = btDevice.name ?: btDevice.address
                 _connectionState.value = Obd2Service.ConnectionState.CONNECTED
+                btLogger?.logConnectionSuccess(btDevice.name ?: "Unknown", supportedPids.size)
                 startPolling()
 
             } catch (e: IOException) {
@@ -168,12 +179,14 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 log("✗ $msg")
                 _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
+                btLogger?.logConnectionFailure(btDevice.name ?: "Unknown", e.message ?: "IOException")
                 closeSocket()
             } catch (e: SecurityException) {
                 val msg = "Bluetooth permission denied"
                 log("✗ $msg")
                 _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
+                btLogger?.logConnectionFailure(btDevice.name ?: "Unknown", "Permission denied")
                 closeSocket()
             }
         }
@@ -187,6 +200,8 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         pollingJob = null
         closeSocket()
         supportedPids = emptySet()
+        consecutiveFailures = 0  // Reset failure counter
+        btLogger?.logDisconnection("User initiated")
         _connectedDeviceName.value = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
@@ -263,18 +278,39 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
         // Cached results — slow-tier values persist between cycles
         val cachedResults = mutableMapOf<String, Obd2DataItem>()
+        
+        // Reset failure counter when starting polling
+        consecutiveFailures = 0
 
         pollingJob = CoroutineScope(Dispatchers.IO).launch {
             var cycleCount = 0
             while (isActive && _connectionState.value == Obd2Service.ConnectionState.CONNECTED) {
+                var cycleSuccessCount = 0
+                
+                // Check socket health every 10 cycles (~2 seconds)
+                if (cycleCount % 10 == 0 && !isSocketHealthy()) {
+                    android.util.Log.e(TAG, "Socket health check failed - marking connection as lost")
+                    btLogger?.logSocketHealthFailure()
+                    _connectionState.value = Obd2Service.ConnectionState.ERROR
+                    _errorMessage.value = "Bluetooth socket disconnected"
+                    break
+                }
+                
                 // Poll fast-tier PIDs every cycle
                 for (cmd in fastCommands) {
                     if (!isActive) break
                     try {
                         val raw = sendCommand(cmd.pid)
                         val parsed = parseResponse(cmd, raw)
-                        if (parsed != null) cachedResults[cmd.pid] = parsed
-                    } catch (_: Exception) {}
+                        if (parsed != null) {
+                            cachedResults[cmd.pid] = parsed
+                            cycleSuccessCount++
+                        }
+                    } catch (e: IOException) {
+                        android.util.Log.w(TAG, "PID ${cmd.pid} IOException: ${e.message}")
+                    } catch (e: Exception) {
+                        android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
+                    }
                     // No explicit delay — ATAT1 handles ECU pacing
                 }
 
@@ -285,9 +321,36 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                         try {
                             val raw = sendCommand(cmd.pid)
                             val parsed = parseResponse(cmd, raw)
-                            if (parsed != null) cachedResults[cmd.pid] = parsed
-                        } catch (_: Exception) {}
+                            if (parsed != null) {
+                                cachedResults[cmd.pid] = parsed
+                                cycleSuccessCount++
+                            }
+                        } catch (e: IOException) {
+                            android.util.Log.w(TAG, "PID ${cmd.pid} IOException: ${e.message}")
+                        } catch (e: Exception) {
+                            android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
+                        }
                     }
+                }
+
+                // Check if we got any successful reads this cycle
+                if (cycleSuccessCount == 0) {
+                    consecutiveFailures++
+                    android.util.Log.w(TAG, "Polling cycle failed, consecutive failures: $consecutiveFailures")
+                    
+                    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                        android.util.Log.e(TAG, "Too many consecutive failures ($consecutiveFailures) - marking connection as lost")
+                        btLogger?.logPollingError(consecutiveFailures, MAX_CONSECUTIVE_FAILURES)
+                        _connectionState.value = Obd2Service.ConnectionState.ERROR
+                        _errorMessage.value = "Connection lost - no data received"
+                        break
+                    }
+                } else {
+                    // Reset counter on successful read
+                    if (consecutiveFailures > 0) {
+                        android.util.Log.d(TAG, "Polling cycle succeeded, resetting failure counter (was $consecutiveFailures)")
+                    }
+                    consecutiveFailures = 0
                 }
 
                 if (cachedResults.isNotEmpty()) {
@@ -297,6 +360,12 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 cycleCount++
                 // Small yield between cycles to avoid CPU spin and allow BT stack breathing room
                 delay(10L)
+            }
+            
+            // Cleanup after polling stops due to error
+            if (_connectionState.value == Obd2Service.ConnectionState.ERROR) {
+                android.util.Log.d(TAG, "Polling stopped due to error, closing socket")
+                closeSocket()
             }
         }
     }
@@ -385,6 +454,20 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             value = value,
             unit = command.unit
         )
+    }
+
+    /**
+     * Check if the Bluetooth socket is still healthy at the OS level.
+     */
+    private fun isSocketHealthy(): Boolean {
+        val sock = socket ?: return false
+        return try {
+            // Check if socket is connected and streams are available
+            sock.isConnected && inputStream != null && outputStream != null
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Socket health check failed: ${e.message}")
+            false
+        }
     }
 
     private fun closeSocket() {

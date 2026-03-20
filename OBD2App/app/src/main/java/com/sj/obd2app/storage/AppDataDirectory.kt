@@ -33,7 +33,7 @@ object AppDataDirectory {
      * Returns the .obd directory as a DocumentFile, or null if not available.
      * Creates the directory if it doesn't exist.
      */
-    private fun getObdDirectoryDocumentFile(context: Context): DocumentFile? {
+    fun getObdDirectoryDocumentFile(context: Context): DocumentFile? {
         val uriStr = AppSettings.getLogFolderUri(context) ?: return null
         val uri = Uri.parse(uriStr)
         
