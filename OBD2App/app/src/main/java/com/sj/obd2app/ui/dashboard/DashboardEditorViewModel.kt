@@ -103,8 +103,6 @@ class DashboardEditorViewModel : ViewModel() {
         gridH: Int = 4
     ) {
         val layout = _currentLayout.value
-        android.util.Log.e("DashUIEdit", "addWidget: BEFORE - Existing widgets: ${layout.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY}) size=${it.gridW}x${it.gridH}" }}")
-        
         val newZ = (layout.widgets.maxOfOrNull { it.zOrder } ?: -1) + 1
         val defaults = MetricDefaults.get(metric)
 
@@ -131,49 +129,74 @@ class DashboardEditorViewModel : ViewModel() {
 
         _currentLayout.value = layout.copy(widgets = layout.widgets + newWidget)
         _selectedWidgetId.value = newWidget.id
-        
-        android.util.Log.e("DashUIEdit", "addWidget: AFTER - New widget: id=${newWidget.id.take(8)} pos=(${newWidget.gridX},${newWidget.gridY}) size=${newWidget.gridW}x${newWidget.gridH}")
-        android.util.Log.e("DashUIEdit", "addWidget: AFTER - All widgets: ${_currentLayout.value.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY})" }}")
-        
-        // Detect overlapping widgets
-        val allWidgets = _currentLayout.value.widgets
-        for (i in allWidgets.indices) {
-            for (j in i + 1 until allWidgets.size) {
-                val w1 = allWidgets[i]
-                val w2 = allWidgets[j]
-                val overlaps = !(w1.gridX + w1.gridW <= w2.gridX || 
-                                 w2.gridX + w2.gridW <= w1.gridX ||
-                                 w1.gridY + w1.gridH <= w2.gridY ||
-                                 w2.gridY + w2.gridH <= w1.gridY)
-                if (overlaps) {
-                    android.util.Log.e("DashUIEdit", "⚠️ OVERLAP DETECTED: Widget ${w1.id.take(8)} at (${w1.gridX},${w1.gridY}) size ${w1.gridW}x${w1.gridH} OVERLAPS Widget ${w2.id.take(8)} at (${w2.gridX},${w2.gridY}) size ${w2.gridW}x${w2.gridH}")
-                }
-            }
-        }
     }
 
-    /** Finds the bottommost unoccupied grid position for a widget of the given size. */
+    /**
+     * Adds a new widget with all properties set in a single operation.
+     * This prevents double StateFlow emissions that can cause rendering issues.
+     */
+    fun addWidgetWithProperties(
+        type: WidgetType,
+        metric: DashboardMetric,
+        gridW: Int = 4,
+        gridH: Int = 4,
+        rangeMin: Float,
+        rangeMax: Float,
+        majorTickInterval: Float,
+        minorTickCount: Int,
+        warningThreshold: Float?,
+        decimalPlaces: Int,
+        displayUnit: String
+    ) {
+        val layout = _currentLayout.value
+        val newZ = (layout.widgets.maxOfOrNull { it.zOrder } ?: -1) + 1
+        val (slotX, slotY) = findFirstFreeSlot(layout, gridW, gridH)
+
+        val newWidget = DashboardWidget(
+            id = UUID.randomUUID().toString(),
+            type = type,
+            metric = metric,
+            gridX = slotX,
+            gridY = slotY,
+            gridW = gridW,
+            gridH = gridH,
+            zOrder = newZ,
+            rangeMin = rangeMin,
+            rangeMax = rangeMax,
+            majorTickInterval = majorTickInterval,
+            minorTickCount = minorTickCount,
+            warningThreshold = warningThreshold,
+            decimalPlaces = decimalPlaces,
+            displayUnit = displayUnit
+        )
+
+        _currentLayout.value = layout.copy(widgets = layout.widgets + newWidget)
+        _selectedWidgetId.value = newWidget.id
+    }
+
+    /** Finds the first unoccupied grid position within the visible canvas for a widget of the given size. */
     private fun findFirstFreeSlot(layout: DashboardLayout, w: Int, h: Int): Pair<Int, Int> {
+        val maxCol = if (canvasGridW > 0) canvasGridW else 18
+        val maxRow = if (canvasGridH > 0) canvasGridH else 32
+        
         val occupied = layout.widgets.flatMap { widget ->
             (widget.gridX until widget.gridX + widget.gridW).flatMap { x ->
                 (widget.gridY until widget.gridY + widget.gridH).map { y -> x to y }
             }
         }.toSet()
         
-        // Search from bottom to top (row 20 down to 0)
-        for (row in 20 downTo 0) {
-            for (col in 0..20) {
+        // Search top-to-bottom, left-to-right within visible canvas bounds
+        for (row in 0..maxRow - h) {
+            for (col in 0..maxCol - w) {
                 val fits = (col until col + w).all { x ->
                     (row until row + h).all { y -> (x to y) !in occupied }
                 }
                 if (fits) {
-                    android.util.Log.e("DashUIEdit", "findFirstFreeSlot: Found slot at ($col, $row) for widget size ${w}x${h}")
                     return col to row
                 }
             }
         }
-        android.util.Log.e("DashUIEdit", "findFirstFreeSlot: No free slot found, using fallback (0, 0)")
-        return 0 to 0 // fallback
+        return 0 to 0 // fallback — overlaps but stays visible
     }
     
     fun removeSelectedWidget() {
@@ -282,8 +305,6 @@ class DashboardEditorViewModel : ViewModel() {
         displayUnit: String
     ) {
         val layout = _currentLayout.value
-        android.util.Log.e("DashUIEdit", "updateWidgetRangeSettings: BEFORE - widgetId=${widgetId.take(8)}")
-        android.util.Log.e("DashUIEdit", "updateWidgetRangeSettings: BEFORE - All widgets: ${layout.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY})" }}")
         val updated = layout.widgets.map { w ->
             if (w.id == widgetId) {
                 w.copy(
@@ -298,8 +319,6 @@ class DashboardEditorViewModel : ViewModel() {
             } else w
         }
         _currentLayout.value = layout.copy(widgets = updated)
-        
-        android.util.Log.e("DashUIEdit", "updateWidgetRangeSettings: AFTER - All widgets: ${_currentLayout.value.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY})" }}")
     }
 
     /** Updates all user-editable properties of a widget, including size preset. */
@@ -318,8 +337,6 @@ class DashboardEditorViewModel : ViewModel() {
     ) {
         snapshot()  // Create undo point before editing
         val layout = _currentLayout.value
-        android.util.Log.e("DashUIEdit", "updateWidgetProperties: BEFORE - widgetId=${widgetId.take(8)}")
-        android.util.Log.e("DashUIEdit", "updateWidgetProperties: BEFORE - All widgets: ${layout.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY}) size=${it.gridW}x${it.gridH}" }}")
         val updated = layout.widgets.map { w ->
             if (w.id == widgetId) w.copy(
                 metric            = metric,
@@ -339,8 +356,6 @@ class DashboardEditorViewModel : ViewModel() {
             ) else w
         }
         _currentLayout.value = layout.copy(widgets = updated)
-        
-        android.util.Log.e("DashUIEdit", "updateWidgetProperties: AFTER - All widgets: ${_currentLayout.value.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY}) size=${it.gridW}x${it.gridH}" }}")
     }
 
     fun setColorScheme(scheme: ColorScheme) {

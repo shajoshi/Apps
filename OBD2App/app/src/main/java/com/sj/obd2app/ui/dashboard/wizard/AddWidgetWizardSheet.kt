@@ -145,20 +145,23 @@ class AddWidgetWizardSheet : BottomSheetDialogFragment() {
 
         // Obtain the shared ViewModel from the parent fragment (DashboardEditorFragment)
         val vm = ViewModelProvider(requireParentFragment())[DashboardEditorViewModel::class.java]
-        vm.addWidget(type, metric, state.gridW, state.gridH)
-
-        // Override the auto-defaults with any user edits from Step 3
-        val newId = vm.currentLayout.value.widgets.lastOrNull()?.id ?: run { dismiss(); return }
-        vm.updateWidgetRangeSettings(
-            widgetId        = newId,
-            rangeMin        = state.rangeMin,
-            rangeMax        = state.rangeMax,
+        
+        // Use the batched method to add widget with all properties in one operation
+        // This prevents double StateFlow emission and ensures the widget renders immediately
+        vm.addWidgetWithProperties(
+            type = type,
+            metric = metric,
+            gridW = state.gridW,
+            gridH = state.gridH,
+            rangeMin = state.rangeMin,
+            rangeMax = state.rangeMax,
             majorTickInterval = state.majorTickInterval,
-            minorTickCount  = state.minorTickCount,
+            minorTickCount = state.minorTickCount,
             warningThreshold = state.warningThreshold,
-            decimalPlaces   = state.decimalPlaces,
-            displayUnit     = state.displayUnit
+            decimalPlaces = state.decimalPlaces,
+            displayUnit = state.displayUnit
         )
+        
         dismiss()
     }
 

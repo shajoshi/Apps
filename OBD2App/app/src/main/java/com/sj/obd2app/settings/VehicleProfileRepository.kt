@@ -135,9 +135,8 @@ class VehicleProfileRepository private constructor(private val context: Context)
         val profileFile = AppDataDirectory.getProfileFileDocumentFile(context, profile.name)
         if (profileFile != null) {
             val json = profile.toJson()
-            // Use "w" mode instead of "wt" to avoid explicit truncation
-            // The file will be overwritten but only with the complete new content
-            context.contentResolver.openOutputStream(profileFile.uri, "w")?.use { output ->
+            // Use "wt" mode to truncate before writing — "w" alone does NOT truncate on Android 10+
+            context.contentResolver.openOutputStream(profileFile.uri, "wt")?.use { output ->
                 output.write(json.toString(2).toByteArray())
             }
         }

@@ -152,8 +152,8 @@ object AppSettings {
         }
 
         try {
-            // Use "w" mode instead of "wt" to avoid explicit truncation
-            context.contentResolver.openOutputStream(settingsFile.uri, "w")?.use { output ->
+            // Use "wt" mode to truncate before writing — "w" alone does NOT truncate on Android 10+
+            context.contentResolver.openOutputStream(settingsFile.uri, "wt")?.use { output ->
                 output.write(json.toString(2).toByteArray())
             }
         } catch (e: Exception) {

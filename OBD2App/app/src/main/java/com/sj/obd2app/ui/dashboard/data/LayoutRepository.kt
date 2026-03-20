@@ -61,8 +61,8 @@ class LayoutRepository(private val context: Context) {
     private fun saveToExternalStorage(layoutName: String, json: String) {
         val layoutFile = AppDataDirectory.getLayoutFileDocumentFile(context, layoutName)
         if (layoutFile != null) {
-            // Use "w" mode instead of "wt" to avoid explicit truncation
-            context.contentResolver.openOutputStream(layoutFile.uri, "w")?.use { output ->
+            // Use "wt" mode to truncate before writing — "w" alone does NOT truncate on Android 10+
+            context.contentResolver.openOutputStream(layoutFile.uri, "wt")?.use { output ->
                 output.write(json.toByteArray())
             }
         }
@@ -134,6 +134,30 @@ class LayoutRepository(private val context: Context) {
     }
 
     
+    /**
+     * Seeds sample dashboards from bundled assets on first install.
+     * Only copies if no dashboards currently exist in either storage location.
+     */
+    fun seedDefaultDashboards() {
+        val existing = getSavedLayouts()
+        if (existing.isNotEmpty()) return
+
+        try {
+            val seedFiles = context.assets.list("seed_dashboards") ?: return
+            for (fileName in seedFiles) {
+                if (!fileName.endsWith(".json")) continue
+                val json = context.assets.open("seed_dashboards/$fileName").use {
+                    it.readBytes().toString(Charsets.UTF_8)
+                }
+                val layout = gson.fromJson(json, DashboardLayout::class.java)
+                saveLayout(layout)
+                Log.i(TAG, "Seeded dashboard: ${layout.name}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to seed default dashboards", e)
+        }
+    }
+
     fun deleteLayout(name: String) {
         if (useExternalStorage) {
             AppDataDirectory.deleteLayoutFile(context, name)

@@ -346,8 +346,8 @@ class SettingsFragment : Fragment() {
             if (targetFile != null) {
                 // Copy content
                 context.contentResolver.openInputStream(sourceFile.uri)?.use { input ->
-                    // Use "w" mode instead of "wt" to avoid explicit truncation
-                    context.contentResolver.openOutputStream(targetFile.uri, "w")?.use { output ->
+                    // Use "wt" mode to truncate before writing — "w" alone does NOT truncate on Android 10+
+                    context.contentResolver.openOutputStream(targetFile.uri, "wt")?.use { output ->
                         input.copyTo(output)
                     }
                 }

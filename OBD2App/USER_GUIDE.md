@@ -60,7 +60,7 @@ OBD2 Viewer transforms your Android phone into a powerful vehicle diagnostics to
 - **Warning zones**: Set thresholds for visual alerts
 
 ### **🔧 Diagnostics**
-- **21 OBD-II parameters**: Engine load, coolant temp, throttle, MAF, fuel trim, O2 sensors, and more
+- **OBD-II parameters**: Engine load, coolant temp, throttle, MAF, fuel trim, O2 sensors, and more
 - **Auto-discovery**: Only displays parameters your vehicle supports
 - **Details view**: Complete table of all live sensor readings
 
@@ -176,7 +176,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 - Wait 30-60 seconds for satellite acquisition
 
 **Missing OBD parameters?**
-- Your vehicle may not support all 21 parameters
+- Your vehicle may not support all parameters
 - Only ECU-supported parameters are displayed
 - Older vehicles support fewer parameters
 

@@ -113,7 +113,6 @@ class DashboardEditorFragment : Fragment() {
         gridOverlay      = view.findViewById(R.id.grid_overlay)
         gridOverlay.gridSizePx = gridSizePx
         gridOverlay.invalidate()  // Force redraw with new grid size
-        android.util.Log.e("DashUIEdit", "onViewCreated: Set gridSizePx=$gridSizePx, forcing invalidate()")
         // Re-measure canvas whenever the host dimensions change (orientation etc.)
         canvasHost.viewTreeObserver.addOnGlobalLayoutListener(::onScrollViewLayout)
         panelProperties  = view.findViewById(R.id.panel_properties)
@@ -355,7 +354,6 @@ class DashboardEditorFragment : Fragment() {
 
     private fun updateEditModeVisuals() {
         gridOverlay.visibility = if (isEditMode) View.VISIBLE else View.GONE
-        android.util.Log.e("DashUIEdit", "updateEditModeVisuals: Grid visibility = ${if (isEditMode) "VISIBLE" else "GONE"}, isEditMode=$isEditMode")
         badgeEditing.visibility = if (isEditMode) View.VISIBLE else View.GONE
         fabAddWidget.visibility = if (isEditMode) View.VISIBLE else View.GONE
         updateTripControls()
@@ -508,7 +506,6 @@ class DashboardEditorFragment : Fragment() {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.currentLayout.collect { layout ->
-                android.util.Log.e("DashUIEdit", "observeViewModel: Layout changed - widgets: ${layout.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY})" }}")
                 if (layoutLoadedOnce && isEditMode) hasUnsavedChanges = true
                 layoutLoadedOnce = true
                 
@@ -516,7 +513,6 @@ class DashboardEditorFragment : Fragment() {
                 val prev = previousLayout
                 if (prev == null) {
                     // First load - render everything
-                    android.util.Log.e("DashUIEdit", "observeViewModel: First load, calling renderCanvas")
                     renderCanvas(layout)
                 } else {
                     // Check what changed
@@ -529,16 +525,13 @@ class DashboardEditorFragment : Fragment() {
                     
                     if (widgetIdsChanged) {
                         // Full re-render needed
-                        android.util.Log.e("DashUIEdit", "observeViewModel: Widget IDs changed, calling renderCanvas")
                         renderCanvas(layout)
                     } else {
                         // Only update individual widgets that changed
-                        android.util.Log.e("DashUIEdit", "observeViewModel: Only properties changed, calling updateSingleWidget")
                         for (widget in layout.widgets) {
                             val prevWidget = prevWidgets[widget.id]
                             if (prevWidget != widget) {
                                 // Widget properties changed - update only this widget
-                                android.util.Log.e("DashUIEdit", "observeViewModel: Updating widget id=${widget.id.take(8)} pos=(${widget.gridX},${widget.gridY})")
                                 updateSingleWidget(widget)
                             }
                         }
@@ -592,9 +585,6 @@ class DashboardEditorFragment : Fragment() {
      * OBD2 / GPS StateFlow emissions to each gauge view.
      */
     private fun renderCanvas(layout: com.sj.obd2app.ui.dashboard.model.DashboardLayout) {
-        android.util.Log.e("DashUIEdit", "renderCanvas: START - Rendering ${layout.widgets.size} widgets")
-        android.util.Log.e("DashUIEdit", "renderCanvas: Widget positions: ${layout.widgets.map { "id=${it.id.take(8)} pos=(${it.gridX},${it.gridY}) size=${it.gridW}x${it.gridH}" }}")
-        
         // Detect overlapping widgets
         val overlappingWidgetIds = detectOverlaps(layout.widgets)
         
@@ -645,7 +635,6 @@ class DashboardEditorFragment : Fragment() {
             wrapper.layoutParams = lp
             wrapper.x = (widget.gridX * gridSizePx).toFloat()
             wrapper.y = (widget.gridY * gridSizePx).toFloat()
-            android.util.Log.e("DashUIEdit", "renderCanvas: Positioned widget id=${widget.id.take(8)} at view.x=${wrapper.x} view.y=${wrapper.y} (grid ${widget.gridX},${widget.gridY})")
 
             if (isEditMode) {
                 val isMoveResize = moveResizeWidgetId == widget.id
@@ -698,9 +687,13 @@ class DashboardEditorFragment : Fragment() {
      * This prevents layout perturbation when editing individual widget properties.
      */
     private fun updateSingleWidget(widget: DashboardWidget) {
-        android.util.Log.e("DashUIEdit", "updateSingleWidget: Updating widget id=${widget.id.take(8)} pos=(${widget.gridX},${widget.gridY}) size=${widget.gridW}x${widget.gridH}")
         val wrapper = canvasContainer.findViewWithTag<FrameLayout>(widget.id)
-        wrapper?.let {
+        if (wrapper == null) {
+            android.util.Log.w("DashWidgetMissing", "updateSingleWidget: Widget view not found for id=${widget.id.take(8)}, falling back to full render")
+            renderCanvas(viewModel.currentLayout.value)
+            return
+        }
+        wrapper.let {
             val contentFrame = it.findViewById<FrameLayout>(R.id.widget_content_frame)
             val gaugeView = contentFrame.getChildAt(0) as DashboardGaugeView
             
@@ -761,7 +754,6 @@ class DashboardEditorFragment : Fragment() {
                 if (overlaps) {
                     overlappingIds.add(w1.id)
                     overlappingIds.add(w2.id)
-                    android.util.Log.e("DashUIEdit", "⚠️ OVERLAP: Widget ${w1.id.take(8)} at (${w1.gridX},${w1.gridY}) size ${w1.gridW}x${w1.gridH} overlaps ${w2.id.take(8)} at (${w2.gridX},${w2.gridY}) size ${w2.gridW}x${w2.gridH}")
                 }
             }
         }
