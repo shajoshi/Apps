@@ -19,6 +19,11 @@ internal class TripState {
     var stoppedTimeSec: Long = 0L
     var maxSpeedKmh: Float = 0f
 
+    // Trip-level drive mode time accumulators (in seconds)
+    var idleTimeSec: Long = 0L
+    var cityTimeSec: Long = 0L
+    var highwayTimeSec: Long = 0L
+
     // High-precision accumulators for small fuel rates
     private var preciseDistanceM: Double = 0.0
     private var preciseFuelUsedMl: Double = 0.0
@@ -34,6 +39,9 @@ internal class TripState {
         movingTimeSec = 0L
         stoppedTimeSec = 0L
         maxSpeedKmh = 0f
+        idleTimeSec = 0L
+        cityTimeSec = 0L
+        highwayTimeSec = 0L
         speedWindow.clear()
         preciseDistanceM = 0.0
         preciseFuelUsedMl = 0.0
@@ -76,6 +84,14 @@ internal class TripState {
             stoppedTimeSec += (dtSec).toLong()
         }
 
+        // Trip-level drive mode time accumulation
+        val dtSecLong = (dtSec).toLong()
+        when {
+            speedKmh <= 2f  -> idleTimeSec += dtSecLong
+            speedKmh <= 60f -> cityTimeSec += dtSecLong
+            else            -> highwayTimeSec += dtSecLong
+        }
+
         // Peak speed
         if (speedKmh > maxSpeedKmh) maxSpeedKmh = speedKmh
 
@@ -102,5 +118,17 @@ internal class TripState {
             }
         }
         return Triple(city / total * 100f, highway / total * 100f, idle / total * 100f)
+    }
+
+    /** Returns (pctCity, pctHighway, pctIdle) from the entire trip duration. */
+    fun tripDriveModePercents(): Triple<Float, Float, Float> {
+        val totalSec = idleTimeSec + cityTimeSec + highwayTimeSec
+        if (totalSec == 0L) return Triple(0f, 0f, 0f)
+        val total = totalSec.toFloat()
+        return Triple(
+            cityTimeSec / total * 100f,
+            highwayTimeSec / total * 100f,
+            idleTimeSec / total * 100f
+        )
     }
 }

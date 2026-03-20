@@ -288,9 +288,9 @@ class MetricsCalculator private constructor(private val context: Context) {
                 tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, (System.currentTimeMillis() - tripState.tripStartMs) / 1000L),
                 tripMaxSpeedKmh = tripState.maxSpeedKmh,
                 spdDiffKmh = null,
-                pctCity = tripState.driveModePercents().first,
-                pctHighway = tripState.driveModePercents().second,
-                pctIdle = tripState.driveModePercents().third,
+                pctCity = tripState.tripDriveModePercents().first,
+                pctHighway = tripState.tripDriveModePercents().second,
+                pctIdle = tripState.tripDriveModePercents().third,
                 powerAccelKw = null,
                 powerThermoKw = null,
                 powerOBDKw = null,
@@ -433,7 +433,7 @@ class MetricsCalculator private constructor(private val context: Context) {
         val spdDiff: Float? = tripCalculator.speedDiff(gpsSpeed, obdSpeedKmh)
 
         // Drive mode
-        val (pctCity, pctHwy, pctIdle) = tripState.driveModePercents()
+        val (pctCity, pctHwy, pctIdle) = tripState.tripDriveModePercents()
 
         // ── Accelerometer ────────────────────────────────────────────────────
         val accelSource = AccelerometerSource.getInstance(context)
