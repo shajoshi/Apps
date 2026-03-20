@@ -152,7 +152,8 @@ object AppSettings {
         }
 
         try {
-            context.contentResolver.openOutputStream(settingsFile.uri, "wt")?.use { output ->
+            // Use "w" mode instead of "wt" to avoid explicit truncation
+            context.contentResolver.openOutputStream(settingsFile.uri, "w")?.use { output ->
                 output.write(json.toString(2).toByteArray())
             }
         } catch (e: Exception) {

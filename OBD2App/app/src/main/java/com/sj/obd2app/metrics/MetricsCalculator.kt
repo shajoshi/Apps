@@ -288,9 +288,9 @@ class MetricsCalculator private constructor(private val context: Context) {
                 tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, (System.currentTimeMillis() - tripState.tripStartMs) / 1000L),
                 tripMaxSpeedKmh = tripState.maxSpeedKmh,
                 spdDiffKmh = null,
-                pctCity = tripState.tripDriveModePercents().first,
-                pctHighway = tripState.tripDriveModePercents().second,
-                pctIdle = tripState.tripDriveModePercents().third,
+                pctCity = 0f,
+                pctHighway = 0f,
+                pctIdle = 0f,
                 powerAccelKw = null,
                 powerThermoKw = null,
                 powerOBDKw = null,
@@ -432,9 +432,6 @@ class MetricsCalculator private constructor(private val context: Context) {
         // Speed diff
         val spdDiff: Float? = tripCalculator.speedDiff(gpsSpeed, obdSpeedKmh)
 
-        // Drive mode
-        val (pctCity, pctHwy, pctIdle) = tripState.tripDriveModePercents()
-
         // ── Accelerometer ────────────────────────────────────────────────────
         val accelSource = AccelerometerSource.getInstance(context)
         val accelMetrics: AccelMetrics? = if (AppSettings.isAccelerometerEnabled(context)) {
@@ -451,6 +448,9 @@ class MetricsCalculator private constructor(private val context: Context) {
         val powerAccelKw: Float? = powerCalculator.fromAccelerometer(profile?.vehicleMassKg ?: 0f, accelMetrics?.fwdMean, speedMs)
         val powerThermoKw: Float? = powerCalculator.thermodynamic(fuelRateEffective, fuelType.energyDensityMJpL)
         val powerOBDKw: Float? = powerCalculator.fromObd(actualTorque, refTorque, rpm)
+
+        // Drive mode percentages (calculate once for performance)
+        val (pctCity, pctHighway, pctIdle) = tripState.tripDriveModePercents()
 
         return VehicleMetrics(
             timestampMs            = now,
@@ -524,7 +524,7 @@ class MetricsCalculator private constructor(private val context: Context) {
             tripMaxSpeedKmh        = tripState.maxSpeedKmh,
             spdDiffKmh             = spdDiff,
             pctCity                = pctCity,
-            pctHighway             = pctHwy,
+            pctHighway             = pctHighway,
             pctIdle                = pctIdle,
             powerThermoKw          = powerThermoKw,
             powerOBDKw             = powerOBDKw,

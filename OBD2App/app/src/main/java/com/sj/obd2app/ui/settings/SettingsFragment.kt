@@ -346,7 +346,8 @@ class SettingsFragment : Fragment() {
             if (targetFile != null) {
                 // Copy content
                 context.contentResolver.openInputStream(sourceFile.uri)?.use { input ->
-                    context.contentResolver.openOutputStream(targetFile.uri, "wt")?.use { output ->
+                    // Use "w" mode instead of "wt" to avoid explicit truncation
+                    context.contentResolver.openOutputStream(targetFile.uri, "w")?.use { output ->
                         input.copyTo(output)
                     }
                 }

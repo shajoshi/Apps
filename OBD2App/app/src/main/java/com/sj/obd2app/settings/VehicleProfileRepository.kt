@@ -135,7 +135,9 @@ class VehicleProfileRepository private constructor(private val context: Context)
         val profileFile = AppDataDirectory.getProfileFileDocumentFile(context, profile.name)
         if (profileFile != null) {
             val json = profile.toJson()
-            context.contentResolver.openOutputStream(profileFile.uri, "wt")?.use { output ->
+            // Use "w" mode instead of "wt" to avoid explicit truncation
+            // The file will be overwritten but only with the complete new content
+            context.contentResolver.openOutputStream(profileFile.uri, "w")?.use { output ->
                 output.write(json.toString(2).toByteArray())
             }
         }

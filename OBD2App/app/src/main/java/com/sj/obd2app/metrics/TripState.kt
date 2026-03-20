@@ -20,9 +20,9 @@ internal class TripState {
     var maxSpeedKmh: Float = 0f
 
     // Trip-level drive mode time accumulators (in seconds)
-    var idleTimeSec: Long = 0L
-    var cityTimeSec: Long = 0L
-    var highwayTimeSec: Long = 0L
+    @Volatile var idleTimeSec: Long = 0L
+    @Volatile var cityTimeSec: Long = 0L
+    @Volatile var highwayTimeSec: Long = 0L
 
     // High-precision accumulators for small fuel rates
     private var preciseDistanceM: Double = 0.0

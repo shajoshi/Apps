@@ -61,7 +61,8 @@ class LayoutRepository(private val context: Context) {
     private fun saveToExternalStorage(layoutName: String, json: String) {
         val layoutFile = AppDataDirectory.getLayoutFileDocumentFile(context, layoutName)
         if (layoutFile != null) {
-            context.contentResolver.openOutputStream(layoutFile.uri, "wt")?.use { output ->
+            // Use "w" mode instead of "wt" to avoid explicit truncation
+            context.contentResolver.openOutputStream(layoutFile.uri, "w")?.use { output ->
                 output.write(json.toByteArray())
             }
         }
