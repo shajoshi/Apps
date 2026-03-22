@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.widget.Toast
+import com.sj.obd2app.settings.VehicleProfileRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -276,6 +277,15 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         val fastCommands = allCommands.filter { it.pid in FAST_PIDS }
         val slowCommands = allCommands.filter { it.pid !in FAST_PIDS }
 
+        // Load custom/extended PIDs from active vehicle profile
+        val customPids = context?.let { ctx ->
+            VehicleProfileRepository.getInstance(ctx).activeProfile?.customPids
+                ?.filter { it.enabled }
+        } ?: emptyList()
+        if (customPids.isNotEmpty()) {
+            android.util.Log.d(TAG, "Custom PIDs configured: ${customPids.size}")
+        }
+
         // Cached results — slow-tier values persist between cycles
         val cachedResults = mutableMapOf<String, Obd2DataItem>()
         
@@ -284,6 +294,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
         pollingJob = CoroutineScope(Dispatchers.IO).launch {
             var cycleCount = 0
+            // Warm-up: wait until the first slow-tier poll completes before
+            // emitting data so the UI sees a stable, complete PID list.
+            var warmUpComplete = false
             while (isActive && _connectionState.value == Obd2Service.ConnectionState.CONNECTED) {
                 var cycleSuccessCount = 0
                 
@@ -331,6 +344,11 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                             android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
                         }
                     }
+
+                    // Poll custom/extended PIDs (same cadence as slow tier)
+                    pollCustomPids(customPids, cachedResults)?.let { count ->
+                        cycleSuccessCount += count
+                    }
                 }
 
                 // Check if we got any successful reads this cycle
@@ -353,8 +371,16 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                     consecutiveFailures = 0
                 }
 
-                if (cachedResults.isNotEmpty()) {
-                    _obd2Data.value = cachedResults.values.toList()
+                // Mark warm-up complete after the first slow-tier cycle
+                if (!warmUpComplete && cycleCount >= SLOW_TIER_MODULO) {
+                    warmUpComplete = true
+                    android.util.Log.d(TAG, "Warm-up complete — ${cachedResults.size} PIDs cached")
+                }
+
+                // Only emit to UI after warm-up so the list appears fully populated
+                // and sorted by PID for deterministic, stable row ordering.
+                if (warmUpComplete && cachedResults.isNotEmpty()) {
+                    _obd2Data.value = cachedResults.values.sortedBy { it.pid }
                 }
 
                 cycleCount++
@@ -468,6 +494,113 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             android.util.Log.w(TAG, "Socket health check failed: ${e.message}")
             false
         }
+    }
+
+    /**
+     * Poll custom/extended PIDs, grouping by header to minimise AT SH switches.
+     * Returns the number of successful reads, or null if no custom PIDs configured.
+     */
+    private fun pollCustomPids(
+        customPids: List<CustomPid>,
+        cachedResults: MutableMap<String, Obd2DataItem>
+    ): Int? {
+        if (customPids.isEmpty()) return null
+
+        var successCount = 0
+        var currentHeader: String? = null
+
+        // Group by header to minimise AT SH commands
+        val grouped = customPids.groupBy { it.header.uppercase().ifEmpty { "7DF" } }
+
+        for ((header, pids) in grouped) {
+            // Switch header if different from current
+            if (currentHeader != header) {
+                try {
+                    sendCommand("ATSH$header")
+                    currentHeader = header
+                    android.util.Log.d(TAG, "Custom PID: switched header to $header")
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Failed to switch header to $header: ${e.message}")
+                    continue // Skip this header group
+                }
+            }
+
+            for (cp in pids) {
+                try {
+                    val raw = sendCommand(cp.commandString)
+                    val parsed = parseExtendedResponse(cp, raw)
+                    if (parsed != null) {
+                        cachedResults[cp.cacheKey] = parsed
+                        successCount++
+                    }
+                } catch (e: IOException) {
+                    android.util.Log.w(TAG, "Custom PID ${cp.name} IOException: ${e.message}")
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Custom PID ${cp.name} error: ${e.message}")
+                }
+            }
+        }
+
+        // Restore default header after custom PIDs
+        if (currentHeader != null) {
+            try {
+                sendCommand("ATSH7DF")
+                android.util.Log.d(TAG, "Custom PID: restored default header 7DF")
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "Failed to restore default header: ${e.message}")
+            }
+        }
+
+        return successCount
+    }
+
+    /**
+     * Parse the response from an extended/custom PID command.
+     *
+     * Extended responses use the format: (mode+0x40) + pid + data bytes
+     * e.g. for Mode 22, PID 0456: response header is "620456", then data follows.
+     */
+    private fun parseExtendedResponse(customPid: CustomPid, raw: String): Obd2DataItem? {
+        if (raw.contains("NODATA", ignoreCase = true) ||
+            raw.contains("UNABLE", ignoreCase = true) ||
+            raw.contains("ERROR", ignoreCase = true) ||
+            raw.contains("?")
+        ) {
+            return null
+        }
+
+        val expectedHeader = customPid.responseHeader
+        if (expectedHeader.isEmpty()) return null
+
+        val headerIdx = raw.indexOf(expectedHeader, ignoreCase = true)
+        if (headerIdx < 0) return null
+
+        val dataStart = headerIdx + expectedHeader.length
+        val hexData = raw.substring(dataStart)
+
+        val neededChars = customPid.bytesReturned * 2
+        if (hexData.length < neededChars) return null
+
+        val bytes = IntArray(customPid.bytesReturned)
+        for (i in 0 until customPid.bytesReturned) {
+            val hex = hexData.substring(i * 2, i * 2 + 2)
+            bytes[i] = hex.toIntOrNull(16) ?: return null
+        }
+
+        val value = try {
+            val result = PidFormulaParser.evaluate(customPid.formula, bytes, customPid.signed)
+            PidFormulaParser.format(result)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Custom PID ${customPid.name} formula error: ${e.message}")
+            return null
+        }
+
+        return Obd2DataItem(
+            pid = customPid.cacheKey,
+            name = customPid.name,
+            value = value,
+            unit = customPid.unit
+        )
     }
 
     private fun closeSocket() {

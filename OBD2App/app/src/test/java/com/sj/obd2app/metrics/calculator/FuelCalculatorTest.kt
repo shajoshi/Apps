@@ -228,4 +228,121 @@ class FuelCalculatorTest {
         assertEquals(lhResult!!.first!!, mlResult!!.first!!, 0.1f)
         assertEquals(lhResult!!.second!!, mlResult!!.second!!, 0.1f)
     }
+
+    // ── Speed-Density Tests ─────────────────────────────────────────────────────────────
+
+    @Test
+    fun `speedDensityMafGs returns correct MAF for Alto idle`() {
+        // Alto K10 idle: MAP=26 kPa, IAT=40°C, RPM=704, displacement=998cc, VE=85%
+        val result = fuelCalculator.speedDensityMafGs(
+            mapKpa = 26f, iatC = 40f, rpm = 704f,
+            displacementCc = 998, vePct = 85f
+        )
+
+        assertNotNull(result)
+        // Expected: (26 × 0.998 × 0.85 × 704) / (34.44 × 313.15) ≈ 1.44 g/s
+        assertTrue("MAF should be around 1.4 g/s for Alto idle", result!! in 1.2f..1.6f)
+    }
+
+    @Test
+    fun `speedDensityMafGs returns correct MAF for highway cruise`() {
+        // Alto cruising: MAP=70 kPa, IAT=45°C, RPM=3000, displacement=998cc, VE=85%
+        val result = fuelCalculator.speedDensityMafGs(
+            mapKpa = 70f, iatC = 45f, rpm = 3000f,
+            displacementCc = 998, vePct = 85f
+        )
+
+        assertNotNull(result)
+        // Higher MAP + RPM → significantly higher MAF
+        assertTrue("MAF should be >10 g/s at highway cruise", result!! > 10f)
+        assertTrue("MAF should be <30 g/s for 1.0L engine", result!! < 30f)
+    }
+
+    @Test
+    fun `speedDensityMafGs scales with RPM`() {
+        val low = fuelCalculator.speedDensityMafGs(50f, 40f, 1000f, 998, 85f)
+        val high = fuelCalculator.speedDensityMafGs(50f, 40f, 3000f, 998, 85f)
+
+        assertNotNull(low)
+        assertNotNull(high)
+        // Triple RPM → triple MAF (same MAP, IAT, VE)
+        assertEquals(low!! * 3f, high!!, 0.1f)
+    }
+
+    @Test
+    fun `speedDensityMafGs returns null for missing inputs`() {
+        // Null MAP
+        assertNull(fuelCalculator.speedDensityMafGs(null, 40f, 704f, 998, 85f))
+        // Null IAT
+        assertNull(fuelCalculator.speedDensityMafGs(26f, null, 704f, 998, 85f))
+        // Null RPM
+        assertNull(fuelCalculator.speedDensityMafGs(26f, 40f, null, 998, 85f))
+        // Zero displacement (not set)
+        assertNull(fuelCalculator.speedDensityMafGs(26f, 40f, 704f, 0, 85f))
+        // Zero MAP
+        assertNull(fuelCalculator.speedDensityMafGs(0f, 40f, 704f, 998, 85f))
+        // Zero RPM
+        assertNull(fuelCalculator.speedDensityMafGs(26f, 40f, 0f, 998, 85f))
+        // Zero VE
+        assertNull(fuelCalculator.speedDensityMafGs(26f, 40f, 704f, 998, 0f))
+    }
+
+    @Test
+    fun `effectiveFuelRate falls back to Speed-Density when MAF is null`() {
+        // No fuel rate PID, no MAF, but Speed-Density params available
+        val result = fuelCalculator.effectiveFuelRate(
+            fuelRatePid = null, maf = null,
+            mafMlPerGram = FuelType.PETROL.mafMlPerGram,
+            mapKpa = 26f, iatC = 40f, rpm = 704f,
+            displacementCc = 998, vePct = 85f
+        )
+
+        assertNotNull(result)
+        // Alto idle: ~0.48 L/h — should be reasonable for 1.0L NA idle
+        assertTrue("Fuel rate should be > 0.2 L/h at idle", result!! > 0.2f)
+        assertTrue("Fuel rate should be < 1.5 L/h at idle", result!! < 1.5f)
+    }
+
+    @Test
+    fun `effectiveFuelRate prefers MAF over Speed-Density`() {
+        val maf = 15f // g/s
+        val result = fuelCalculator.effectiveFuelRate(
+            fuelRatePid = null, maf = maf,
+            mafMlPerGram = FuelType.PETROL.mafMlPerGram,
+            mapKpa = 26f, iatC = 40f, rpm = 704f,
+            displacementCc = 998, vePct = 85f
+        )
+
+        // Should use MAF, not Speed-Density
+        val expectedFromMaf = (maf * FuelType.PETROL.mafMlPerGram / 1000.0 * 3600.0).toFloat()
+        assertEquals(expectedFromMaf, result!!, DELTA)
+    }
+
+    @Test
+    fun `effectiveFuelRate returns null when no source available`() {
+        // No fuel rate PID, no MAF, no displacement → all three tiers fail
+        val result = fuelCalculator.effectiveFuelRate(
+            fuelRatePid = null, maf = null,
+            mafMlPerGram = FuelType.PETROL.mafMlPerGram,
+            mapKpa = 26f, iatC = 40f, rpm = 704f,
+            displacementCc = 0, vePct = 85f
+        )
+
+        assertNull(result)
+    }
+
+    @Test
+    fun `effectiveFuelRateMlMin falls back to Speed-Density`() {
+        val result = fuelCalculator.effectiveFuelRateMlMin(
+            fuelRatePid = null, maf = null,
+            mafMlPerGram = FuelType.PETROL.mafMlPerGram,
+            mapKpa = 26f, iatC = 40f, rpm = 704f,
+            displacementCc = 998, vePct = 85f
+        )
+
+        assertNotNull(result)
+        // Should be consistent with L/h result: ~0.48 L/h = ~8 ml/min
+        assertTrue("ml/min should be > 3 at idle", result!! > 3f)
+        assertTrue("ml/min should be < 25 at idle", result!! < 25f)
+    }
 }

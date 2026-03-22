@@ -24,14 +24,30 @@ class FuelCalculator {
     /**
      * Determines effective fuel rate (L/h) from available sources.
      *
-     * Prefers OBD-II direct fuel rate (PID 015E), falls back to MAF-based calculation.
+     * Fallback chain:
+     *  1. OBD-II direct fuel rate (PID 015E)
+     *  2. MAF sensor (PID 0110)
+     *  3. Speed-Density estimate (MAP + IAT + RPM + engine displacement)
+     *
      * MAF conversion: grams/second * ml_per_gram / 1000 * 3600 = litres/hour
      */
-    fun effectiveFuelRate(fuelRatePid: Float?, maf: Float?, mafMlPerGram: Double): Float? {
+    fun effectiveFuelRate(
+        fuelRatePid: Float?,
+        maf: Float?,
+        mafMlPerGram: Double,
+        mapKpa: Float? = null,
+        iatC: Float? = null,
+        rpm: Float? = null,
+        displacementCc: Int = 0,
+        vePct: Float = 85f
+    ): Float? {
         return when {
             fuelRatePid != null && fuelRatePid > 0f -> fuelRatePid
             maf != null && maf > 0f -> (maf * mafMlPerGram / 1000.0 * 3600.0).toFloat()
-            else -> null
+            else -> {
+                val sdMaf = speedDensityMafGs(mapKpa, iatC, rpm, displacementCc, vePct)
+                if (sdMaf != null) (sdMaf * mafMlPerGram / 1000.0 * 3600.0).toFloat() else null
+            }
         }
     }
 
@@ -39,15 +55,31 @@ class FuelCalculator {
      * Determines effective fuel rate (ml/min) from available sources.
      * Primary internal unit for better precision with small fuel rates.
      *
-     * Prefers OBD-II direct fuel rate (PID 015E), falls back to MAF-based calculation.
+     * Fallback chain:
+     *  1. OBD-II direct fuel rate (PID 015E)
+     *  2. MAF sensor (PID 0110)
+     *  3. Speed-Density estimate (MAP + IAT + RPM + engine displacement)
+     *
      * MAF conversion: grams/second * ml_per_gram * 60 = ml/min
      * Uses Double precision for better accuracy.
      */
-    fun effectiveFuelRateMlMin(fuelRatePid: Float?, maf: Float?, mafMlPerGram: Double): Float? {
+    fun effectiveFuelRateMlMin(
+        fuelRatePid: Float?,
+        maf: Float?,
+        mafMlPerGram: Double,
+        mapKpa: Float? = null,
+        iatC: Float? = null,
+        rpm: Float? = null,
+        displacementCc: Int = 0,
+        vePct: Float = 85f
+    ): Float? {
         return when {
             fuelRatePid != null && fuelRatePid > 0f -> (fuelRatePid * 1000.0 / 60.0).toFloat()
             maf != null && maf > 0f -> (maf * mafMlPerGram * 60.0).toFloat()
-            else -> null
+            else -> {
+                val sdMaf = speedDensityMafGs(mapKpa, iatC, rpm, displacementCc, vePct)
+                if (sdMaf != null) (sdMaf * mafMlPerGram * 60.0).toFloat() else null
+            }
         }
     }
 
@@ -190,5 +222,51 @@ class FuelCalculator {
      */
     fun fuelFlowCcMin(fuelRateLh: Float?): Float? {
         return fuelRateLh?.let { (it * 1000f / 60f) }
+    }
+
+    /**
+     * Estimates MAF (g/s) using the Speed-Density method for vehicles without a MAF sensor.
+     *
+     * Formula: MAF = (MAP × Vd × VE × RPM) / (2 × R × IAT_K × 60)
+     *
+     * Where:
+     *   MAP   = Manifold Absolute Pressure in kPa (PID 010B)
+     *   Vd    = Engine displacement in litres
+     *   VE    = Volumetric efficiency (0–1)
+     *   RPM   = Engine speed (PID 010C)
+     *   R     = Specific gas constant for air = 0.287 kJ/(kg·K)
+     *   IAT_K = Intake Air Temperature in Kelvin (PID 010F + 273.15)
+     *   ÷ 2   = 4-stroke engine (1 intake per 2 revolutions)
+     *   ÷ 60  = RPM → rev/s
+     *
+     * Simplified denominator constant: 2 × 0.287 × 60 = 34.44
+     *
+     * @param mapKpa Manifold Absolute Pressure in kPa
+     * @param iatC Intake Air Temperature in °C
+     * @param rpm Engine speed in RPM
+     * @param displacementCc Engine displacement in cc (0 = not set → returns null)
+     * @param vePct Volumetric efficiency as percentage (e.g. 85 for 85%)
+     * @return Estimated MAF in g/s, or null if any required input is missing
+     */
+    fun speedDensityMafGs(
+        mapKpa: Float?,
+        iatC: Float?,
+        rpm: Float?,
+        displacementCc: Int,
+        vePct: Float
+    ): Float? {
+        if (mapKpa == null || mapKpa <= 0f) return null
+        if (iatC == null) return null
+        if (rpm == null || rpm <= 0f) return null
+        if (displacementCc <= 0) return null
+        if (vePct <= 0f) return null
+
+        val vdLitres = displacementCc / 1000.0
+        val ve = vePct / 100.0
+        val iatK = iatC + 273.15
+
+        // MAF (g/s) = (MAP × Vd × VE × RPM) / (34.44 × IAT_K)
+        val maf = (mapKpa * vdLitres * ve * rpm) / (34.44 * iatK)
+        return maf.toFloat()
     }
 }

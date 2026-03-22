@@ -62,12 +62,19 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             binding.etFuelPrice.setText(if (p.fuelPricePerLitre > 0f) p.fuelPricePerLitre.toString() else "")
             binding.etEnginePower.setText(if (p.enginePowerBhp > 0f) p.enginePowerBhp.toString() else "")
             binding.etVehicleMass.setText(if (p.vehicleMassKg > 0f) p.vehicleMassKg.toString() else "")
+            binding.etEngineDisplacement.setText(if (p.engineDisplacementCc > 0) p.engineDisplacementCc.toString() else "")
+            binding.etVolumetricEfficiency.setText(if (p.volumetricEfficiencyPct != 85f) p.volumetricEfficiencyPct.toString() else "")
             binding.btnDeleteProfile.visibility = View.VISIBLE
+            binding.btnCustomPids.visibility = View.VISIBLE
         } ?: run {
             binding.tvSheetTitle.text = "New Profile"
             binding.btnDeleteProfile.visibility = View.GONE
+            binding.btnCustomPids.visibility = View.GONE
         }
 
+        binding.btnCustomPids.setOnClickListener {
+            CustomPidListSheet().show(parentFragmentManager, "custom_pid_list")
+        }
         binding.btnSaveProfile.setOnClickListener { save() }
         binding.btnCancelProfile.setOnClickListener { dismiss() }
         binding.btnDeleteProfile.setOnClickListener {
@@ -95,14 +102,18 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
         val price   = binding.etFuelPrice.text?.toString()?.toFloatOrNull() ?: 0f
         val power   = binding.etEnginePower.text?.toString()?.toFloatOrNull() ?: 0f
         val mass    = binding.etVehicleMass.text?.toString()?.toFloatOrNull() ?: 0f
+        val displacement = binding.etEngineDisplacement.text?.toString()?.toIntOrNull() ?: 0
+        val ve      = binding.etVolumetricEfficiency.text?.toString()?.toFloatOrNull() ?: 85f
 
         val profile = (editingProfile ?: VehicleProfile()).copy(
-            name              = name,
-            fuelType          = fuelType,
-            tankCapacityL     = tank,
-            fuelPricePerLitre = price,
-            enginePowerBhp    = power,
-            vehicleMassKg     = mass
+            name                     = name,
+            fuelType                 = fuelType,
+            tankCapacityL            = tank,
+            fuelPricePerLitre        = price,
+            enginePowerBhp           = power,
+            vehicleMassKg            = mass,
+            engineDisplacementCc     = displacement,
+            volumetricEfficiencyPct  = ve
         )
 
         repo.save(profile)

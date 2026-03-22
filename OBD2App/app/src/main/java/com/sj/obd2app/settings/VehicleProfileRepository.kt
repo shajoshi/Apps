@@ -3,6 +3,7 @@ package com.sj.obd2app.settings
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import com.sj.obd2app.obd.CustomPid
 import com.sj.obd2app.storage.AppDataDirectory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -252,12 +253,34 @@ class VehicleProfileRepository private constructor(private val context: Context)
         put("fuelPricePerLitre", fuelPricePerLitre.toDouble())
         put("enginePowerBhp", enginePowerBhp.toDouble())
         if (vehicleMassKg > 0f) put("vehicleMassKg", vehicleMassKg.toDouble())
+        if (engineDisplacementCc > 0) put("engineDisplacementCc", engineDisplacementCc)
+        if (volumetricEfficiencyPct != 85f) put("volumetricEfficiencyPct", volumetricEfficiencyPct.toDouble())
         
         // Serialize availablePids
         if (availablePids.isNotEmpty()) {
             val pidsObj = JSONObject()
             availablePids.forEach { (pid, value) -> pidsObj.put(pid, value) }
             put("availablePids", pidsObj)
+        }
+        
+        // Serialize customPids
+        if (customPids.isNotEmpty()) {
+            val arr = JSONArray()
+            customPids.forEach { cp ->
+                arr.put(JSONObject().apply {
+                    put("id", cp.id)
+                    put("name", cp.name)
+                    put("header", cp.header)
+                    put("mode", cp.mode)
+                    put("pid", cp.pid)
+                    put("bytesReturned", cp.bytesReturned)
+                    put("unit", cp.unit)
+                    put("formula", cp.formula)
+                    put("signed", cp.signed)
+                    put("enabled", cp.enabled)
+                })
+            }
+            put("customPids", arr)
         }
     }
 
@@ -284,7 +307,40 @@ class VehicleProfileRepository private constructor(private val context: Context)
             fuelPricePerLitre = getDouble("fuelPricePerLitre").toFloat(),
             enginePowerBhp    = optDouble("enginePowerBhp", 0.0).toFloat(),
             vehicleMassKg     = optDouble("vehicleMassKg", 0.0).toFloat(),
-            availablePids     = pidsMap
+            engineDisplacementCc = optInt("engineDisplacementCc", 0),
+            volumetricEfficiencyPct = optDouble("volumetricEfficiencyPct", 85.0).toFloat(),
+            availablePids     = pidsMap,
+            customPids        = deserializeCustomPids(this)
         )
+    }
+
+    private fun deserializeCustomPids(json: JSONObject): List<CustomPid> {
+        if (!json.has("customPids")) return emptyList()
+        return try {
+            val arr = json.getJSONArray("customPids")
+            (0 until arr.length()).mapNotNull { i ->
+                try {
+                    val obj = arr.getJSONObject(i)
+                    CustomPid(
+                        id            = obj.getString("id"),
+                        name          = obj.getString("name"),
+                        header        = obj.optString("header", ""),
+                        mode          = obj.optString("mode", "22"),
+                        pid           = obj.getString("pid"),
+                        bytesReturned = obj.optInt("bytesReturned", 2),
+                        unit          = obj.optString("unit", ""),
+                        formula       = obj.optString("formula", "A"),
+                        signed        = obj.optBoolean("signed", false),
+                        enabled       = obj.optBoolean("enabled", true)
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to deserialize custom PID at index $i", e)
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to deserialize customPids array", e)
+            emptyList()
+        }
     }
 }

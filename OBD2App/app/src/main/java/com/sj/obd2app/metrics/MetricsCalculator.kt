@@ -386,8 +386,14 @@ class MetricsCalculator private constructor(private val context: Context) {
         // Effective speed: use hybrid calculation (OBD up to 20 km/h, GPS above 20 km/h)
         val speedKmh = tripCalculator.hybridSpeed(gpsSpeed, obdSpeedKmh) ?: 0f
 
-        // Effective fuel rate
-        val fuelRateEffective: Float? = fuelCalculator.effectiveFuelRate(fuelRatePid, maf, fuelType.mafMlPerGram)
+        // Effective fuel rate (3-tier: PID 015E → MAF → Speed-Density)
+        val displacementCc = profile?.engineDisplacementCc ?: 0
+        val vePct = profile?.volumetricEfficiencyPct ?: 85f
+        val fuelRateEffective: Float? = fuelCalculator.effectiveFuelRate(
+            fuelRatePid, maf, fuelType.mafMlPerGram,
+            mapKpa = map, iatC = intakeTemp, rpm = rpm,
+            displacementCc = displacementCc, vePct = vePct
+        )
 
         // Capture first gravity vector after trip start (if waiting)
         if (waitingForGravityCapture) {

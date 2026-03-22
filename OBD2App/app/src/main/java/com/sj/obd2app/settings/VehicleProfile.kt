@@ -1,5 +1,6 @@
 package com.sj.obd2app.settings
 
+import com.sj.obd2app.obd.CustomPid
 import java.util.UUID
 
 enum class FuelType(
@@ -40,12 +41,18 @@ data class VehicleProfile(
     val enginePowerBhp: Float = 0f,
     /** Vehicle kerb mass in kg — used for acceleration-based power. 0 = not set */
     val vehicleMassKg: Float = 0f,
+    /** Engine displacement in cc — used for Speed-Density fuel estimation. 0 = not set */
+    val engineDisplacementCc: Int = 0,
+    /** Volumetric efficiency % — used for Speed-Density fuel estimation. 85% typical for NA petrol */
+    val volumetricEfficiencyPct: Float = 85f,
     /** 
      * Available PIDs discovered for this vehicle's ECU.
      * Map of PID name -> last known value.
      * PIDs are constant per ECU, so they logically belong with the vehicle profile.
      */
-    val availablePids: Map<String, String> = emptyMap()
+    val availablePids: Map<String, String> = emptyMap(),
+    /** User-defined extended/custom PIDs for manufacturer-specific diagnostics */
+    val customPids: List<CustomPid> = emptyList()
 ) {
     /** Filesystem-safe name: spaces → underscores, non-alphanumeric stripped */
     val sanitisedName: String
