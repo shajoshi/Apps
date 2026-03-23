@@ -35,16 +35,9 @@ class ConnectViewModel : ViewModel() {
     private val _pairedDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
     val pairedDevices: LiveData<List<BluetoothDevice>> = _pairedDevices
 
-    /** OBD-likely devices from the paired list */
-    private val _obdDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
-    val obdDevices: LiveData<List<BluetoothDevice>> = _obdDevices
-
-    /** Paired devices that don't look like OBD adapters */
-    private val _otherDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
-    val otherDevices: LiveData<List<BluetoothDevice>> = _otherDevices
-
-    private val _discoveredDevices = MutableLiveData<List<BluetoothDevice>>(emptyList())
-    val discoveredDevices: LiveData<List<BluetoothDevice>> = _discoveredDevices
+    /** Unified sectioned device list with headers */
+    private val _allDevices = MutableLiveData<List<DeviceListItem>>(emptyList())
+    val allDevices: LiveData<List<DeviceListItem>> = _allDevices
 
     private val _isScanning = MutableLiveData(false)
     val isScanning: LiveData<Boolean> = _isScanning
@@ -79,8 +72,7 @@ class ConnectViewModel : ViewModel() {
     val currentMockMode: Boolean get() = ObdStateManager.isMockMode
 
     private var btAdapter: BluetoothAdapter? = null
-    private val discoveredSet = mutableSetOf<String>() // MAC addresses to avoid duplicates
-    private val discoveredList = mutableListOf<BluetoothDevice>()
+    private val discoveredDevicesMap = mutableMapOf<String, DeviceInfo>() // MAC -> DeviceInfo with RSSI
 
     /**
      * BroadcastReceiver for discovered BT devices during scan.
@@ -97,18 +89,24 @@ class ConnectViewModel : ViewModel() {
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                     }
-                    if (device != null && device.address !in discoveredSet) {
-                        // Exclude already-paired devices from the discovered list
+                    val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).toInt()
+                    
+                    if (device != null) {
                         val paired = _pairedDevices.value?.map { it.address } ?: emptyList()
-                        if (device.address !in paired) {
-                            discoveredSet.add(device.address)
-                            discoveredList.add(device)
-                            _discoveredDevices.postValue(discoveredList.toList())
-                        }
+                        val isPaired = device.address in paired
+                        val isObd = isLikelyObd(device)
+                        
+                        discoveredDevicesMap[device.address] = DeviceInfo(
+                            device = device,
+                            isPaired = isPaired,
+                            isObd = isObd,
+                            rssi = rssi
+                        )
                     }
                 }
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                     _isScanning.postValue(false)
+                    rebuildSections()
                 }
             }
         }
@@ -174,8 +172,7 @@ class ConnectViewModel : ViewModel() {
         try {
             val paired = adapter.bondedDevices?.toList() ?: emptyList()
             _pairedDevices.value = paired
-            _obdDevices.value  = paired.filter { isLikelyObd(it) }
-            _otherDevices.value = paired.filter { !isLikelyObd(it) }
+            rebuildSections()
         } catch (e: SecurityException) {
             _connectionStatus.value = "Bluetooth permission not granted"
             _pairedDevices.value = emptyList()
@@ -191,9 +188,7 @@ class ConnectViewModel : ViewModel() {
         if (adapter.isDiscovering) {
             adapter.cancelDiscovery()
         }
-        discoveredSet.clear()
-        discoveredList.clear()
-        _discoveredDevices.value = emptyList()
+        discoveredDevicesMap.clear()
         _isScanning.value = true
         adapter.startDiscovery()
     }
@@ -207,11 +202,11 @@ class ConnectViewModel : ViewModel() {
         _isScanning.value = false
     }
 
-    fun connectToDevice(device: BluetoothDevice, context: Context) {
-        saveLastDevice(context, device)
-        _errorDeviceMac.value = null   // clear any previous error tint
-        _connectingDeviceMac.value = device.address
-        service.connect(device)
+    fun connectToDevice(deviceInfo: DeviceInfo, context: Context) {
+        saveLastDevice(context, deviceInfo.device)
+        _errorDeviceMac.value = null
+        _connectingDeviceMac.value = deviceInfo.device.address
+        service.connect(deviceInfo.device)
     }
 
     /** Connect via mock (no real BluetoothDevice needed). */
@@ -270,6 +265,56 @@ class ConnectViewModel : ViewModel() {
     private fun isLikelyObd(device: BluetoothDevice): Boolean {
         val name = try { device.name?.uppercase() ?: "" } catch (_: Exception) { "" }
         return OBD_KEYWORDS.any { name.contains(it) }
+    }
+
+    /**
+     * Rebuild the sectioned device list from paired and discovered devices.
+     * Called after loading paired devices or completing a scan.
+     */
+    private fun rebuildSections() {
+        val paired = _pairedDevices.value ?: emptyList()
+        val items = mutableListOf<DeviceListItem>()
+        
+        // Combine paired devices (with default RSSI) and discovered devices (with actual RSSI)
+        val allDeviceInfos = mutableMapOf<String, DeviceInfo>()
+        
+        // Add paired devices
+        paired.forEach { device ->
+            allDeviceInfos[device.address] = DeviceInfo(
+                device = device,
+                isPaired = true,
+                isObd = isLikelyObd(device),
+                rssi = 0 // Paired devices get neutral RSSI for sorting
+            )
+        }
+        
+        // Merge/update with discovered devices (which have RSSI)
+        discoveredDevicesMap.forEach { (mac, info) ->
+            allDeviceInfos[mac] = info
+        }
+        
+        // Split into three categories
+        val obdDevices = allDeviceInfos.values.filter { it.isObd }.sortedByDescending { it.rssi }
+        val pairedOther = allDeviceInfos.values.filter { !it.isObd && it.isPaired }.sortedByDescending { it.rssi }
+        val unpairedOther = allDeviceInfos.values.filter { !it.isObd && !it.isPaired }.sortedByDescending { it.rssi }
+        
+        // Build sectioned list
+        if (obdDevices.isNotEmpty()) {
+            items.add(DeviceListItem.Header("Potential OBD Devices", obdDevices.size))
+            items.addAll(obdDevices.map { DeviceListItem.Device(it) })
+        }
+        
+        if (pairedOther.isNotEmpty()) {
+            items.add(DeviceListItem.Header("Other Paired Devices", pairedOther.size))
+            items.addAll(pairedOther.map { DeviceListItem.Device(it) })
+        }
+        
+        if (unpairedOther.isNotEmpty()) {
+            items.add(DeviceListItem.Header("Other Unpaired Devices", unpairedOther.size))
+            items.addAll(unpairedOther.map { DeviceListItem.Device(it) })
+        }
+        
+        _allDevices.postValue(items)
     }
 
     companion object {

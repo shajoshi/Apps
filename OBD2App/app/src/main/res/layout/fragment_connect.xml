@@ -68,17 +68,7 @@
         android:textColor="#888888"
         android:textSize="14sp" />
 
-    <!-- Paired devices section -->
-    <TextView
-        android:id="@+id/label_paired"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
-        android:text="@string/paired_devices"
-        android:textColor="#AAAACC"
-        android:textSize="13sp"
-        android:textStyle="bold" />
-
+    <!-- Unified device list with section headers -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerview_devices"
         android:layout_width="match_parent"
@@ -86,28 +76,6 @@
         android:layout_weight="1"
         android:clipToPadding="false"
         android:paddingBottom="4dp" />
-
-    <!-- Discovered (nearby) devices section -->
-    <TextView
-        android:id="@+id/label_discovered"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="4dp"
-        android:text="@string/nearby_devices"
-        android:textColor="#AAAACC"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:visibility="gone" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerview_discovered"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingBottom="4dp"
-        android:visibility="gone" />
 
     <!-- Connection log panel — visible during/after a connection attempt -->
     <LinearLayout

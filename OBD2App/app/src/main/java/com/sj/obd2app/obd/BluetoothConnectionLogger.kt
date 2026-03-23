@@ -30,12 +30,15 @@ class BluetoothConnectionLogger private constructor(private val context: Context
     }
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val logLock = Any() // Synchronization lock for file operations
     
     /**
      * Log a Bluetooth connection event to file.
      * Only logs if BT logging is enabled in settings.
+     * Thread-safe - synchronizes file access to prevent corruption.
      */
     fun log(message: String) {
+        synchronized(logLock) {
         // Check if BT logging is enabled
         if (!AppSettings.isBtLoggingEnabled(context)) {
             return
@@ -50,6 +53,8 @@ class BluetoothConnectionLogger private constructor(private val context: Context
             val timestamp = dateFormat.format(Date())
             val logEntry = "[$timestamp] $message\n"
             
+            //Log.v(TAG, "Writing to log file: ${logFile.name}")
+            
             // Append to file using ContentResolver and flush immediately
             context.contentResolver.openOutputStream(logFile.uri, "wa")?.use { output ->
                 output.write(logEntry.toByteArray())
@@ -58,6 +63,7 @@ class BluetoothConnectionLogger private constructor(private val context: Context
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write BT log: ${e.message}", e)
+        }
         }
     }
     
@@ -129,18 +135,28 @@ class BluetoothConnectionLogger private constructor(private val context: Context
      * Get the log file DocumentFile in the user-selected tracks folder.
      * Returns null if folder is not configured.
      * Always returns the same file to prevent duplicates.
+     * Thread-safe - synchronizes file discovery/creation.
      */
     private fun getLogFileDocumentFile(): androidx.documentfile.provider.DocumentFile? {
+        synchronized(logLock) {
         val obdDir = AppDataDirectory.getObdDirectoryDocumentFile(context) ?: return null
         
-        // Find existing log file first - this prevents creating duplicates
-        var logFile = obdDir.findFile(LOG_FILE_NAME)
-        if (logFile == null || !logFile.exists()) {
-            // Only create if it doesn't exist
-            logFile = obdDir.createFile("text/plain", LOG_FILE_NAME)
+        // List all files in the directory to find existing log files
+        val existingFiles = obdDir.listFiles()
+        val existingLogFile = existingFiles?.find { it.name == LOG_FILE_NAME }
+        
+        // If we found an existing log file, use it
+        if (existingLogFile != null && existingLogFile.exists()) {
+            //Log.d(TAG, "Found existing log file: ${existingLogFile.name}")
+            return existingLogFile
         }
         
-        return logFile
+        // No existing file found, create a new one
+        Log.d(TAG, "Creating new log file: $LOG_FILE_NAME")
+        val newLogFile = obdDir.createFile("text/plain", LOG_FILE_NAME)
+        
+        return newLogFile
+        }
     }
     
     /**

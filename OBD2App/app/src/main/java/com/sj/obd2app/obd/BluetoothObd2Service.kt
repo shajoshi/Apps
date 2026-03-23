@@ -469,7 +469,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      * Poll custom/extended PIDs, grouping by header to minimise AT SH switches.
      * Returns the number of successful reads, or null if no custom PIDs configured.
      */
-    private fun pollCustomPids(
+    private suspend fun pollCustomPids(
         customPids: List<CustomPid>,
         cachedResults: MutableMap<String, Obd2DataItem>
     ): Int? {

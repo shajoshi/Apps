@@ -33,8 +33,7 @@ class ConnectFragment : Fragment() {
     private val binding get() = _binding!!
 
     private lateinit var viewModel: ConnectViewModel
-    private var pairedAdapter: DeviceAdapter? = null
-    private var discoveredAdapter: DeviceAdapter? = null
+    private var sectionedAdapter: SectionedDeviceAdapter? = null
     private var receiverRegistered = false
 
     override fun onCreateView(
@@ -48,7 +47,6 @@ class ConnectFragment : Fragment() {
         attachNavOverflow(binding.btnTopOverflow)
 
         binding.recyclerviewDevices.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerviewDiscovered.layoutManager = LinearLayoutManager(requireContext())
 
         // Set up UI based on current mock mode
         setupConnectUI(ObdStateManager.isMockMode)
@@ -106,16 +104,12 @@ class ConnectFragment : Fragment() {
     }
     
     private fun setupConnectUI(isMock: Boolean) {
-        // Clear existing adapters but keep observers
+        // Clear existing adapter but keep observers
         binding.recyclerviewDevices.adapter = null
-        binding.recyclerviewDiscovered.adapter = null
-        pairedAdapter = null
-        discoveredAdapter = null
+        sectionedAdapter = null
         
         if (isMock) {
             binding.btnScan.visibility = View.GONE
-            binding.labelDiscovered.visibility = View.GONE
-            binding.recyclerviewDiscovered.visibility = View.GONE
 
             val mockAdapter = MockDeviceAdapter { 
                 viewModel.connectMock() 
@@ -128,48 +122,27 @@ class ConnectFragment : Fragment() {
 
         } else {
             binding.btnScan.visibility = View.VISIBLE
-            binding.labelPaired.visibility = View.VISIBLE
-            binding.recyclerviewDevices.visibility = View.VISIBLE
 
-            // OBD devices list (filtered — likely OBD adapters)
-            pairedAdapter = DeviceAdapter(
-                onDeviceClick = { device -> viewModel.connectToDevice(device, requireContext()) },
+            // Single sectioned adapter for all devices
+            sectionedAdapter = SectionedDeviceAdapter(
+                onDeviceClick = { deviceInfo -> viewModel.connectToDevice(deviceInfo, requireContext()) },
                 onDisconnectClick = { viewModel.disconnect() }
             )
-            binding.recyclerviewDevices.adapter = pairedAdapter
-            viewModel.obdDevices.observe(viewLifecycleOwner) { devices ->
-                pairedAdapter?.submitList(devices)
-                binding.labelPaired.text = if (devices.isEmpty()) "Paired devices" else "OBD Adapters"
+            binding.recyclerviewDevices.adapter = sectionedAdapter
+            
+            // Observe unified device list
+            viewModel.allDevices.observe(viewLifecycleOwner) { devices ->
+                sectionedAdapter?.submitList(devices)
             }
 
-            // "Other devices" section — non-OBD paired devices
-            discoveredAdapter = DeviceAdapter(
-                onDeviceClick = { device -> viewModel.connectToDevice(device, requireContext()) },
-                onDisconnectClick = { viewModel.disconnect() }
-            )
-            binding.recyclerviewDiscovered.adapter = discoveredAdapter
-            viewModel.otherDevices.observe(viewLifecycleOwner) { devices ->
-                if (devices.isNotEmpty()) {
-                    binding.labelDiscovered.text = "Other paired devices"
-                    binding.labelDiscovered.visibility = View.VISIBLE
-                    binding.recyclerviewDiscovered.visibility = View.VISIBLE
-                } else {
-                    binding.labelDiscovered.visibility = View.GONE
-                    binding.recyclerviewDiscovered.visibility = View.GONE
-                }
-                discoveredAdapter?.submitList(devices)
-            }
-
-            // Highlight the connected row in both lists
+            // Highlight the connected row
             viewModel.connectedDeviceMac.observe(viewLifecycleOwner) { mac ->
-                pairedAdapter?.setConnectedDevice(mac)
-                discoveredAdapter?.setConnectedDevice(mac)
+                sectionedAdapter?.setConnectedDevice(mac)
             }
 
             // Yellow "CONNECTING…" row while BT handshake is in progress
             viewModel.connectingDeviceMac.observe(viewLifecycleOwner) { mac ->
-                pairedAdapter?.setConnectingDevice(mac)
-                discoveredAdapter?.setConnectingDevice(mac)
+                sectionedAdapter?.setConnectingDevice(mac)
             }
 
             // Scan icon click
@@ -220,8 +193,7 @@ class ConnectFragment : Fragment() {
 
         // Red "FAILED" row when a connection attempt fails
         viewModel.errorDeviceMac.observe(viewLifecycleOwner) { mac ->
-            pairedAdapter?.setErrorDevice(mac)
-            discoveredAdapter?.setErrorDevice(mac)
+            sectionedAdapter?.setErrorDevice(mac)
         }
 
         viewModel.isConnected.observe(viewLifecycleOwner) { connected ->
@@ -268,8 +240,7 @@ class ConnectFragment : Fragment() {
             receiverRegistered = false
         }
         viewModel.stopScan()
-        pairedAdapter = null
-        discoveredAdapter = null
+        sectionedAdapter = null
         _binding = null
     }
 
