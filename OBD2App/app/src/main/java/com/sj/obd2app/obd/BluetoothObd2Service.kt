@@ -2,19 +2,13 @@ package com.sj.obd2app.obd
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.widget.Toast
 import com.sj.obd2app.settings.VehicleProfileRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.io.BufferedReader
 import java.io.IOException
-import java.io.InputStream
-import java.io.InputStreamReader
-import java.io.OutputStream
-import java.util.UUID
 
 /**
  * Service that manages the Bluetooth connection to an ELM327-compatible OBD-II adapter.
@@ -26,9 +20,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     companion object {
         private const val TAG = "BluetoothObd2Service"
-        
-        /** Standard SPP (Serial Port Profile) UUID */
-        private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
         /** ELM327 initialisation commands */
         private val INIT_COMMANDS = listOf(
@@ -82,10 +73,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         }
     }
 
-    private var socket: BluetoothSocket? = null
-    private var inputStream: InputStream? = null
-    private var bufferedReader: BufferedReader? = null
-    private var outputStream: OutputStream? = null
+    private var transport: Elm327Transport? = null
     private var pollingJob: Job? = null
     private var supportedPids: Set<Int> = emptySet()
     
@@ -117,6 +105,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     /**
      * Connect to the given Bluetooth device and start polling OBD-II data.
+     * Automatically detects whether to use Classic Bluetooth or BLE.
      */
     override fun connect(device: BluetoothDevice?) {
         val btDevice = device ?: return
@@ -133,22 +122,19 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Open RFCOMM socket
-                log("Opening Bluetooth socket (RFCOMM/SPP)…")
-                socket = btDevice.createRfcommSocketToServiceRecord(SPP_UUID)
-                socket!!.connect()
-                log("✓ Bluetooth socket connected")
-
-                inputStream = socket!!.inputStream
-                bufferedReader = BufferedReader(InputStreamReader(socket!!.inputStream, Charsets.ISO_8859_1))
-                outputStream = socket!!.outputStream
+                // Auto-detect device type and create appropriate transport
+                transport = createTransport(btDevice)
+                log("Detected device type: ${transport!!.getTransportType()}")
+                log("Establishing connection…")
+                transport!!.connect()
+                log("✓ Connection established")
 
                 // Initialise ELM327
                 log("Initialising ELM327 adapter…")
-                delay(1000) // Give the adapter time to boot after ATZ
+                delay(1000)
                 for (cmd in INIT_COMMANDS) {
                     log("  → $cmd")
-                    sendCommand(cmd)
+                    transport!!.sendCommand(cmd)
                     delay(500)
                 }
                 log("✓ ELM327 initialised")
@@ -164,9 +150,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 }
 
                 // Lock protocol after auto-detection to skip negotiation on each send
-                val detectedProto = sendCommand("ATDPN").trim()
+                val detectedProto = transport!!.sendCommand("ATDPN").trim()
                 if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
-                    sendCommand("ATSP$detectedProto")
+                    transport!!.sendCommand("ATSP$detectedProto")
                     log("✓ Protocol locked: ATSP$detectedProto")
                 }
 
@@ -181,14 +167,36 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
                 btLogger?.logConnectionFailure(btDevice.name ?: "Unknown", e.message ?: "IOException")
-                closeSocket()
+                closeTransport()
             } catch (e: SecurityException) {
                 val msg = "Bluetooth permission denied"
                 log("✗ $msg")
                 _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
                 btLogger?.logConnectionFailure(btDevice.name ?: "Unknown", "Permission denied")
-                closeSocket()
+                closeTransport()
+            }
+        }
+    }
+
+    /**
+     * Auto-detect device type and create appropriate transport.
+     * Tries Classic Bluetooth first, falls back to BLE if device type is LE.
+     */
+    private fun createTransport(device: BluetoothDevice): Elm327Transport {
+        return when (device.type) {
+            BluetoothDevice.DEVICE_TYPE_LE -> {
+                log("Device type: BLE only")
+                BleTransport(context ?: throw IllegalStateException("Context required for BLE"), device)
+            }
+            BluetoothDevice.DEVICE_TYPE_DUAL -> {
+                log("Device type: Dual mode (trying Classic first)")
+                // For dual-mode devices, prefer Classic BT as it's more reliable for serial data
+                ClassicBluetoothTransport(device)
+            }
+            else -> {
+                log("Device type: Classic Bluetooth")
+                ClassicBluetoothTransport(device)
             }
         }
     }
@@ -199,9 +207,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     override fun disconnect() {
         pollingJob?.cancel()
         pollingJob = null
-        closeSocket()
+        closeTransport()
         supportedPids = emptySet()
-        consecutiveFailures = 0  // Reset failure counter
+        consecutiveFailures = 0
         btLogger?.logDisconnection("User initiated")
         _connectedDeviceName.value = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
@@ -216,12 +224,12 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      * Each response is a 4-byte (32-bit) bitmask where bit 0 (MSB) = base+1,
      * bit 31 (LSB) = base+32.  If bit 31 is set the next range is also available.
      */
-    private fun discoverSupportedPids(): Set<Int> {
+    private suspend fun discoverSupportedPids(): Set<Int> {
         val supported = mutableSetOf<Int>()
 
         for ((basePid, query) in SUPPORTED_PID_QUERIES) {
             try {
-                val raw = sendCommand(query)
+                val raw = transport!!.sendCommand(query)
 
                 // Skip if adapter can't answer
                 if (raw.contains("NODATA", true) ||
@@ -313,7 +321,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 for (cmd in fastCommands) {
                     if (!isActive) break
                     try {
-                        val raw = sendCommand(cmd.pid)
+                        val raw = transport?.sendCommand(cmd.pid) ?: continue
                         val parsed = parseResponse(cmd, raw)
                         if (parsed != null) {
                             cachedResults[cmd.pid] = parsed
@@ -332,7 +340,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                     for (cmd in slowCommands) {
                         if (!isActive) break
                         try {
-                            val raw = sendCommand(cmd.pid)
+                            val raw = transport?.sendCommand(cmd.pid) ?: continue
                             val parsed = parseResponse(cmd, raw)
                             if (parsed != null) {
                                 cachedResults[cmd.pid] = parsed
@@ -390,59 +398,17 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             
             // Cleanup after polling stops due to error
             if (_connectionState.value == Obd2Service.ConnectionState.ERROR) {
-                android.util.Log.d(TAG, "Polling stopped due to error, closing socket")
-                closeSocket()
+                android.util.Log.d(TAG, "Polling stopped due to error, closing transport")
+                closeTransport()
             }
         }
-    }
-
-    /**
-     * Send an AT/OBD command and return the raw response string.
-     *
-     * Uses a [BufferedReader] for blocking character-by-character reads up to the
-     * ELM327 prompt character '>'. This avoids the busy-wait (Thread.sleep + available())
-     * of the previous implementation, reducing per-PID latency by ~10ms.
-     */
-    private fun sendCommand(command: String): String {
-        val os = outputStream ?: throw IOException("Not connected")
-        val reader = bufferedReader ?: throw IOException("Not connected")
-
-        // Send command with carriage return
-        os.write("$command\r".toByteArray(Charsets.ISO_8859_1))
-        os.flush()
-
-        // Read characters until ELM327 prompt '>' is received
-        val response = StringBuilder()
-        val startTime = System.currentTimeMillis()
-        val timeout = 5000L
-
-        while (System.currentTimeMillis() - startTime < timeout) {
-            if (!reader.ready()) {
-                // Brief yield to avoid CPU spin while waiting for first bytes
-                Thread.sleep(1)
-                continue
-            }
-            val c = reader.read()
-            if (c < 0) break
-            if (c.toChar() == '>') break
-            response.append(c.toChar())
-        }
-
-        return response.toString()
-            .replace("\r", "")
-            .replace("\n", "")
-            .replace(" ", "")
-            .trim()
     }
 
     /**
      * Public method for PID discovery to send commands.
-     * Uses the same implementation as private sendCommand but accessible to discovery service.
      */
     suspend fun sendCommandForDiscovery(command: String): String {
-        return withContext(Dispatchers.IO) {
-            sendCommand(command)
-        }
+        return transport?.sendCommand(command) ?: throw IOException("Not connected")
     }
 
     /**
@@ -493,17 +459,10 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     }
 
     /**
-     * Check if the Bluetooth socket is still healthy at the OS level.
+     * Check if the transport connection is still healthy.
      */
     private fun isSocketHealthy(): Boolean {
-        val sock = socket ?: return false
-        return try {
-            // Check if socket is connected and streams are available
-            sock.isConnected && inputStream != null && outputStream != null
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "Socket health check failed: ${e.message}")
-            false
-        }
+        return transport?.isHealthy() ?: false
     }
 
     /**
@@ -526,7 +485,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             // Switch header if different from current
             if (currentHeader != header) {
                 try {
-                    sendCommand("ATSH$header")
+                    transport?.sendCommand("ATSH$header")
                     currentHeader = header
                     android.util.Log.d(TAG, "Custom PID: switched header to $header")
                 } catch (e: Exception) {
@@ -537,7 +496,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
             for (cp in pids) {
                 try {
-                    val raw = sendCommand(cp.commandString)
+                    val raw = transport?.sendCommand(cp.commandString) ?: continue
                     val parsed = parseExtendedResponse(cp, raw)
                     if (parsed != null) {
                         cachedResults[cp.cacheKey] = parsed
@@ -554,7 +513,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         // Restore default header after custom PIDs
         if (currentHeader != null) {
             try {
-                sendCommand("ATSH7DF")
+                transport?.sendCommand("ATSH7DF")
                 android.util.Log.d(TAG, "Custom PID: restored default header 7DF")
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "Failed to restore default header: ${e.message}")
@@ -613,14 +572,8 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         )
     }
 
-    private fun closeSocket() {
-        try { bufferedReader?.close() } catch (_: Exception) {}
-        try { inputStream?.close() } catch (_: Exception) {}
-        try { outputStream?.close() } catch (_: Exception) {}
-        try { socket?.close() } catch (_: Exception) {}
-        bufferedReader = null
-        inputStream = null
-        outputStream = null
-        socket = null
+    private fun closeTransport() {
+        try { transport?.close() } catch (_: Exception) {}
+        transport = null
     }
 }
