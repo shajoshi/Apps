@@ -1,0 +1,455 @@
+package com.sj.obd2app.obd
+
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.random.Random
+
+/**
+ * Service for discovering custom PIDs by brute force scanning.
+ * Scans read-only modes (21, 22, 23) across common ECU headers.
+ */
+class PidDiscoveryService private constructor() {
+    
+    companion object {
+        @Volatile
+        private var instance: PidDiscoveryService? = null
+        
+        fun getInstance(): PidDiscoveryService {
+            return instance ?: synchronized(this) {
+                instance ?: PidDiscoveryService().also { instance = it }
+            }
+        }
+    }
+    
+    // Discovery state
+    private var discoveryJob: Job? = null
+    private val _discoveryState = MutableStateFlow(DiscoveryState.IDLE)
+    val discoveryState: StateFlow<DiscoveryState> = _discoveryState
+    
+    private val _discoveryProgress = MutableStateFlow(DiscoveryProgress())
+    val discoveryProgress: StateFlow<DiscoveryProgress> = _discoveryProgress
+    
+    private val _discoveredPids = MutableStateFlow<List<DiscoveredPid>>(emptyList())
+    val discoveredPids: StateFlow<List<DiscoveredPid>> = _discoveredPids
+    
+    private val _consoleOutput = MutableStateFlow<List<String>>(emptyList())
+    val consoleOutput: StateFlow<List<String>> = _consoleOutput
+    
+    // Configuration
+    private val commonHeaders = listOf("7E0", "7E1", "7E2", "760", "7E4")
+    private val scanModes = listOf("21", "22", "23")
+    private val actuatorPidRanges = listOf(
+        "2100".."21FF", // Some actuator control PIDs
+        "2200".."22FF", // Skip some potentially dangerous ranges
+        "2300".."23FF"
+    )
+    
+    // Service references
+    private var obdService: Obd2Service? = null
+    
+    /**
+     * Start PID discovery with specified options.
+     */
+    fun startDiscovery(
+        obdService: Obd2Service,
+        selectedHeaders: List<String> = commonHeaders,
+        selectedModes: List<String> = scanModes
+    ) {
+        if (_discoveryState.value != DiscoveryState.IDLE) {
+            return
+        }
+        
+        this.obdService = obdService
+        _discoveryState.value = DiscoveryState.SCANNING
+        _discoveredPids.value = emptyList()
+        _consoleOutput.value = emptyList()
+        
+        discoveryJob = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                logConsole("Starting PID discovery...")
+                logConsole("Headers: ${selectedHeaders.joinToString(", ")}")
+                logConsole("Modes: ${selectedModes.joinToString(", ")}")
+                
+                val allDiscovered = mutableListOf<DiscoveredPid>()
+                var totalCommands = 0
+                var successfulCommands = 0
+                
+                for (header in selectedHeaders) {
+                    logConsole("\n=== Scanning Header $header ===")
+                    
+                    // Switch to this header
+                    if (!switchHeader(header)) {
+                        logConsole("Failed to switch to header $header, skipping...")
+                        continue
+                    }
+                    
+                    for (mode in selectedModes) {
+                        logConsole("Scanning Mode $mode...")
+                        
+                        // Scan PIDs for this mode
+                        val modePids = scanMode(header, mode)
+                        allDiscovered.addAll(modePids)
+                        totalCommands += getPidCount(mode)
+                        successfulCommands += modePids.size
+                        
+                        // Yield to allow cancellation
+                        yield()
+                    }
+                }
+                
+                // Update results
+                _discoveredPids.value = allDiscovered
+                _discoveryState.value = DiscoveryState.COMPLETED
+                
+                logConsole("\n=== Discovery Complete ===")
+                logConsole("Total PIDs found: ${allDiscovered.size}")
+                logConsole("Success rate: $successfulCommands/$totalCommands commands")
+                
+            } catch (e: CancellationException) {
+                _discoveryState.value = DiscoveryState.CANCELLED
+                logConsole("\nDiscovery cancelled by user")
+            } catch (e: Exception) {
+                _discoveryState.value = DiscoveryState.ERROR
+                logConsole("\nDiscovery error: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Stop the current discovery process.
+     */
+    fun stopDiscovery() {
+        discoveryJob?.cancel()
+        _discoveryState.value = DiscoveryState.CANCELLED
+        logConsole("Stopping discovery...")
+    }
+    
+    /**
+     * Reset discovery state to IDLE.
+     */
+    fun reset() {
+        stopDiscovery()
+        _discoveryState.value = DiscoveryState.IDLE
+        _discoveredPids.value = emptyList()
+        _consoleOutput.value = emptyList()
+        _discoveryProgress.value = DiscoveryProgress()
+    }
+    
+    /**
+     * Switch to specified ECU header.
+     */
+    private suspend fun switchHeader(header: String): Boolean {
+        return try {
+            val response = sendCommand("AT SH$header")
+            val success = response.contains("OK", ignoreCase = true)
+            if (success) {
+                logConsole("[HEADER $header] -> OK")
+            } else {
+                logConsole("[HEADER $header] -> ERROR: $response")
+            }
+            success
+        } catch (e: Exception) {
+            logConsole("[HEADER $header] -> EXCEPTION: ${e.message}")
+            false
+        }
+    }
+    
+    /**
+     * Scan all PIDs for a specific mode.
+     */
+    private suspend fun scanMode(header: String, mode: String): List<DiscoveredPid> {
+        val discovered = mutableListOf<DiscoveredPid>()
+        val pidRange = when (mode) {
+            "21" -> 0x00..0xFF
+            "22" -> 0x00..0xFF
+            "23" -> 0x00..0xFF
+            else -> 0x00..0xFF
+        }
+        
+        var commandsInMode = 0
+        
+        for (pid in pidRange) {
+            // Check if we should cancel
+            if (discoveryJob?.isActive == false) break
+            
+            // Skip potentially dangerous PIDs
+            if (isActuatorPid(mode, pid)) {
+                continue
+            }
+            
+            val pidHex = pid.toString(16).uppercase().padStart(2, '0')
+            val command = "$mode$pidHex"
+            commandsInMode++
+            
+            // Update progress
+            val totalScanned = getScannedCount(header, mode, pid)
+            val totalToScan = getTotalScanCount()
+            _discoveryProgress.value = DiscoveryProgress(
+                currentHeader = header,
+                currentMode = mode,
+                currentPid = command,
+                scanned = totalScanned,
+                total = totalToScan
+            )
+            
+            // Send command and parse response
+            val response = sendCommand(command)
+            val discoveredPid = parseResponse(header, mode, pidHex, response)
+            
+            if (discoveredPid != null) {
+                discovered.add(discoveredPid)
+                logConsole("[HEADER $header] $command: VALID (${discoveredPid.byteCount} bytes) -> $response")
+            } else {
+                when {
+                    response.contains("NODATA", ignoreCase = true) -> {
+                        logConsole("[HEADER $header] $command: NODATA")
+                    }
+                    response.contains("ERROR", ignoreCase = true) -> {
+                        logConsole("[HEADER $header] $command: ERROR")
+                    }
+                    response.contains("UNABLE", ignoreCase = true) -> {
+                        logConsole("[HEADER $header] $command: UNABLE TO CONNECT")
+                    }
+                    response.contains("?") -> {
+                        logConsole("[HEADER $header] $command: NO RESPONSE")
+                    }
+                    else -> {
+                        logConsole("[HEADER $header] $command: UNKNOWN -> $response")
+                    }
+                }
+            }
+            
+            // Rate limiting - 100ms delay
+            delay(100)
+        }
+        
+        return discovered
+    }
+    
+    /**
+     * Send command to OBD service.
+     */
+    private suspend fun sendCommand(command: String): String {
+        return try {
+            val service = obdService
+            when (service) {
+                is MockObd2Service -> {
+                    service.sendCommand(command)
+                }
+                is BluetoothObd2Service -> {
+                    service.sendCommandForDiscovery(command)
+                }
+                else -> "NO SERVICE"
+            }
+        } catch (e: Exception) {
+            "EXCEPTION: ${e.message}"
+        }
+    }
+    
+    /**
+     * Parse OBD response and create DiscoveredPid if valid.
+     */
+    private fun parseResponse(header: String, mode: String, pid: String, response: String): DiscoveredPid? {
+        // Skip error responses
+        if (response.contains("NODATA", ignoreCase = true) ||
+            response.contains("ERROR", ignoreCase = true) ||
+            response.contains("UNABLE", ignoreCase = true) ||
+            response.contains("?") ||
+            response.contains("EXCEPTION")) {
+            return null
+        }
+        
+        // Expected response format: "62 04 56 01 F4" for Mode 22 PID 0456
+        // Response byte = mode + 0x40, so mode 22 → response byte 62
+        val expectedResponseByte = when (mode) {
+            "21" -> "61"
+            "22" -> "62" 
+            "23" -> "63"
+            else -> return null
+        }
+        
+        // Normalize: strip all spaces and work with raw hex
+        val rawHex = response.replace(" ", "").uppercase()
+        val matchPrefix = "$expectedResponseByte$pid".uppercase()
+        
+        val prefixIndex = rawHex.indexOf(matchPrefix)
+        if (prefixIndex < 0) return null
+        
+        // Data bytes start after the prefix
+        val dataHex = rawHex.substring(prefixIndex + matchPrefix.length)
+        if (dataHex.isEmpty()) return null
+        
+        // Split into 2-char byte pairs
+        val dataBytes = dataHex.chunked(2).filter { it.length == 2 }
+        if (dataBytes.isEmpty()) return null
+        
+        val byteCount = dataBytes.size
+        val suggestedFormula = suggestFormula(byteCount, dataBytes)
+        val suggestedName = suggestName(mode, pid)
+        val suggestedUnit = suggestUnit(mode, pid, suggestedFormula)
+        
+        return DiscoveredPid(
+            header = header,
+            mode = mode,
+            pid = pid,
+            response = response.trim(),
+            byteCount = byteCount,
+            suggestedName = suggestedName,
+            suggestedUnit = suggestedUnit,
+            suggestedFormula = suggestedFormula
+        )
+    }
+    
+    /**
+     * Check if PID might be an actuator control (skip for safety).
+     */
+    private fun isActuatorPid(mode: String, pid: Int): Boolean {
+        // Skip known potentially dangerous ranges
+        return when (mode) {
+            "21" -> pid in 0x80..0x9F // Some transmission control ranges
+            "22" -> pid in 0xE0..0xEF // Some actuator ranges
+            "23" -> pid in 0x80..0xFF // Manufacturer-specific control
+            else -> false
+        }
+    }
+    
+    /**
+     * Suggest formula based on byte count and data patterns.
+     */
+    private fun suggestFormula(byteCount: Int, dataBytes: List<String>): String {
+        return when (byteCount) {
+            1 -> {
+                val value = dataBytes[0].toIntOrNull(16) ?: 0
+                when {
+                    value > 200 -> "A-40" // Likely temperature
+                    value > 100 -> "A*0.5" // Likely percentage
+                    else -> "A" // Raw value
+                }
+            }
+            2 -> {
+                val high = dataBytes[0].toIntOrNull(16) ?: 0
+                val low = dataBytes[1].toIntOrNull(16) ?: 0
+                val combined = (high shl 8) or low
+                
+                when {
+                    combined > 0x8000 -> "((A*256)+B)-32768" // Signed 16-bit
+                    combined > 10000 -> "((A*256)+B)/100" // Scaled value
+                    else -> "((A*256)+B)" // Raw 16-bit
+                }
+            }
+            else -> "A" // Default to first byte
+        }
+    }
+    
+    /**
+     * Suggest name based on mode and PID.
+     */
+    private fun suggestName(mode: String, pid: String): String {
+        return when (mode) {
+            "21" -> "Transmission PID $pid"
+            "22" -> "Extended PID $pid"
+            "23" -> "Manufacturer PID $pid"
+            else -> "Custom PID $mode$pid"
+        }
+    }
+    
+    /**
+     * Suggest unit based on formula and context.
+     */
+    private fun suggestUnit(mode: String, pid: String, formula: String): String {
+        return when {
+            formula.contains("-40") -> "°C"
+            formula.contains("*0.5") -> "%"
+            formula.contains("/100") -> when {
+                pid.contains("56") || pid.contains("57") -> "°/s" // Yaw/acceleration
+                else -> "unit"
+            }
+            else -> ""
+        }
+    }
+    
+    /**
+     * Log message to console output.
+     */
+    private fun logConsole(message: String) {
+        val timestamp = System.currentTimeMillis()
+        val newOutput = _consoleOutput.value + "[$timestamp] $message"
+        
+        // Keep only last 1000 messages to prevent memory issues
+        _consoleOutput.value = if (newOutput.size > 1000) {
+            newOutput.takeLast(1000)
+        } else {
+            newOutput
+        }
+    }
+    
+    /**
+     * Get number of PIDs to scan for a mode.
+     */
+    private fun getPidCount(mode: String): Int {
+        return when (mode) {
+            "21", "22", "23" -> 256 // 00 to FF
+            else -> 0
+        }
+    }
+    
+    /**
+     * Calculate total number of commands to scan.
+     */
+    private fun getTotalScanCount(): Int {
+        return scanModes.sumOf { getPidCount(it) }
+    }
+    
+    /**
+     * Calculate current progress count.
+     */
+    private fun getScannedCount(currentHeader: String, currentMode: String, currentPid: Int): Int {
+        val headerIndex = commonHeaders.indexOf(currentHeader)
+        val modeIndex = scanModes.indexOf(currentMode)
+        
+        var count = 0
+        
+        // Full headers before current
+        for (h in 0 until headerIndex) {
+            for (m in scanModes) {
+                count += getPidCount(m)
+            }
+        }
+        
+        // Full modes before current in current header
+        for (m in 0 until modeIndex) {
+            count += getPidCount(scanModes[m])
+        }
+        
+        // Current progress in current mode
+        count += currentPid + 1
+        
+        return count
+    }
+}
+
+/**
+ * Discovery state enumeration.
+ */
+enum class DiscoveryState {
+    IDLE,
+    SCANNING,
+    COMPLETED,
+    CANCELLED,
+    ERROR
+}
+
+/**
+ * Discovery progress data.
+ */
+data class DiscoveryProgress(
+    val currentHeader: String = "",
+    val currentMode: String = "",
+    val currentPid: String = "",
+    val scanned: Int = 0,
+    val total: Int = 0
+) {
+    val progressPercent: Int
+        get() = if (total > 0) (scanned * 100) / total else 0
+}

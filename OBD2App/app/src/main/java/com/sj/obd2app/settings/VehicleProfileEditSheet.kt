@@ -73,7 +73,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
         }
 
         binding.btnCustomPids.setOnClickListener {
-            CustomPidListSheet().show(parentFragmentManager, "custom_pid_list")
+            CustomPidListSheet.newInstance(editingProfile?.id).show(parentFragmentManager, "custom_pid_list")
         }
         binding.btnSaveProfile.setOnClickListener { save() }
         binding.btnCancelProfile.setOnClickListener { dismiss() }

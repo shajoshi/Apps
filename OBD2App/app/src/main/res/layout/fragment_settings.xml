@@ -426,28 +426,108 @@
                         android:textColor="#888888"
                         android:textSize="12sp" />
 
-                </LinearLayout>
+                </LinearLayout>  <!-- Added closing tag here -->
 
             </LinearLayout>
 
         </androidx.cardview.widget.CardView>
 
+        <!-- ═══════════════════════════════════════════════════════
+             Section: Debug (Mock Mode Only)
+             ═══════════════════════════════════════════════════════ -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/card_debug_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="#16213E"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="DEBUG (MOCK MODE)"
+                    android:textColor="#4FC3F7"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Mock Discovery Scenario"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Select PID discovery test scenario (mock mode only)"
+                            android:textColor="#888888"
+                            android:textSize="12sp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_current_scenario"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:background="#1A1A2E"
+                    android:padding="8dp"
+                    android:text="Jaguar XF"
+                    android:textColor="#4FC3F7"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_change_scenario"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Change Scenario"
+                    style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <!-- Save Button (appears when changes are made) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_save_settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:text="Save Settings"
+            android:textColor="#FFFFFF"
+            android:visibility="gone"
+            app:backgroundTint="#4FC3F7"
+            app:cornerRadius="8dp"
+            app:icon="@android:drawable/ic_menu_save"
+            app:iconTint="#FFFFFF"
+            tools:visibility="visible" />
+
     </LinearLayout>
 </ScrollView>
-
-    <!-- Save Button (appears when changes are made) -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btn_save_settings"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_margin="16dp"
-        android:text="Save Settings"
-        android:textColor="#FFFFFF"
-        android:visibility="gone"
-        app:backgroundTint="#4FC3F7"
-        app:cornerRadius="8dp"
-        app:icon="@android:drawable/ic_menu_save"
-        app:iconTint="#FFFFFF"
-        tools:visibility="visible" />
-
 </LinearLayout>

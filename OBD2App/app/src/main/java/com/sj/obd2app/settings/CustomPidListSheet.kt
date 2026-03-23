@@ -10,6 +10,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.sj.obd2app.databinding.SheetCustomPidListBinding
 import com.sj.obd2app.databinding.ItemCustomPidBinding
 import com.sj.obd2app.obd.CustomPid
+import com.sj.obd2app.ui.settings.PidDiscoverySheet
 
 /**
  * BottomSheetDialogFragment that lists all custom PIDs for the active vehicle profile.
@@ -17,11 +18,24 @@ import com.sj.obd2app.obd.CustomPid
  */
 class CustomPidListSheet : BottomSheetDialogFragment() {
 
+    companion object {
+        private const val ARG_PROFILE_ID = "profile_id"
+        
+        fun newInstance(profileId: String? = null): CustomPidListSheet {
+            return CustomPidListSheet().apply {
+                arguments = Bundle().apply {
+                    if (profileId != null) putString(ARG_PROFILE_ID, profileId)
+                }
+            }
+        }
+    }
+
     private var _binding: SheetCustomPidListBinding? = null
     private val binding get() = _binding!!
 
     private lateinit var repo: VehicleProfileRepository
     private lateinit var adapter: CustomPidAdapter
+    private var profileId: String? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -34,6 +48,7 @@ class CustomPidListSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
 
         repo = VehicleProfileRepository.getInstance(requireContext())
+        profileId = arguments?.getString(ARG_PROFILE_ID)
 
         adapter = CustomPidAdapter { customPid ->
             val editSheet = CustomPidEditSheet.newInstance(customPid.id)
@@ -43,6 +58,11 @@ class CustomPidListSheet : BottomSheetDialogFragment() {
 
         binding.rvCustomPids.layoutManager = LinearLayoutManager(requireContext())
         binding.rvCustomPids.adapter = adapter
+
+        binding.btnDiscoverPids.setOnClickListener {
+            val discoverySheet = PidDiscoverySheet.newInstance(profileId)
+            discoverySheet.show(parentFragmentManager, "pid_discovery")
+        }
 
         binding.btnAddCustomPid.setOnClickListener {
             val editSheet = CustomPidEditSheet.newInstance()
@@ -56,7 +76,8 @@ class CustomPidListSheet : BottomSheetDialogFragment() {
     }
 
     private fun refreshList() {
-        val customPids = repo.activeProfile?.customPids ?: emptyList()
+        val profile = if (profileId != null) repo.getById(profileId!!) else repo.activeProfile
+        val customPids = profile?.customPids ?: emptyList()
         if (customPids.isEmpty()) {
             binding.tvEmptyState.visibility = View.VISIBLE
             binding.rvCustomPids.visibility = View.GONE

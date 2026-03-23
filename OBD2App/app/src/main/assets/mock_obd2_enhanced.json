@@ -1,0 +1,241 @@
+{
+  "standardPids": [
+    {
+      "pid": "0104",
+      "name": "Calculated Engine Load",
+      "value": "41.2",
+      "unit": "%"
+    },
+    {
+      "pid": "0105",
+      "name": "Coolant Temperature",
+      "value": "33",
+      "unit": "°C"
+    },
+    {
+      "pid": "0106",
+      "name": "Short-term Fuel Trim (Bank 1)",
+      "value": "0.0",
+      "unit": "%"
+    },
+    {
+      "pid": "0107",
+      "name": "Long-term Fuel Trim (Bank 1)",
+      "value": "-1.6",
+      "unit": "%"
+    },
+    {
+      "pid": "010A",
+      "name": "Fuel Pressure",
+      "value": "0",
+      "unit": "kPa"
+    },
+    {
+      "pid": "010B",
+      "name": "Intake Manifold Pressure",
+      "value": "78",
+      "unit": "kPa"
+    },
+    {
+      "pid": "010C",
+      "name": "Engine RPM",
+      "value": "2316",
+      "unit": "rpm"
+    },
+    {
+      "pid": "010D",
+      "name": "Vehicle Speed",
+      "value": "40",
+      "unit": "km/h"
+    },
+    {
+      "pid": "010E",
+      "name": "Timing Advance",
+      "value": "-2.5",
+      "unit": "° before TDC"
+    },
+    {
+      "pid": "010F",
+      "name": "Intake Air Temperature",
+      "value": "36",
+      "unit": "°C"
+    },
+    {
+      "pid": "0110",
+      "name": "MAF Air Flow Rate",
+      "value": "2.1",
+      "unit": "g/s"
+    },
+    {
+      "pid": "0111",
+      "name": "Throttle Position",
+      "value": "13.7",
+      "unit": "%"
+    },
+    {
+      "pid": "0114",
+      "name": "O2 Sensor Voltage (Bank 1, Sensor 1)",
+      "value": "0.84",
+      "unit": "V"
+    },
+    {
+      "pid": "011F",
+      "name": "Run Time Since Engine Start",
+      "value": "2",
+      "unit": "sec"
+    },
+    {
+      "pid": "0121",
+      "name": "Distance with MIL On",
+      "value": "0",
+      "unit": "km"
+    },
+    {
+      "pid": "012F",
+      "name": "Fuel Tank Level",
+      "value": "70",
+      "unit": "%"
+    },
+    {
+      "pid": "0131",
+      "name": "Distance Since Codes Cleared",
+      "value": "30",
+      "unit": "km"
+    },
+    {
+      "pid": "0133",
+      "name": "Barometric Pressure",
+      "value": "101",
+      "unit": "kPa"
+    },
+    {
+      "pid": "0142",
+      "name": "Control Module Voltage",
+      "value": "14.2",
+      "unit": "V"
+    },
+    {
+      "pid": "0146",
+      "name": "Ambient Air Temperature",
+      "value": "29",
+      "unit": "°C"
+    },
+    {
+      "pid": "015C",
+      "name": "Engine Oil Temperature",
+      "value": "95",
+      "unit": "°C"
+    }
+  ],
+  "customPids": {
+    "760": {
+      "2256": {
+        "name": "Yaw Rate",
+        "response": "62 56 01 F4",
+        "bytes": 2,
+        "unit": "°/s",
+        "formula": "((A*256)+B)/100"
+      },
+      "2257": {
+        "name": "Lateral Acceleration",
+        "response": "62 57 00 64",
+        "bytes": 2,
+        "unit": "g",
+        "formula": "((A*256)+B)/100"
+      },
+      "2258": {
+        "name": "Steering Angle",
+        "response": "62 58 80 00",
+        "bytes": 2,
+        "unit": "°",
+        "formula": "((A*256)+B)-32768"
+      },
+      "2259": {
+        "name": "Pitch Rate",
+        "response": "62 59 00 32",
+        "bytes": 2,
+        "unit": "°/s",
+        "formula": "((A*256)+B)/100"
+      },
+      "2260": {
+        "name": "Roll Rate",
+        "response": "62 60 00 12",
+        "bytes": 2,
+        "unit": "°/s",
+        "formula": "((A*256)+B)/100"
+      },
+      "2261": {
+        "name": "Longitudinal Acceleration",
+        "response": "62 61 FF 80",
+        "bytes": 2,
+        "unit": "g",
+        "formula": "((A*256)+B)/32768"
+      }
+    },
+    "7E4": {
+      "22DB": {
+        "name": "Hybrid Battery SOC",
+        "response": "62 DB B4",
+        "bytes": 1,
+        "unit": "%",
+        "formula": "A*0.5"
+      },
+      "22DC": {
+        "name": "Inverter Temperature",
+        "response": "62 DC 50",
+        "bytes": 1,
+        "unit": "°C",
+        "formula": "A-40"
+      }
+    },
+    "7E1": {
+      "2100": {
+        "name": "Transmission Temperature",
+        "response": "61 00 58",
+        "bytes": 1,
+        "unit": "°C",
+        "formula": "A-40"
+      },
+      "2101": {
+        "name": "Transmission Gear",
+        "response": "61 01 04",
+        "bytes": 1,
+        "unit": "",
+        "formula": "A"
+      }
+    }
+  },
+  "errorSimulation": {
+    "failureRate": 0.02,
+    "nodataPids": ["2200", "2201", "2202"],
+    "errorPids": ["2203"]
+  },
+  "testScenarios": {
+    "JAGUAR_XF": {
+      "description": "Jaguar XF instrument cluster PIDs",
+      "activeHeaders": ["760"],
+      "expectedPids": 6
+    },
+    "TOYOTA_HYBRID": {
+      "description": "Toyota hybrid system PIDs",
+      "activeHeaders": ["7E4"],
+      "expectedPids": 2
+    },
+    "MIXED_HEADERS": {
+      "description": "Multiple ECU simulation",
+      "activeHeaders": ["7E0", "7E1", "760", "7E4"],
+      "expectedPids": 10
+    },
+    "EMPTY_DISCOVERY": {
+      "description": "No custom PIDs found",
+      "activeHeaders": ["7E0"],
+      "expectedPids": 0
+    },
+    "ERROR_HEAVY": {
+      "description": "High failure rate testing",
+      "activeHeaders": ["760"],
+      "expectedPids": 1,
+      "failureRate": 0.5
+    }
+  }
+}

@@ -436,6 +436,16 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     }
 
     /**
+     * Public method for PID discovery to send commands.
+     * Uses the same implementation as private sendCommand but accessible to discovery service.
+     */
+    suspend fun sendCommandForDiscovery(command: String): String {
+        return withContext(Dispatchers.IO) {
+            sendCommand(command)
+        }
+    }
+
+    /**
      * Parse the hex response from the adapter into an [Obd2DataItem].
      * Returns null if the PID is not supported or the response is invalid.
      */

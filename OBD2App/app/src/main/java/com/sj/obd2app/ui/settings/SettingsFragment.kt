@@ -15,6 +15,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentSettingsBinding
 import com.sj.obd2app.databinding.ItemVehicleProfileBinding
+import com.sj.obd2app.obd.MockObd2Service
+import com.sj.obd2app.obd.MockDiscoveryScenario
+import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfile
@@ -72,6 +75,7 @@ class SettingsFragment : Fragment() {
         setupProfileList()
         setupConnectionToggles()
         setupDataLogging()
+        setupDebugSettings()
     }
 
     override fun onResume() {
@@ -409,5 +413,74 @@ class SettingsFragment : Fragment() {
                 b.root.setOnClickListener { onRowClick(profile) }
             }
         }
+    }
+
+    // ── Debug Settings (Mock Mode Only) ───────────────────────────────────────
+
+    private fun setupDebugSettings() {
+        // Only show debug section if mock mode is available
+        val mockService = MockObd2Service.getInstance()
+        if (!mockService.isEnhancedModeAvailable()) {
+            binding.cardDebugSettings.visibility = View.GONE
+            return
+        }
+        
+        // Show debug section in mock mode
+        binding.cardDebugSettings.visibility = View.VISIBLE
+        
+        // Update current scenario display
+        updateScenarioDisplay()
+        
+        // Handle scenario change button
+        binding.btnChangeScenario.setOnClickListener {
+            showScenarioSelector()
+        }
+    }
+    
+    private fun updateScenarioDisplay() {
+        val mockService = MockObd2Service.getInstance()
+        val currentHeader = mockService.getCurrentHeader()
+        val currentPids = mockService.getCurrentHeaderPids()
+        
+        // Determine current scenario based on header and PIDs
+        val scenarioName = when (currentHeader) {
+            "760" -> "Jaguar XF"
+            "7E4" -> "Toyota Hybrid"
+            "7E1" -> "Mixed Headers"
+            else -> "Custom"
+        }
+        
+        binding.tvCurrentScenario.text = buildString {
+            append(scenarioName)
+            append(" (Header: $currentHeader, ")
+            append("${currentPids.size} PIDs)")
+        }
+    }
+    
+    private fun showScenarioSelector() {
+        val scenarios = MockDiscoveryScenario.values()
+        val scenarioNames = scenarios.map { it.displayName }.toTypedArray()
+        
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Select Discovery Scenario")
+            .setItems(scenarioNames) { _, which ->
+                val selectedScenario = scenarios[which]
+                applyScenario(selectedScenario)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun applyScenario(scenario: MockDiscoveryScenario) {
+        val mockService = MockObd2Service.getInstance()
+        mockService.setTestScenario(scenario)
+        
+        updateScenarioDisplay()
+        
+        Toast.makeText(
+            requireContext(),
+            "Applied scenario: ${scenario.displayName}",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
