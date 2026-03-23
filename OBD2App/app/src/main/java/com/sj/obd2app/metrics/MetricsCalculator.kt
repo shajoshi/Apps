@@ -389,11 +389,13 @@ class MetricsCalculator private constructor(private val context: Context) {
         // Effective fuel rate (3-tier: PID 015E → MAF → Speed-Density)
         val displacementCc = profile?.engineDisplacementCc ?: 0
         val vePct = profile?.volumetricEfficiencyPct ?: 85f
+        val dieselCorrectionFactor = profile?.dieselCorrectionFactor ?: 0.25f
         val fuelRateEffective: Float? = fuelCalculator.effectiveFuelRate(
             fuelRatePid, maf, fuelType.mafMlPerGram,
             mapKpa = map, iatC = intakeTemp, rpm = rpm,
             displacementCc = displacementCc, vePct = vePct,
-            fuelType = fuelType, baroKpa = baro, engineLoadPct = engineLoad
+            fuelType = fuelType, baroKpa = baro, engineLoadPct = engineLoad,
+            dieselCorrectionFactor = dieselCorrectionFactor
         )
 
         // Capture first gravity vector after trip start (if waiting)

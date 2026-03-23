@@ -64,6 +64,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             binding.etVehicleMass.setText(if (p.vehicleMassKg > 0f) p.vehicleMassKg.toString() else "")
             binding.etEngineDisplacement.setText(if (p.engineDisplacementCc > 0) p.engineDisplacementCc.toString() else "")
             binding.etVolumetricEfficiency.setText(if (p.volumetricEfficiencyPct != 85f) p.volumetricEfficiencyPct.toString() else "")
+            binding.etDieselCorrectionFactor.setText(if (p.dieselCorrectionFactor != 0.25f) p.dieselCorrectionFactor.toString() else "")
             binding.btnDeleteProfile.visibility = View.VISIBLE
             binding.btnCustomPids.visibility = View.VISIBLE
         } ?: run {
@@ -81,6 +82,21 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             editingProfile?.let { repo.delete(it.id) }
             onSaved?.invoke()
             dismiss()
+        }
+
+        // Show/hide diesel correction factor based on fuel type selection
+        fun updateDieselFieldVisibility() {
+            val isDiesel = binding.rbDiesel.isChecked
+            binding.tvDieselCorrectionLabel.visibility = if (isDiesel) View.VISIBLE else View.GONE
+            binding.etDieselCorrectionFactor.visibility = if (isDiesel) View.VISIBLE else View.GONE
+        }
+
+        // Set initial visibility
+        updateDieselFieldVisibility()
+
+        // Update visibility when fuel type changes
+        binding.rgFuelType.setOnCheckedChangeListener { _, _ ->
+            updateDieselFieldVisibility()
         }
     }
 
@@ -104,6 +120,7 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
         val mass    = binding.etVehicleMass.text?.toString()?.toFloatOrNull() ?: 0f
         val displacement = binding.etEngineDisplacement.text?.toString()?.toIntOrNull() ?: 0
         val ve      = binding.etVolumetricEfficiency.text?.toString()?.toFloatOrNull() ?: 85f
+        val dieselCorrection = binding.etDieselCorrectionFactor.text?.toString()?.toFloatOrNull() ?: 0.25f
 
         val profile = (editingProfile ?: VehicleProfile()).copy(
             name                     = name,
@@ -113,7 +130,8 @@ class VehicleProfileEditSheet : BottomSheetDialogFragment() {
             enginePowerBhp           = power,
             vehicleMassKg            = mass,
             engineDisplacementCc     = displacement,
-            volumetricEfficiencyPct  = ve
+            volumetricEfficiencyPct  = ve,
+            dieselCorrectionFactor   = dieselCorrection
         )
 
         repo.save(profile)

@@ -46,6 +46,13 @@ data class VehicleProfile(
     /** Volumetric efficiency % — used for Speed-Density fuel estimation. 85% typical for NA petrol */
     val volumetricEfficiencyPct: Float = 85f,
     /** 
+     * Diesel fuel rate correction factor for MJD 1.3L calibration.
+     * Accounts for real-world vs theoretical fuel consumption differences.
+     * Default 0.25 (75% reduction) for typical diesel engines.
+     * Only used when fuelType = DIESEL.
+     */
+    val dieselCorrectionFactor: Float = 0.25f,
+    /** 
      * Available PIDs discovered for this vehicle's ECU.
      * Map of PID name -> last known value.
      * PIDs are constant per ECU, so they logically belong with the vehicle profile.

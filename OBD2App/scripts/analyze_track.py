@@ -8,6 +8,7 @@ Usage:
     python analyze_track.py -m accel.vertMax track_file.json -s iqr
     python analyze_track.py -m gps.speedKmh track_file.json -s kmeans
     python analyze_track.py -m obd.throttlePct track_file.json -s natural
+    python analyze_track.py -m obd.rpm,obd.mafGs,obd.speedKmh track_file.json
 
 Supported metrics (any fully qualified name):
 - OBD metrics: obd.rpm, obd.speedKmh, obd.throttlePct, etc.
@@ -22,6 +23,13 @@ Segmentation strategies:
 - iqr: Interquartile range (Q1 and Q3)
 - kmeans: K-means clustering (3 clusters)
 - natural: Natural breaks (Jenks optimization)
+
+Features:
+- Multiple metrics support (comma-separated)
+- Individual KML files for each metric
+- Distribution plots for each metric
+- Correlation analysis between multiple metrics (requires numpy, pandas, seaborn)
+- Zero-value filtering for accurate statistics
 """
 
 import argparse
@@ -42,10 +50,10 @@ def load_track_data(filename: str) -> Tuple[dict, List[dict]]:
 
     return header, samples
 
-def extract_metric_data(samples: List[dict], metric: str) -> List[Tuple[float, float, float, float]]:
+def extract_metric_data(samples: List[dict], metrics: List[str]) -> dict:
     """
     Extract GPS coordinates and metric values from samples
-    Returns: List of (lat, lon, metric_value, timestamp_ms) tuples
+    Returns: Dict mapping metric names to List of (lat, lon, metric_value, timestamp_ms) tuples
     
     Supports fully qualified metric names like:
     - obd.rpm, obd.speedKmh, obd.throttlePct
@@ -54,7 +62,7 @@ def extract_metric_data(samples: List[dict], metric: str) -> List[Tuple[float, f
     - accel.vertMax, accel.latMax
     - Any nested JSON path using dot notation
     """
-    data_points = []
+    data_points = {metric: [] for metric in metrics}
 
     for sample in samples:
         # Extract GPS coordinates
@@ -66,23 +74,24 @@ def extract_metric_data(samples: List[dict], metric: str) -> List[Tuple[float, f
         lon = gps['lon']
         timestamp = sample['timestampMs']
 
-        # Extract metric value using dot notation
-        value = get_nested_value(sample, metric)
-        
-        # Special handling for fuel unit conversion
-        if value is None and metric == 'fuel.instantKpl':
-            # Try L/100km and convert to km/L
-            l_per_100km = get_nested_value(sample, 'fuel.instantLper100km')
-            if l_per_100km is not None:
-                value = 100.0 / l_per_100km
-        elif value is None and metric == 'fuel.instantLper100km':
-            # Try km/L and convert to L/100km
-            kpl = get_nested_value(sample, 'fuel.instantKpl')
-            if kpl is not None:
-                value = 100.0 / kpl
+        # Extract each metric value using dot notation
+        for metric in metrics:
+            value = get_nested_value(sample, metric)
+            
+            # Special handling for fuel unit conversion
+            if value is None and metric == 'fuel.instantKpl':
+                # Try L/100km and convert to km/L
+                l_per_100km = get_nested_value(sample, 'fuel.instantLper100km')
+                if l_per_100km is not None:
+                    value = 100.0 / l_per_100km
+            elif value is None and metric == 'fuel.instantLper100km':
+                # Try km/L and convert to L/100km
+                kpl = get_nested_value(sample, 'fuel.instantKpl')
+                if kpl is not None:
+                    value = 100.0 / kpl
 
-        if value is not None and lat is not None and lon is not None:
-            data_points.append((lat, lon, value, timestamp))
+            if value is not None and lat is not None and lon is not None:
+                data_points[metric].append((lat, lon, value, timestamp))
 
     return data_points
 
@@ -123,7 +132,13 @@ def calculate_color_ranges(values: List[float], strategy: str = "percentile") ->
     if not values:
         return 0.0, 0.0
 
-    sorted_values = sorted(values)
+    # Filter out zero values for statistical calculations
+    filtered_values = [v for v in values if v != 0]
+    
+    if not filtered_values:
+        return 0.0, 0.0
+
+    sorted_values = sorted(filtered_values)
     n = len(sorted_values)
     
     if strategy == "percentile":
@@ -134,8 +149,8 @@ def calculate_color_ranges(values: List[float], strategy: str = "percentile") ->
     elif strategy == "std_dev":
         # Mean ± standard deviation
         import statistics
-        mean_val = statistics.mean(values)
-        std_val = statistics.stdev(values)
+        mean_val = statistics.mean(filtered_values)
+        std_val = statistics.stdev(filtered_values)
         low_threshold = mean_val - std_val
         high_threshold = mean_val + std_val
         
@@ -154,7 +169,7 @@ def calculate_color_ranges(values: List[float], strategy: str = "percentile") ->
             from sklearn.cluster import KMeans
             
             # Reshape data for k-means
-            data = np.array(values).reshape(-1, 1)
+            data = np.array(filtered_values).reshape(-1, 1)
             
             # Apply k-means with 3 clusters
             kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
@@ -192,9 +207,9 @@ def calculate_color_ranges(values: List[float], strategy: str = "percentile") ->
                         continue
                     
                     # Calculate within-group variance
-                    group1 = [v for v in values if v <= low]
-                    group2 = [v for v in values if low < v <= high]
-                    group3 = [v for v in values if v > high]
+                    group1 = [v for v in filtered_values if v <= low]
+                    group2 = [v for v in filtered_values if low < v <= high]
+                    group3 = [v for v in filtered_values if v > high]
                     
                     if len(group1) == 0 or len(group2) == 0 or len(group3) == 0:
                         continue
@@ -334,8 +349,15 @@ def create_distribution_plot(values: List[float], metric: str, output_file: str,
     """Create histogram showing distribution of metric values with RYG cutoffs"""
     plt.figure(figsize=(12, 6))
     
+    # Filter out zero values for distribution plot
+    filtered_values = [v for v in values if v != 0]
+    
+    if not filtered_values:
+        print("Warning: No non-zero values found for distribution plot")
+        return
+    
     # Create histogram
-    n, bins, patches = plt.hist(values, bins=50, edgecolor='black', alpha=0.7)
+    n, bins, patches = plt.hist(filtered_values, bins=50, edgecolor='black', alpha=0.7)
     
     # Color the bars according to RYG ranges
     if low_threshold is not None and high_threshold is not None:
@@ -356,10 +378,10 @@ def create_distribution_plot(values: List[float], metric: str, output_file: str,
     plt.ylabel('Frequency')
     plt.grid(True, alpha=0.3)
 
-    # Add statistics
-    mean_val = sum(values) / len(values)
-    min_val = min(values)
-    max_val = max(values)
+    # Add statistics (using filtered values)
+    mean_val = sum(filtered_values) / len(filtered_values)
+    min_val = min(filtered_values)
+    max_val = max(filtered_values)
 
     plt.axvline(mean_val, color='black', linestyle='--', linewidth=2, label=f'Mean: {mean_val:.1f}')
     plt.axvline(min_val, color='blue', linestyle=':', linewidth=2, label=f'Min: {min_val:.1f}')
@@ -390,10 +412,112 @@ def create_distribution_plot(values: List[float], metric: str, output_file: str,
 
     print(f"Distribution plot saved: {plot_file}")
 
+def create_correlation_plots(data_points: dict, metrics: List[str], output_file: str):
+    """Create correlation plots between multiple metrics"""
+    if len(metrics) < 2:
+        print("Need at least 2 metrics for correlation analysis")
+        return
+    
+    # Filter out zero values and align data points by timestamp
+    aligned_data = {}
+    
+    for metric in metrics:
+        # Filter out zero values
+        filtered_points = [(lat, lon, value, timestamp) for lat, lon, value, timestamp in data_points[metric] if value != 0]
+        aligned_data[metric] = {timestamp: value for lat, lon, value, timestamp in filtered_points}
+    
+    # Find common timestamps across all metrics
+    common_timestamps = set(aligned_data[metrics[0]].keys())
+    for metric in metrics[1:]:
+        common_timestamps &= set(aligned_data[metric].keys())
+    
+    if not common_timestamps:
+        print("No common timestamps found across all metrics")
+        return
+    
+    print(f"Found {len(common_timestamps)} aligned data points for correlation analysis")
+    
+    # Create correlation matrix plot
+    try:
+        import numpy as np
+        import pandas as pd
+        import seaborn as sns
+        
+        # Create aligned data arrays
+        correlation_data = {}
+        for metric in metrics:
+            correlation_data[metric] = [aligned_data[metric][ts] for ts in sorted(common_timestamps)]
+        
+        # Create correlation matrix
+        df = pd.DataFrame(correlation_data)
+        correlation_matrix = df.corr()
+        
+        # Create heatmap
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
+                   square=True, fmt='.3f', cbar_kws={'label': 'Correlation Coefficient'})
+        plt.title('Correlation Matrix Between Metrics')
+        plt.tight_layout()
+        
+        # Save correlation matrix plot
+        corr_matrix_file = output_file.replace('.kml', '_correlation_matrix.png')
+        plt.savefig(corr_matrix_file, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"Correlation matrix plot saved: {corr_matrix_file}")
+        
+        # Create scatter plots for each pair
+        n_metrics = len(metrics)
+        fig, axes = plt.subplots(n_metrics, n_metrics, figsize=(4*n_metrics, 4*n_metrics))
+        if n_metrics == 1:
+            axes = [[axes]]
+        elif n_metrics == 2:
+            axes = axes.reshape(2, 2)
+        
+        for i, metric1 in enumerate(metrics):
+            for j, metric2 in enumerate(metrics):
+                ax = axes[i, j]
+                
+                if i == j:
+                    # Diagonal: histogram
+                    values = correlation_data[metric1]
+                    ax.hist(values, bins=30, alpha=0.7, color='skyblue', edgecolor='black')
+                    ax.set_title(f'{metric1}')
+                    ax.set_xlabel(metric1)
+                    ax.set_ylabel('Frequency')
+                else:
+                    # Off-diagonal: scatter plot
+                    x_vals = correlation_data[metric2]
+                    y_vals = correlation_data[metric1]
+                    
+                    # Calculate correlation coefficient
+                    corr_coef = np.corrcoef(x_vals, y_vals)[0, 1]
+                    
+                    ax.scatter(x_vals, y_vals, alpha=0.6, s=20)
+                    ax.set_xlabel(metric2)
+                    ax.set_ylabel(metric1)
+                    ax.set_title(f'r = {corr_coef:.3f}')
+                    
+                    # Add trend line
+                    z = np.polyfit(x_vals, y_vals, 1)
+                    p = np.poly1d(z)
+                    ax.plot(x_vals, p(x_vals), "r--", alpha=0.8)
+        
+        plt.tight_layout()
+        
+        # Save scatter plots
+        scatter_file = output_file.replace('.kml', '_correlation_scatter.png')
+        plt.savefig(scatter_file, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"Correlation scatter plots saved: {scatter_file}")
+        
+    except ImportError:
+        print("Warning: numpy, pandas, or seaborn not available. Skipping correlation plots.")
+        print("Install with: pip install numpy pandas seaborn matplotlib")
+
 def main():
     parser = argparse.ArgumentParser(description='Analyze OBD2 track data and generate KML')
     parser.add_argument('-m', '--metric', required=True,
-                       help='Metric to analyze (use fully qualified name, e.g., obd.rpm, fuel.instantKpl, accel.vertMax)')
+                       help='Metric(s) to analyze (comma-separated fully qualified names, e.g., obd.rpm,obd.mafGs)')
     parser.add_argument('-s', '--strategy', default='percentile',
                        choices=['percentile', 'std_dev', 'iqr', 'kmeans', 'natural'],
                        help='Color segmentation strategy (default: percentile)')
@@ -405,40 +529,61 @@ def main():
         print(f"Error: File '{args.filename}' not found")
         return
 
+    # Parse comma-separated metrics
+    metrics = [m.strip() for m in args.metric.split(',') if m.strip()]
+    
+    if not metrics:
+        print("Error: No valid metrics specified")
+        return
+
     try:
         print(f"Loading track data from {args.filename}...")
         header, samples = load_track_data(args.filename)
 
-        print(f"Extracting {args.metric} data...")
-        data_points = extract_metric_data(samples, args.metric)
+        print(f"Extracting data for metrics: {', '.join(metrics)}...")
+        data_points = extract_metric_data(samples, metrics)
 
-        if not data_points:
-            print(f"Error: No {args.metric} data found in track file")
+        # Check if we have data for any metrics
+        valid_metrics = [metric for metric in metrics if data_points[metric]]
+        if not valid_metrics:
+            print(f"Error: No data found for any specified metrics")
             return
 
-        values = [point[2] for point in data_points]
-        print(f"Found {len(data_points)} data points")
+        print(f"Found data for metrics: {', '.join(valid_metrics)}")
 
-        # Calculate color thresholds
-        low_threshold, high_threshold = calculate_color_ranges(values, args.strategy)
-        print(f"Color thresholds ({args.strategy} strategy) - Low: {low_threshold:.1f}, High: {high_threshold:.1f}")
-
-        # Generate KML file
+        # Generate KML files for each metric
         base_name = os.path.splitext(args.filename)[0]
-        # Sanitize metric name for filename (replace dots with underscores)
-        metric_safe = args.metric.replace('.', '_')
-        kml_file = f"{base_name}_{metric_safe}.kml"
+        
+        for metric in valid_metrics:
+            values = [point[2] for point in data_points[metric]]
+            print(f"\nProcessing {metric}: {len(data_points[metric])} data points")
 
-        print(f"Generating KML file: {kml_file}")
-        create_kml(data_points, low_threshold, high_threshold, args.metric, kml_file, header)
+            # Calculate color thresholds
+            low_threshold, high_threshold = calculate_color_ranges(values, args.strategy)
+            print(f"Color thresholds ({args.strategy} strategy) - Low: {low_threshold:.1f}, High: {high_threshold:.1f}")
 
-        # Generate distribution plot
-        print("Generating distribution plot...")
-        create_distribution_plot(values, args.metric, kml_file, low_threshold, high_threshold)
+            # Generate KML file
+            metric_safe = metric.replace('.', '_')
+            kml_file = f"{base_name}_{metric_safe}.kml"
 
-        print(f"Analysis complete!")
-        print(f"KML file: {kml_file}")
-        print(f"Open in Google Earth or any KML viewer to see the colored track")
+            print(f"Generating KML file: {kml_file}")
+            create_kml(data_points[metric], low_threshold, high_threshold, metric, kml_file, header)
+
+            # Generate distribution plot
+            print("Generating distribution plot...")
+            create_distribution_plot(values, metric, kml_file, low_threshold, high_threshold)
+
+        # Generate correlation plots if we have multiple metrics
+        if len(valid_metrics) >= 2:
+            print(f"\nGenerating correlation plots for {len(valid_metrics)} metrics...")
+            create_correlation_plots(data_points, valid_metrics, base_name + "_correlation.kml")
+
+        print(f"\nAnalysis complete!")
+        for metric in valid_metrics:
+            metric_safe = metric.replace('.', '_')
+            kml_file = f"{base_name}_{metric_safe}.kml"
+            print(f"KML file for {metric}: {kml_file}")
+        print("Open in Google Earth or any KML viewer to see the colored tracks")
 
     except Exception as e:
         print(f"Error: {e}")
