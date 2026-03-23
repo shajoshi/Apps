@@ -44,7 +44,10 @@ class VehicleProfileRepository private constructor(private val context: Context)
     }
 
     private fun getAllFromFiles(): List<VehicleProfile> {
+        Log.d(TAG, "getAllFromFiles: loading profiles from external storage")
         val profileFiles = AppDataDirectory.listProfileFilesDocumentFile(context)
+        Log.d(TAG, "getAllFromFiles: found ${profileFiles.size} profile files")
+        
         val profiles = mutableListOf<VehicleProfile>()
         var errorCount = 0
         
@@ -56,6 +59,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
                 content?.let { 
                     val profile = JSONObject(it).toProfile()
                     profiles.add(profile)
+                    Log.d(TAG, "getAllFromFiles: loaded profile '${profile.name}'")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load profile from ${file.name}", e)
@@ -67,6 +71,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
             Toast.makeText(context, "$errorCount profile(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
         }
         
+        Log.d(TAG, "getAllFromFiles: returning ${profiles.size} profiles")
         return profiles
     }
 

@@ -77,6 +77,7 @@ class LayoutRepository(private val context: Context) {
      * Deserialize all JSON layouts.
      */
     fun getSavedLayouts(): List<DashboardLayout> {
+        Log.d(TAG, "getSavedLayouts: useExternalStorage=$useExternalStorage")
         return if (useExternalStorage) {
             getLayoutsFromExternalStorage()
         } else {
@@ -85,7 +86,10 @@ class LayoutRepository(private val context: Context) {
     }
 
     private fun getLayoutsFromExternalStorage(): List<DashboardLayout> {
+        Log.d(TAG, "getLayoutsFromExternalStorage: starting")
         val files = AppDataDirectory.listLayoutFilesDocumentFile(context)
+        Log.d(TAG, "getLayoutsFromExternalStorage: found ${files.size} layout files")
+        
         val layouts = mutableListOf<DashboardLayout>()
         var errorCount = 0
         
@@ -97,6 +101,7 @@ class LayoutRepository(private val context: Context) {
                 content?.let {
                     val layout = gson.fromJson(it, DashboardLayout::class.java)
                     layouts.add(layout)
+                    Log.d(TAG, "getLayoutsFromExternalStorage: loaded layout '${layout.name}'")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load layout from ${file.name}", e)
@@ -130,6 +135,7 @@ class LayoutRepository(private val context: Context) {
             Toast.makeText(context, "$errorCount dashboard(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
         }
         
+        Log.d(TAG, "getLayoutsFromExternalStorage: returning ${layouts.size} layouts")
         return layouts
     }
 
@@ -139,9 +145,16 @@ class LayoutRepository(private val context: Context) {
      * Only copies if no dashboards currently exist in either storage location.
      */
     fun seedDefaultDashboards() {
+        Log.d(TAG, "seedDefaultDashboards: called")
         val existing = getSavedLayouts()
-        if (existing.isNotEmpty()) return
-
+        Log.d(TAG, "seedDefaultDashboards: getSavedLayouts() returned ${existing.size} layouts")
+        
+        if (existing.isNotEmpty()) {
+            Log.d(TAG, "seedDefaultDashboards: existing layouts found, skipping seed")
+            return
+        }
+        
+        Log.w(TAG, "seedDefaultDashboards: NO existing layouts found, starting seed process")
         try {
             val seedFiles = context.assets.list("seed_dashboards") ?: return
             for (fileName in seedFiles) {

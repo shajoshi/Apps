@@ -26,10 +26,11 @@ class FuelCalculator {
      *
      * Fallback chain:
      *  1. OBD-II direct fuel rate (PID 015E)
-     *  2. MAF sensor (PID 0110)
-     *  3. Speed-Density estimate (MAP + IAT + RPM + engine displacement)
+     *  2. MAF sensor (PID 0110) with diesel boost correction
+     *  3. Speed-Density estimate (MAP + IAT + RPM + engine displacement) with diesel boost correction
      *
-     * MAF conversion: grams/second * ml_per_gram / 1000 * 3600 = litres/hour
+     * For diesel engines, applies boost-aware AFR correction based on MAP, RPM, and load.
+     * MAF conversion: grams/second * ml_per_gram * afrCorrection / 1000 * 3600 = litres/hour
      */
     fun effectiveFuelRate(
         fuelRatePid: Float?,
@@ -39,16 +40,36 @@ class FuelCalculator {
         iatC: Float? = null,
         rpm: Float? = null,
         displacementCc: Int = 0,
-        vePct: Float = 85f
+        vePct: Float = 85f,
+        fuelType: FuelType = FuelType.PETROL,
+        baroKpa: Float? = null,
+        engineLoadPct: Float? = null
     ): Float? {
-        return when {
-            fuelRatePid != null && fuelRatePid > 0f -> fuelRatePid
-            maf != null && maf > 0f -> (maf * mafMlPerGram / 1000.0 * 3600.0).toFloat()
-            else -> {
-                val sdMaf = speedDensityMafGs(mapKpa, iatC, rpm, displacementCc, vePct)
-                if (sdMaf != null) (sdMaf * mafMlPerGram / 1000.0 * 3600.0).toFloat() else null
-            }
+        // Direct fuel rate PID takes priority (no correction needed - already accurate)
+        if (fuelRatePid != null && fuelRatePid > 0f) return fuelRatePid
+        
+        // Calculate diesel AFR correction if applicable
+        val afrCorrection = if (fuelType == FuelType.DIESEL && 
+                                mapKpa != null && 
+                                baroKpa != null && 
+                                rpm != null && 
+                                engineLoadPct != null) {
+            val boostKpa = calculateBoostPressure(mapKpa, baroKpa)
+            calculateDieselAfrCorrection(boostKpa, rpm, engineLoadPct, fuelType)
+        } else {
+            1.0  // No correction for non-diesel or missing parameters
         }
+        
+        // MAF-based calculation with diesel correction
+        if (maf != null && maf > 0f) {
+            return (maf * mafMlPerGram * afrCorrection / 1000.0 * 3600.0).toFloat()
+        }
+        
+        // Speed-Density fallback with diesel correction
+        val sdMaf = speedDensityMafGs(mapKpa, iatC, rpm, displacementCc, vePct)
+        return if (sdMaf != null) {
+            (sdMaf * mafMlPerGram * afrCorrection / 1000.0 * 3600.0).toFloat()
+        } else null
     }
 
     /**
@@ -57,10 +78,11 @@ class FuelCalculator {
      *
      * Fallback chain:
      *  1. OBD-II direct fuel rate (PID 015E)
-     *  2. MAF sensor (PID 0110)
-     *  3. Speed-Density estimate (MAP + IAT + RPM + engine displacement)
+     *  2. MAF sensor (PID 0110) with diesel boost correction
+     *  3. Speed-Density estimate (MAP + IAT + RPM + engine displacement) with diesel boost correction
      *
-     * MAF conversion: grams/second * ml_per_gram * 60 = ml/min
+     * For diesel engines, applies boost-aware AFR correction based on MAP, RPM, and load.
+     * MAF conversion: grams/second * ml_per_gram * afrCorrection * 60 = ml/min
      * Uses Double precision for better accuracy.
      */
     fun effectiveFuelRateMlMin(
@@ -71,16 +93,38 @@ class FuelCalculator {
         iatC: Float? = null,
         rpm: Float? = null,
         displacementCc: Int = 0,
-        vePct: Float = 85f
+        vePct: Float = 85f,
+        fuelType: FuelType = FuelType.PETROL,
+        baroKpa: Float? = null,
+        engineLoadPct: Float? = null
     ): Float? {
-        return when {
-            fuelRatePid != null && fuelRatePid > 0f -> (fuelRatePid * 1000.0 / 60.0).toFloat()
-            maf != null && maf > 0f -> (maf * mafMlPerGram * 60.0).toFloat()
-            else -> {
-                val sdMaf = speedDensityMafGs(mapKpa, iatC, rpm, displacementCc, vePct)
-                if (sdMaf != null) (sdMaf * mafMlPerGram * 60.0).toFloat() else null
-            }
+        // Direct fuel rate PID takes priority (convert L/h to ml/min)
+        if (fuelRatePid != null && fuelRatePid > 0f) {
+            return (fuelRatePid * 1000.0 / 60.0).toFloat()
         }
+        
+        // Calculate diesel AFR correction if applicable
+        val afrCorrection = if (fuelType == FuelType.DIESEL && 
+                                mapKpa != null && 
+                                baroKpa != null && 
+                                rpm != null && 
+                                engineLoadPct != null) {
+            val boostKpa = calculateBoostPressure(mapKpa, baroKpa)
+            calculateDieselAfrCorrection(boostKpa, rpm, engineLoadPct, fuelType)
+        } else {
+            1.0  // No correction for non-diesel or missing parameters
+        }
+        
+        // MAF-based calculation with diesel correction
+        if (maf != null && maf > 0f) {
+            return (maf * mafMlPerGram * afrCorrection * 60.0).toFloat()
+        }
+        
+        // Speed-Density fallback with diesel correction
+        val sdMaf = speedDensityMafGs(mapKpa, iatC, rpm, displacementCc, vePct)
+        return if (sdMaf != null) {
+            (sdMaf * mafMlPerGram * afrCorrection * 60.0).toFloat()
+        } else null
     }
 
     /**
@@ -222,6 +266,77 @@ class FuelCalculator {
      */
     fun fuelFlowCcMin(fuelRateLh: Float?): Float? {
         return fuelRateLh?.let { (it * 1000f / 60f) }
+    }
+
+    /**
+     * Calculates boost pressure from MAP and barometric pressure.
+     * Positive values indicate boost, negative values indicate vacuum.
+     *
+     * @param mapKpa Manifold Absolute Pressure in kPa
+     * @param baroKpa Barometric pressure in kPa
+     * @return Boost pressure in kPa (can be negative for vacuum)
+     */
+    fun calculateBoostPressure(mapKpa: Float, baroKpa: Float): Float {
+        return mapKpa - baroKpa
+    }
+
+    /**
+     * Calculates AFR correction factor for turbocharged diesel engines.
+     * Diesel engines operate at variable AFR (18:1 to 65:1) depending on boost, RPM, and load.
+     * This correction adjusts the stoichiometric AFR assumption (14.5:1) to match real-world behavior.
+     *
+     * Formula: correction = boostCorrection × rpmModifier × loadModifier
+     *
+     * @param boostKpa Boost pressure in kPa (MAP - Baro)
+     * @param rpm Engine speed in RPM
+     * @param engineLoadPct Engine load percentage (0-100)
+     * @param fuelType Fuel type (correction only applied for DIESEL)
+     * @return AFR correction factor (0.35-1.0), or 1.0 for non-diesel fuels
+     */
+    fun calculateDieselAfrCorrection(
+        boostKpa: Float,
+        rpm: Float,
+        engineLoadPct: Float,
+        fuelType: FuelType
+    ): Double {
+        // Only apply correction for diesel engines
+        if (fuelType != FuelType.DIESEL) return 1.0
+        
+        // Base correction from boost pressure (primary factor)
+        // Diesel AFR varies from ~35:1 (vacuum) to ~16:1 (full boost)
+        val boostCorrection = when {
+            boostKpa < 0f -> 0.40    // Vacuum - very lean (~35:1 AFR)
+            boostKpa < 5f -> 0.45    // No/minimal boost - lean (~30:1 AFR)
+            boostKpa < 15f -> 0.55   // Light boost - moderately lean (~25:1 AFR)
+            boostKpa < 30f -> 0.70   // Medium boost - normal (~20:1 AFR)
+            boostKpa < 50f -> 0.85   // Heavy boost - rich (~17:1 AFR)
+            else -> 0.95             // Maximum boost - approaching stoich (~15:1 AFR)
+        }
+        
+        // RPM efficiency modifier (turbo spool effectiveness)
+        // Below 1500 RPM: turbo lag reduces efficiency
+        // 1500-2500 RPM: optimal turbo efficiency range
+        // Above 2500 RPM: high exhaust energy, maximum efficiency
+        val rpmModifier = when {
+            rpm < 1000f -> 0.90      // Significant turbo lag
+            rpm < 1500f -> 0.95      // Below optimal range
+            rpm < 2500f -> 1.00      // Optimal turbo efficiency
+            rpm < 3500f -> 1.02      // High efficiency
+            else -> 1.05             // Maximum efficiency
+        }
+        
+        // Load-based fine-tuning (driver demand context)
+        // Light load: engine runs leaner
+        // Heavy load: engine runs richer for power
+        val loadModifier = when {
+            engineLoadPct < 20f -> 0.95   // Very light load, leaner mixture
+            engineLoadPct < 40f -> 1.00   // Light-medium load, normal
+            engineLoadPct > 60f -> 1.05   // Heavy load, richer mixture
+            else -> 1.00                  // Medium load, normal
+        }
+        
+        // Combine all factors and clamp to reasonable range
+        return (boostCorrection * rpmModifier * loadModifier).coerceIn(0.35, 1.0)
     }
 
     /**

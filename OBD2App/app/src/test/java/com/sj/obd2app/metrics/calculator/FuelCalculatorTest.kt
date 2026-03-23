@@ -345,4 +345,161 @@ class FuelCalculatorTest {
         assertTrue("ml/min should be > 3 at idle", result!! > 3f)
         assertTrue("ml/min should be < 25 at idle", result!! < 25f)
     }
+
+    // ── Diesel Boost Correction Tests ────────────────────────────────────────────
+
+    @Test
+    fun `calculateBoostPressure returns correct values`() {
+        // Positive boost
+        assertEquals(48f, fuelCalculator.calculateBoostPressure(141f, 93f), DELTA)
+        
+        // No boost (atmospheric)
+        assertEquals(0f, fuelCalculator.calculateBoostPressure(93f, 93f), DELTA)
+        
+        // Vacuum (negative boost)
+        assertEquals(-1f, fuelCalculator.calculateBoostPressure(92f, 93f), DELTA)
+    }
+
+    @Test
+    fun `calculateDieselAfrCorrection returns 1_0 for non-diesel`() {
+        val correction = fuelCalculator.calculateDieselAfrCorrection(
+            boostKpa = 48f,
+            rpm = 1500f,
+            engineLoadPct = 64f,
+            fuelType = FuelType.PETROL
+        )
+        
+        assertEquals(1.0, correction, DELTA.toDouble())
+    }
+
+    @Test
+    fun `calculateDieselAfrCorrection heavy boost scenario`() {
+        // Sample 477: 1453 RPM, 64.3% load, +48 kPa boost
+        val correction = fuelCalculator.calculateDieselAfrCorrection(
+            boostKpa = 48f,
+            rpm = 1453f,
+            engineLoadPct = 64.3f,
+            fuelType = FuelType.DIESEL
+        )
+        
+        // Expected: 0.85 (boost) × 0.95 (RPM) × 1.05 (load) = 0.848
+        assertEquals(0.848, correction, 0.01)
+    }
+
+    @Test
+    fun `calculateDieselAfrCorrection light load vacuum scenario`() {
+        // Sample 186: 1007 RPM, 27.1% load, -1 kPa boost (vacuum)
+        val correction = fuelCalculator.calculateDieselAfrCorrection(
+            boostKpa = -1f,
+            rpm = 1007f,
+            engineLoadPct = 27.1f,
+            fuelType = FuelType.DIESEL
+        )
+        
+        // Expected: 0.40 (vacuum) × 0.90 (low RPM) × 0.95 (light load) = 0.342
+        assertEquals(0.342, correction, 0.01)
+    }
+
+    @Test
+    fun `calculateDieselAfrCorrection medium boost scenario`() {
+        // Sample 196: 1625 RPM, 50.6% load, +1 kPa boost
+        val correction = fuelCalculator.calculateDieselAfrCorrection(
+            boostKpa = 1f,
+            rpm = 1625f,
+            engineLoadPct = 50.6f,
+            fuelType = FuelType.DIESEL
+        )
+        
+        // Expected: 0.45 (minimal boost) × 1.00 (optimal RPM) × 1.00 (medium load) = 0.45
+        assertEquals(0.45, correction, 0.01)
+    }
+
+    @Test
+    fun `effectiveFuelRate applies diesel correction`() {
+        // Sample 477: Heavy boost scenario
+        val maf = 9.98f  // g/s
+        val result = fuelCalculator.effectiveFuelRate(
+            fuelRatePid = null,
+            maf = maf,
+            mafMlPerGram = FuelType.DIESEL.mafMlPerGram,
+            mapKpa = 141f,
+            iatC = 32f,
+            rpm = 1453f,
+            displacementCc = 1248,
+            vePct = 85f,
+            fuelType = FuelType.DIESEL,
+            baroKpa = 93f,
+            engineLoadPct = 64.3f
+        )
+        
+        // Without correction: 9.98 × 0.08210 × 3600 / 1000 = 2.95 L/h
+        // With correction (0.848): 2.95 × 0.848 = 2.50 L/h
+        assertNotNull(result)
+        assertEquals(2.50f, result!!, 0.1f)
+    }
+
+    @Test
+    fun `effectiveFuelRate no correction for petrol`() {
+        val maf = 15f  // g/s
+        val result = fuelCalculator.effectiveFuelRate(
+            fuelRatePid = null,
+            maf = maf,
+            mafMlPerGram = FuelType.PETROL.mafMlPerGram,
+            mapKpa = 141f,
+            iatC = 32f,
+            rpm = 1453f,
+            fuelType = FuelType.PETROL,
+            baroKpa = 93f,
+            engineLoadPct = 64.3f
+        )
+        
+        // Should use standard calculation without correction
+        // 15 × 0.09195 × 3600 / 1000 = 4.96 L/h
+        assertNotNull(result)
+        assertEquals(4.96f, result!!, 0.01f)
+    }
+
+    @Test
+    fun `effectiveFuelRate diesel correction with missing parameters defaults to no correction`() {
+        val maf = 9.98f  // g/s
+        val result = fuelCalculator.effectiveFuelRate(
+            fuelRatePid = null,
+            maf = maf,
+            mafMlPerGram = FuelType.DIESEL.mafMlPerGram,
+            mapKpa = 141f,
+            iatC = 32f,
+            rpm = 1453f,
+            fuelType = FuelType.DIESEL,
+            baroKpa = null,  // Missing baro
+            engineLoadPct = 64.3f
+        )
+        
+        // Without correction (missing baro): 9.98 × 0.08210 × 3600 / 1000 = 2.95 L/h
+        assertNotNull(result)
+        assertEquals(2.95f, result!!, 0.1f)
+    }
+
+    @Test
+    fun `effectiveFuelRateMlMin applies diesel correction`() {
+        // Sample 477: Heavy boost scenario
+        val maf = 9.98f  // g/s
+        val result = fuelCalculator.effectiveFuelRateMlMin(
+            fuelRatePid = null,
+            maf = maf,
+            mafMlPerGram = FuelType.DIESEL.mafMlPerGram,
+            mapKpa = 141f,
+            iatC = 32f,
+            rpm = 1453f,
+            displacementCc = 1248,
+            vePct = 85f,
+            fuelType = FuelType.DIESEL,
+            baroKpa = 93f,
+            engineLoadPct = 64.3f
+        )
+        
+        // Without correction: 9.98 × 0.08210 × 60 = 49.16 ml/min
+        // With correction (0.848): 49.16 × 0.848 = 41.69 ml/min
+        assertNotNull(result)
+        assertEquals(41.69f, result!!, 1.0f)
+    }
 }

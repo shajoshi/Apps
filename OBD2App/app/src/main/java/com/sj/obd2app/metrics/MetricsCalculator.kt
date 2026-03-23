@@ -319,7 +319,7 @@ class MetricsCalculator private constructor(private val context: Context) {
     ): VehicleMetrics {
 
         val profile = VehicleProfileRepository.getInstance(context).activeProfile
-        val fuelType = profile?.fuelType ?: FuelType.PETROL
+        val fuelType = profile?.fuelType ?: FuelType.E20
 
         fun pid(p: String): Float? = latestObd2[p]?.toFloatOrNull()
             ?: items.firstOrNull { it.pid == p }?.value?.toFloatOrNull()
@@ -392,7 +392,8 @@ class MetricsCalculator private constructor(private val context: Context) {
         val fuelRateEffective: Float? = fuelCalculator.effectiveFuelRate(
             fuelRatePid, maf, fuelType.mafMlPerGram,
             mapKpa = map, iatC = intakeTemp, rpm = rpm,
-            displacementCc = displacementCc, vePct = vePct
+            displacementCc = displacementCc, vePct = vePct,
+            fuelType = fuelType, baroKpa = baro, engineLoadPct = engineLoad
         )
 
         // Capture first gravity vector after trip start (if waiting)
