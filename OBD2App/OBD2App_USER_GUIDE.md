@@ -63,6 +63,9 @@ OBD2 Viewer transforms your Android phone into a powerful vehicle diagnostics to
 - **OBD-II parameters**: Engine load, coolant temp, throttle, MAF, fuel trim, O2 sensors, and more
 - **Auto-discovery**: Only displays parameters your vehicle supports
 - **Details view**: Complete table of all live sensor readings
+- **Custom PID support**: Add manufacturer-specific and extended OBD-II parameters
+- **PID discovery**: Built-in discovery tool for finding supported custom PIDs
+- **Multiple ECU support**: Access data from engine, transmission, ABS, and other ECUs
 
 ### **📍 GPS Integration**
 - **Accurate tracking**: Uses Google Play Services location
@@ -126,6 +129,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 - Different vehicles have different fuel types, tank sizes, and engine specs
 - Profiles enable accurate fuel cost and power calculations
 - Set custom OBD polling rates per vehicle
+- Store custom PID configurations per vehicle
 
 **Create a profile:**
 1. Settings → **"+ Add Profile"**
@@ -136,6 +140,13 @@ Swipe between 5 main screens or use the bottom navigation bar:
 **Switch profiles:**
 - Tap any profile in the list to make it active
 - Active profile shows a blue badge
+
+**Custom PID Management:**
+1. Edit an existing vehicle profile
+2. Tap **"Manage Custom PIDs"** button
+3. Add manufacturer-specific PIDs, extended parameters, and non-engine ECU data
+4. Configure formulas to convert raw data to meaningful values
+5. Use built-in discovery tool to find supported PIDs
 
 ---
 
@@ -150,6 +161,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 | **Log Folder** | Choose where trip logs are saved (default: Downloads) |
 | **Accelerometer** | Enable road quality and G-force tracking (uses more battery) |
 | **Bluetooth Logging** | Save raw Bluetooth communication for debugging |
+| **Custom PID Discovery** | Scan for supported manufacturer-specific PIDs |
 
 ---
 
@@ -161,6 +173,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 ✅ **Start trip after engine starts** — Ensures all sensors are active  
 ✅ **Keep phone charged** — GPS + Bluetooth drain battery faster  
 ✅ **Use a phone mount** — Safely view dashboard while driving  
+✅ **Explore custom PIDs** — Unlock manufacturer-specific data for your vehicle  
 
 ### **Troubleshooting:**
 
@@ -184,11 +197,19 @@ Swipe between 5 main screens or use the bottom navigation bar:
 - Ensure OBD adapter is connected (check Connect screen)
 - Verify the metric is supported by your vehicle
 - Check Details screen to see raw values
+- For custom PIDs, verify ECU header and PID configuration
+
+**Custom PID shows "NODATA"?**
+- Try different ECU headers (7E0, 7E1, 760, etc.)
+- Verify mode and PID values with terminal app
+- Some PIDs only work when vehicle is moving
+- Check if your vehicle supports the specific ECU
 
 **Battery draining fast?**
 - Disable accelerometer if not needed (Settings)
 - Reduce screen brightness
 - Close other GPS apps running in background
+- Limit custom PID polling frequency
 
 ---
 
@@ -197,7 +218,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 **Format:** JSON files with complete trip data  
 **Filename:** `<ProfileName>_obdlog_<YYYY-MM-DD_HHmmss>.json`  
 **Location:** Chosen log folder (or Downloads by default)  
-**Contains:** All OBD-II readings, GPS coordinates, accelerometer data, trip statistics
+**Contains:** All OBD-II readings, GPS coordinates, accelerometer data, trip statistics, custom PID values
 
 **Viewing logs:**
 - Use any JSON viewer or text editor
@@ -220,7 +241,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 
 ## 📱 System Requirements
 
-- **Android 8.0** or higher
+- **Android 8.0 (API 26) or higher** - Supports Android 8.0 through Android 15
 - **Bluetooth Classic** support (all modern phones)
 - **GPS** for trip tracking
 - **Accelerometer** (optional, for road quality analysis)
@@ -228,6 +249,18 @@ Swipe between 5 main screens or use the bottom navigation bar:
 **Compatible Adapters:**
 - Any **ELM327 Bluetooth** adapter (Classic BT, not BLE)
 - Recommended: BAFX, OBDLink, Veepeak brands
+
+**Android Version Support:**
+- ✅ Android 8.0 (Oreo) - API 26
+- ✅ Android 9.0 (Pie) - API 28  
+- ✅ Android 10.0 (Q) - API 29
+- ✅ Android 11.0 (R) - API 30
+- ✅ Android 12.0 (S) - API 31
+- ✅ Android 13.0 (Tiramisu) - API 33
+- ✅ Android 14.0 (Upside Down Cake) - API 34
+- ✅ Android 15.0 (Vanilla Ice Cream) - API 36
+
+**Note:** Android 12+ requires additional Bluetooth permissions that are automatically handled by the app.
 
 ---
 
@@ -254,6 +287,18 @@ A: Yes, enable logging in Settings. Trip logs are saved as JSON files you can sh
 *Q: Why are some metrics showing "—" or blank?*  
 A: Your vehicle's ECU doesn't support those parameters. Only supported sensors are polled.
 
+*Q: Can I add custom parameters for my specific vehicle?*  
+A: Yes! Use the Custom PID feature to add manufacturer-specific parameters. See Custom PID Guide for details.
+
+*Q: How do I find custom PIDs for my vehicle?*  
+A: Use the built-in PID discovery tool or a terminal app to explore your vehicle's supported PIDs.
+
+*Q: Can I use custom PIDs from multiple ECUs?*  
+A: Yes, you can configure PIDs from different ECUs (engine, transmission, ABS, etc.) using appropriate headers.
+
+*Q: Will custom PIDs affect app performance?*  
+A: Custom PIDs are polled at a slower rate to minimize impact on performance.
+
 ---
 
 ## 🎯 Quick Reference Card
@@ -270,6 +315,9 @@ A: Your vehicle's ECU doesn't support those parameters. Only supported sensors a
 | **Switch vehicle** | Settings → Tap profile name |
 | **Enable logging** | Settings → Enable Logging toggle |
 | **Choose log folder** | Settings → Change Log Folder |
+| **Manage custom PIDs** | Settings → Edit profile → Manage Custom PIDs |
+| **Discover PIDs** | Custom PID list → Discovery button |
+| **Add custom PID** | Custom PID list → + Add button |
 
 ---
 
