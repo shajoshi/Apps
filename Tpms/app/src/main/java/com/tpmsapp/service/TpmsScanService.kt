@@ -95,7 +95,7 @@ class TpmsScanService : Service() {
     override fun onBind(intent: Intent): IBinder = binder
 
     override fun onDestroy() {
-        bleScanner.stopScan()
+        bleScanner.cleanup()
         serviceScope.cancel()
         Log.d(TAG, "Service destroyed")
         super.onDestroy()

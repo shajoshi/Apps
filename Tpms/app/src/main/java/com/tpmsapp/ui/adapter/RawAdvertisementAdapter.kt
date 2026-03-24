@@ -31,7 +31,24 @@ class RawAdvertisementAdapter(
             binding.tvName.text = item.deviceName
             val dist = estimateDistance(item.rssi)
             binding.tvRssi.text = "~$dist  ${item.rssi} dBm"
-            binding.tvRawData.text = item.manufacturerDataHex()
+            
+            // Display complete raw bytes with additional info
+            val rawDataText = buildString {
+                append("Raw: ${item.completeRawBytesHex()}")
+                if (item.completeRawBytes.isNotEmpty()) {
+                    append(" (${item.completeRawBytes.size} bytes)")
+                }
+                if (item.txPowerLevel != null && item.txPowerLevel != Int.MIN_VALUE) {
+                    append("\nTX: ${item.txPowerLevel} dBm")
+                }
+                if (item.advertisementFlags != null && item.advertisementFlags != -1) {
+                    append("  Flags: 0x${item.advertisementFlags.toString(16).uppercase()}")
+                }
+                if (item.serviceUuids.isNotEmpty()) {
+                    append("\nUUIDs: ${item.serviceUuids.joinToString(", ")}")
+                }
+            }
+            binding.tvRawData.text = rawDataText
             binding.btnAssign.setOnClickListener { onAssignClick(item) }
 
             val parsed = TpmsPacketParser.parse(item.macAddress, item.manufacturerData)

@@ -112,10 +112,11 @@ class MainActivity : AppCompatActivity() {
                 required.add(Manifest.permission.BLUETOOTH_SCAN)
             if (!hasPermission(Manifest.permission.BLUETOOTH_CONNECT))
                 required.add(Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION))
-                required.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+        // Location permission required for unnamed BLE device scanning on all Android versions
+        if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION))
+            required.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        
         if (required.isEmpty()) checkBluetoothAndBind()
         else permissionLauncher.launch(required.toTypedArray())
     }
