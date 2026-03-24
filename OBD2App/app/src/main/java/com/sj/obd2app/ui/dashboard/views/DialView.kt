@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.util.AttributeSet
 import kotlin.math.cos
 import kotlin.math.min
@@ -48,7 +49,7 @@ class DialView @JvmOverloads constructor(
     }
     private val tickLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
+        typeface = Typeface.DEFAULT_BOLD
     }
     private val needlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -59,7 +60,7 @@ class DialView @JvmOverloads constructor(
     }
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
+        typeface = Typeface.DEFAULT_BOLD
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -72,7 +73,7 @@ class DialView @JvmOverloads constructor(
 
         val cx = width / 2f
         val cy = height / 2f
-        val radius = min(width, height) / 2f * 0.88f  // Increased from 0.78f to use more space
+        val radius = min(width, height) / 2f * 0.93f
         val strokeW = radius * 0.09f
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius)
@@ -119,7 +120,7 @@ class DialView @JvmOverloads constructor(
         val labelR = majorInnerR - radius * 0.1f
 
         majorTickPaint.color = colorScheme.text
-        minorTickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x88000000.toInt()
+        minorTickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x77000000.toInt()
         tickLabelPaint.color = colorScheme.text
         tickLabelPaint.textSize = radius * 0.10f
 
@@ -163,6 +164,43 @@ class DialView @JvmOverloads constructor(
             v += minorStepValue
         }
 
+        // ── Trip max/min indicators ───────────────────────────────
+        val maxMinTickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeWidth = strokeW * 0.5f  // Bold tick
+        }
+        
+        // Draw red tick at max value
+        tripMaxValue?.let { maxVal ->
+            val maxFrac = ((maxVal - rangeMin) / range).coerceIn(0f, 1f)
+            val maxAngleDeg = startAngleDeg + sweepAngleDeg * maxFrac
+            val maxAngleRad = Math.toRadians(maxAngleDeg.toDouble())
+            val cosA = cos(maxAngleRad).toFloat()
+            val sinA = sin(maxAngleRad).toFloat()
+            maxMinTickPaint.color = 0xFFFF0000.toInt()  // Red
+            canvas.drawLine(
+                cx + tickOuterR * cosA, cy + tickOuterR * sinA,
+                cx + (majorInnerR - radius * 0.05f) * cosA, cy + (majorInnerR - radius * 0.05f) * sinA,
+                maxMinTickPaint
+            )
+        }
+        
+        // Draw blue tick at min value
+        tripMinValue?.let { minVal ->
+            val minFrac = ((minVal - rangeMin) / range).coerceIn(0f, 1f)
+            val minAngleDeg = startAngleDeg + sweepAngleDeg * minFrac
+            val minAngleRad = Math.toRadians(minAngleDeg.toDouble())
+            val cosA = cos(minAngleRad).toFloat()
+            val sinA = sin(minAngleRad).toFloat()
+            maxMinTickPaint.color = 0xFF2196F3.toInt()  // Blue
+            canvas.drawLine(
+                cx + tickOuterR * cosA, cy + tickOuterR * sinA,
+                cx + (majorInnerR - radius * 0.05f) * cosA, cy + (majorInnerR - radius * 0.05f) * sinA,
+                maxMinTickPaint
+            )
+        }
+
         // ── Needle ────────────────────────────────────────────────
         val needleAngleDeg = startAngleDeg + valueAngle
         val needleRad = Math.toRadians(needleAngleDeg.toDouble())
@@ -185,24 +223,34 @@ class DialView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, strokeW * 0.7f, pivotPaint)
 
         // ── Metric name (in upper half of dial) ────────────────────
-        val nameSize = radius * 0.12f // Increased from 0.09f to 0.12f
+        val nameSize = radius * 0.15f
         labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
         labelPaint.textSize = nameSize
-        // Position in upper half of dial, below the tick marks
         val nameBaseline = cy - radius * 0.25f
         canvas.drawText(metricName.uppercase(), cx, nameBaseline, labelPaint)
 
-        // ── Value readout (in lower half of dial, like dash1.jpg) ─────────────────────────────────────────
-        // Make font as big as possible while staying within the dial arc
-        val valueSize = radius * 0.45f // Increased from 0.32f for maximum size
-        valuePaint.color = if (isWarning) colorScheme.warning else 0xFF2196F3.toInt() // Blue for better contrast
+        // ── Value readout (in lower half of dial) ─────────────────────
+        val valueSize = radius * 0.52f
+        valuePaint.color = if (isWarning) colorScheme.warning else colorScheme.accent
         valuePaint.textSize = valueSize
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
-        // Position value further down from center - about 20% below current position
-        val valueBaseline = cy + radius * 0.55f // Moved down from 0.35f to 0.55f
-        canvas.drawText(valueStr, cx, valueBaseline, valuePaint)
+        val valueBaseline = cy + radius * 0.55f
+
+        // Dark pill behind value for separation from ticks/needle
+        val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = (colorScheme.background and 0x00FFFFFF) or 0xAA000000.toInt()
+        }
+        val pillHalfW = valuePaint.measureText(valueStr) / 2f + valueSize * 0.15f
+        val pillTop = valueBaseline + valuePaint.ascent() - valueSize * 0.1f
+        val pillBot = valueBaseline + valuePaint.descent() + valueSize * 0.05f
+        canvas.drawRoundRect(
+            cx - pillHalfW, pillTop, cx + pillHalfW, pillBot,
+            valueSize * 0.15f, valueSize * 0.15f, pillPaint
+        )
+        drawTextWithGlow(canvas, valueStr, cx, valueBaseline, valuePaint)
 
         // ── Unit superscript (top-right of value block) ───────────────
         val unitSize = valueSize * 0.38f

@@ -64,6 +64,7 @@ class DashboardEditorFragment : Fragment() {
     private lateinit var btnTripPlay: ImageButton
     private lateinit var btnTripPause: ImageButton
     private lateinit var btnTripStop: ImageButton
+    private lateinit var btnResetMinMax: ImageButton
     private lateinit var btnOverflow: ImageButton
 
     private lateinit var btnBringFront: View
@@ -121,6 +122,7 @@ class DashboardEditorFragment : Fragment() {
         btnTripPlay      = view.findViewById(R.id.btn_trip_play)
         btnTripPause     = view.findViewById(R.id.btn_trip_pause)
         btnTripStop      = view.findViewById(R.id.btn_trip_stop)
+        btnResetMinMax   = view.findViewById(R.id.btn_reset_minmax)
         btnOverflow      = view.findViewById(R.id.btn_overflow)
 
         btnBringFront    = view.findViewById(R.id.btn_bring_front)
@@ -240,6 +242,10 @@ class DashboardEditorFragment : Fragment() {
             }
         }
 
+        btnResetMinMax.setOnClickListener {
+            resetAllMinMaxValues()
+        }
+
         btnOverflow.setOnClickListener { showOverflowMenu() }
 
         btnEditToggle.setOnClickListener { toggleEditMode() }
@@ -278,11 +284,13 @@ class DashboardEditorFragment : Fragment() {
             btnTripPlay.visibility  = View.GONE
             btnTripPause.visibility = View.GONE
             btnTripStop.visibility  = View.GONE
+            btnResetMinMax.visibility = View.GONE
             return
         }
         btnTripPlay.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
         btnTripPause.visibility = if (phase == com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
         btnTripStop.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.IDLE)    View.VISIBLE else View.GONE
+        btnResetMinMax.visibility = if (phase == com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
     }
 
     private fun showOverflowMenu() {
@@ -602,6 +610,11 @@ class DashboardEditorFragment : Fragment() {
 
             val gaugeView = createViewForWidgetType(widget.type)
             applyWidgetSettings(gaugeView, widget, layout.colorScheme)
+            
+            // Reset min/max values for dial and bar gauges when dashboard is displayed
+            if (gaugeView is DialView || gaugeView is BarGaugeView) {
+                gaugeView.resetTripMinMax()
+            }
 
             contentFrame.addView(gaugeView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -964,6 +977,28 @@ class DashboardEditorFragment : Fragment() {
             WidgetType.BAR_GAUGE_V      -> BarGaugeView(ctx)
             WidgetType.NUMERIC_DISPLAY  -> NumericDisplayView(ctx)
             WidgetType.TEMPERATURE_ARC  -> TemperatureGaugeView(ctx)
+        }
+    }
+
+    /** Resets min/max values for all DialView and BarGaugeView widgets in the current dashboard */
+    private fun resetAllMinMaxValues() {
+        var resetCount = 0
+        for (i in 0 until canvasContainer.childCount) {
+            val wrapper = canvasContainer.getChildAt(i)
+            val contentFrame = wrapper.findViewById<FrameLayout>(R.id.widget_content_frame)
+            if (contentFrame != null && contentFrame.childCount > 0) {
+                val gaugeView = contentFrame.getChildAt(0)
+                if (gaugeView is DialView || gaugeView is BarGaugeView) {
+                    gaugeView.resetTripMinMax()
+                    resetCount++
+                }
+            }
+        }
+        
+        if (resetCount > 0) {
+            Toast.makeText(context, "Min/Max values reset for $resetCount gauge(s)", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "No gauges with min/max tracking found", Toast.LENGTH_SHORT).show()
         }
     }
 

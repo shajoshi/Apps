@@ -206,7 +206,8 @@ class ConnectViewModel : ViewModel() {
         saveLastDevice(context, deviceInfo.device)
         _errorDeviceMac.value = null
         _connectingDeviceMac.value = deviceInfo.device.address
-        service.connect(deviceInfo.device)
+        val forceBle = AppSettings.isForceBleConnection(context)
+        service.connect(deviceInfo.device, forceBle)
     }
 
     /** Connect via mock (no real BluetoothDevice needed). */
@@ -238,11 +239,12 @@ class ConnectViewModel : ViewModel() {
         ) return false
 
         val lastMac = AppSettings.getLastDeviceMac(context) ?: return false
+        val forceBle = AppSettings.isForceBleConnection(context)
 
         // Look for the device in paired list first
         val device = _pairedDevices.value?.find { it.address == lastMac }
         if (device != null) {
-            service.connect(device)
+            service.connect(device, forceBle)
             return true
         }
 
@@ -250,7 +252,7 @@ class ConnectViewModel : ViewModel() {
         val adapter = btAdapter ?: return false
         try {
             val remoteDevice = adapter.getRemoteDevice(lastMac)
-            service.connect(remoteDevice)
+            service.connect(remoteDevice, forceBle)
             return true
         } catch (_: Exception) {
             return false

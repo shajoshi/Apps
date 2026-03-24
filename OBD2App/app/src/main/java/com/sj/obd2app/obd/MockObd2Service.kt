@@ -98,10 +98,10 @@ class MockObd2Service private constructor() : Obd2Service {
     override val connectedDeviceName: StateFlow<String?> = _connectedDeviceName
 
     /**
-     * Simulate connecting — device parameter is ignored.
+     * Simulate connecting — device and forceBle parameters are ignored.
      * After a short delay, starts emitting fluctuating data.
      */
-    override fun connect(device: BluetoothDevice?) {
+    override fun connect(device: BluetoothDevice?, forceBle: Boolean) {
         if (_connectionState.value == Obd2Service.ConnectionState.CONNECTING ||
             _connectionState.value == Obd2Service.ConnectionState.CONNECTED
         ) return

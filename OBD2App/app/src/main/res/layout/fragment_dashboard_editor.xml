@@ -121,6 +121,17 @@
             android:visibility="gone"
             android:contentDescription="Stop trip" />
 
+        <!-- Reset Min/Max -->
+        <ImageButton
+            android:id="@+id/btn_reset_minmax"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_rotate"
+            android:tint="#9C27B0"
+            android:visibility="gone"
+            android:contentDescription="Reset min/max values" />
+
         <!-- Edit toggle (pencil = enter edit; check = exit edit) -->
         <ImageButton
             android:id="@+id/btn_edit_toggle"

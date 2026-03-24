@@ -28,8 +28,12 @@ interface Obd2Service {
      */
     val connectionLog: StateFlow<List<String>>
 
-    /** Connect to a Bluetooth device. Pass null for mock connections. */
-    fun connect(device: BluetoothDevice?)
+    /** 
+     * Connect to a Bluetooth device. Pass null for mock connections.
+     * @param device The Bluetooth device to connect to, or null for mock
+     * @param forceBle If true, force BLE protocol even for dual-mode devices
+     */
+    fun connect(device: BluetoothDevice?, forceBle: Boolean = false)
 
     /** Disconnect and stop polling. */
     fun disconnect()

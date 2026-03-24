@@ -2,6 +2,9 @@ package com.sj.obd2app.ui.dashboard.views
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.BlurMaskFilter
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
@@ -19,6 +22,12 @@ abstract class DashboardGaugeView @JvmOverloads constructor(
 
     // The current (animated) value to display
     protected var currentValue: Float = 0f
+        private set
+
+    // Track max/min values during trip for dial and bar gauges
+    protected var tripMaxValue: Float? = null
+        private set
+    protected var tripMinValue: Float? = null
         private set
 
     // Label or metric name (e.g. "Engine RPM")
@@ -56,6 +65,15 @@ abstract class DashboardGaugeView @JvmOverloads constructor(
      */
     fun setValue(v: Float) {
         val target = v.coerceIn(rangeMin, rangeMax)
+        
+        // Track max/min values during trip
+        if (tripMaxValue == null || target > tripMaxValue!!) {
+            tripMaxValue = target
+        }
+        if (tripMinValue == null || target < tripMinValue!!) {
+            tripMinValue = target
+        }
+        
         if (currentValue == target) return
         valueAnimator?.cancel()
         valueAnimator = ValueAnimator.ofFloat(currentValue, target).apply {
@@ -74,6 +92,32 @@ abstract class DashboardGaugeView @JvmOverloads constructor(
         valueAnimator?.cancel()
         currentValue = v.coerceIn(rangeMin, rangeMax)
         invalidate()
+    }
+    
+    /** Resets the trip max/min values (call when starting a new trip). */
+    fun resetTripMinMax() {
+        tripMaxValue = null
+        tripMinValue = null
+        invalidate()
+    }
+
+    // ── Glow helper paint — reused across calls ───────────────
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * Draws [text] with a soft glow/shadow behind it for readability on dark backgrounds.
+     * Call this instead of canvas.drawText() for value strings.
+     */
+    protected fun drawTextWithGlow(
+        canvas: Canvas, text: String, x: Float, y: Float, paint: Paint,
+        glowColor: Int = 0x66000000, glowRadius: Float = paint.textSize * 0.08f
+    ) {
+        glowPaint.set(paint)
+        glowPaint.color = glowColor
+        glowPaint.maskFilter = BlurMaskFilter(glowRadius.coerceAtLeast(1f), BlurMaskFilter.Blur.NORMAL)
+        canvas.drawText(text, x, y, glowPaint)
+        glowPaint.maskFilter = null
+        canvas.drawText(text, x, y, paint)
     }
 
     override fun onDetachedFromWindow() {

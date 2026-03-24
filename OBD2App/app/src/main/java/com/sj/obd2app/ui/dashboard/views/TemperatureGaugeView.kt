@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.util.AttributeSet
 import kotlin.math.cos
 import kotlin.math.min
@@ -50,11 +51,10 @@ class TemperatureGaugeView @JvmOverloads constructor(
     }
     private val tickLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = false
     }
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
+        typeface = Typeface.DEFAULT_BOLD
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -75,7 +75,7 @@ class TemperatureGaugeView @JvmOverloads constructor(
         // Arc centre optimized - minimal padding
         val cx = width / 2f
         val cy = height * 0.52f  // Adjusted from 0.55f for better centering
-        val radius = min(width / 2f, cy) * 0.92f  // Increased from 0.82f to use more space
+        val radius = min(width / 2f, cy) * 0.95f
         val strokeW = radius * 0.10f
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius)
@@ -189,13 +189,13 @@ class TemperatureGaugeView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, strokeW * 0.65f, pivotPaint)
 
         // ── Value readout ─────────────────────────────────────────
-        val valueSize = radius * 0.36f
+        val valueSize = radius * 0.44f
         valuePaint.color = if (isHot) hotColor else colorScheme.accent
         valuePaint.textSize = valueSize
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
         val valueBaseline = cy + radius * 0.28f
-        canvas.drawText(valueStr, cx, valueBaseline, valuePaint)
+        drawTextWithGlow(canvas, valueStr, cx, valueBaseline, valuePaint)
 
         // ── Unit superscript (top-right of value block) ─────────────
         val unitSize = valueSize * 0.38f
@@ -210,9 +210,9 @@ class TemperatureGaugeView @JvmOverloads constructor(
         }
 
         // ── Metric name (compact, below value) ───────────────────
-        val nameSize = radius * 0.10f
+        val nameSize = radius * 0.14f
         labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
         labelPaint.textSize = nameSize
         canvas.drawText(metricName.uppercase(), cx, valueBaseline + nameSize * 1.6f, labelPaint)
     }

@@ -28,6 +28,14 @@ object Obd2ServiceProvider {
     }
 
     /**
+     * Initialise the Bluetooth service. Call this in MainActivity.onCreate()
+     * before using real Bluetooth connections.
+     */
+    fun initBluetooth(context: Context) {
+        BluetoothObd2Service.getInstance(context.applicationContext)
+    }
+
+    /**
      * Returns the active [Obd2Service] implementation.
      */
     fun getService(): Obd2Service {

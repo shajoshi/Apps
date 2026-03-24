@@ -2,6 +2,7 @@ package com.sj.obd2app.storage
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.sj.obd2app.settings.AppSettings
@@ -207,6 +208,61 @@ object AppDataDirectory {
     }
 
     /**
+     * Helper function to list files in a directory, with fallback for stale cache.
+     * DocumentFile.listFiles() can return empty array after cold start due to caching.
+     */
+    private fun listFilesWithFallback(context: Context, directory: DocumentFile): List<DocumentFile> {
+        val files = directory.listFiles()
+        
+        if (files.isNotEmpty()) {
+            return files.toList()
+        }
+        
+        Log.w(TAG, "listFilesWithFallback: listFiles() returned empty, trying ContentResolver query")
+        
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+            directory.uri,
+            DocumentsContract.getDocumentId(directory.uri)
+        )
+        
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        )
+        
+        val result = mutableListOf<DocumentFile>()
+        
+        try {
+            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                
+                while (cursor.moveToNext()) {
+                    val documentId = cursor.getString(idColumn)
+                    val name = cursor.getString(nameColumn)
+                    
+                    val documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                        directory.uri,
+                        documentId
+                    )
+                    
+                    val docFile = DocumentFile.fromSingleUri(context, documentUri)
+                    if (docFile != null) {
+                        result.add(docFile)
+                        Log.d(TAG, "listFilesWithFallback: found file via query: $name")
+                    }
+                }
+            }
+            Log.d(TAG, "listFilesWithFallback: ContentResolver query found ${result.size} items")
+        } catch (e: Exception) {
+            Log.e(TAG, "listFilesWithFallback: query failed", e)
+        }
+        
+        return result
+    }
+
+    /**
      * Lists all profile files in the profiles directory.
      * Matches pattern: vehicle_profile_*.json (excluding *_pids.json)
      */
@@ -220,8 +276,8 @@ object AppDataDirectory {
         }
         
         Log.d(TAG, "listProfileFilesDocumentFile: calling listFiles() on profiles directory")
-        val allFiles = profilesDir.listFiles()
-        Log.d(TAG, "listProfileFilesDocumentFile: listFiles() returned ${allFiles.size} items")
+        val allFiles = listFilesWithFallback(context, profilesDir)
+        Log.d(TAG, "listProfileFilesDocumentFile: got ${allFiles.size} items")
         
         allFiles.forEachIndexed { index, file ->
             Log.d(TAG, "  [$index] name='${file.name}', isFile=${file.isFile}, isDirectory=${file.isDirectory}")
@@ -251,8 +307,8 @@ object AppDataDirectory {
         }
         
         Log.d(TAG, "listLayoutFilesDocumentFile: calling listFiles() on layouts directory")
-        val allFiles = layoutsDir.listFiles()
-        Log.d(TAG, "listLayoutFilesDocumentFile: listFiles() returned ${allFiles.size} items")
+        val allFiles = listFilesWithFallback(context, layoutsDir)
+        Log.d(TAG, "listLayoutFilesDocumentFile: got ${allFiles.size} items")
         
         allFiles.forEachIndexed { index, file ->
             Log.d(TAG, "  [$index] name='${file.name}', isFile=${file.isFile}, isDirectory=${file.isDirectory}")

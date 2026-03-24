@@ -2,6 +2,7 @@ package com.sj.obd2app.ui.dashboard.views
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.AttributeSet
@@ -28,12 +29,10 @@ class SevenSegmentView @JvmOverloads constructor(
 
     private val ghostPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = false
     }
 
     private val digitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
     }
 
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -42,6 +41,11 @@ class SevenSegmentView @JvmOverloads constructor(
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+    }
+
+    // Matrix for italic transformation (skew to the left)
+    private val italicMatrix = Matrix().apply {
+        setSkew(-0.15f, 0f) // 15% skew horizontally for italic effect (negative = left tilt)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -65,38 +69,47 @@ class SevenSegmentView @JvmOverloads constructor(
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
 
-        // ── Optimized Layout - minimal padding ──────────────────────────────────────
-        val digitAreaH  = height * 0.75f  // Increased from 0.62f to use more vertical space
-        val digitSize   = minOf(width / (totalChars.coerceAtLeast(1) * 0.60f), digitAreaH * 0.90f)  // Optimized sizing
+        // ── Optimized Layout - compact ──────────────────────────────────────
+        val digitAreaH  = height * 0.82f
+        val digitSize   = minOf(width / (totalChars.coerceAtLeast(1) * 0.55f), digitAreaH * 0.95f)
         val digitBaseline = height * 0.68f  // Adjusted for better centering
 
         // Measure the actual pixel width of the digit string at this size
         digitPaint.textSize = digitSize
         val digitBlockW = digitPaint.measureText(ghostStr)   // ghost == same width as live
 
-        // Superscript unit: ~35% of digit size, baseline raised to top of digit cap-height
-        val unitSize     = digitSize * 0.35f
+        // Unit: smaller (25% of digit size), aligned to left side of widget
+        val unitSize     = digitSize * 0.25f
         labelPaint.typeface = Typeface.DEFAULT
         labelPaint.textSize = unitSize
         // Approximate cap-height as 70% of digitSize
         val unitBaseline = digitBaseline - digitSize * 0.68f
 
-        val nameSize = height * 0.07f
+        val nameSize = height * 0.09f
 
-        // Centre of digit block (digits are drawn centred at cx by Paint.Align.CENTER)
-        // Right edge of digit block = cx + digitBlockW/2
-        // Place unit just to the right of the digit block with a small gap
-        val unitX = cx + digitBlockW / 2f + unitSize * 0.3f
+        // Align unit to left side of widget with small padding
+        val pad = minOf(width, height) * 0.05f
+        val unitX = pad + unitSize * 0.2f
 
         // ── Ghost layer ───────────────────────────────────────────
         ghostPaint.textSize = digitSize
-        ghostPaint.color = (colorScheme.accent and 0x00FFFFFF) or 0x1A000000.toInt()
+        ghostPaint.color = (colorScheme.accent and 0x00FFFFFF) or 0x0F000000.toInt()
+        
+        // Apply italic transformation for ghost digits
+        canvas.save()
+        canvas.concat(italicMatrix)
         canvas.drawText(ghostStr, cx, digitBaseline, ghostPaint)
+        canvas.restore()
 
         // ── Live value ────────────────────────────────────────────
         val isWarning = warningThreshold?.let { currentValue >= it } ?: false
         digitPaint.color = if (isWarning) colorScheme.warning else colorScheme.accent
-        canvas.drawText(valueStr, cx, digitBaseline, digitPaint)
+        
+        // Apply italic transformation for live digits
+        canvas.save()
+        canvas.concat(italicMatrix)
+        drawTextWithGlow(canvas, valueStr, cx, digitBaseline, digitPaint)
+        canvas.restore()
 
         // ── Unit as superscript (top-right of digit block) ────────
         labelPaint.textAlign = Paint.Align.LEFT
@@ -110,7 +123,7 @@ class SevenSegmentView @JvmOverloads constructor(
         labelPaint.textAlign = Paint.Align.CENTER
         labelPaint.textSize = nameSize
         // Keep hue from colorScheme.text but reduce to 73% opacity for a subtle label
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xBB000000.toInt()
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
         canvas.drawText(metricName.uppercase(), cx, digitBaseline + nameSize * 1.4f, labelPaint)
     }
 }

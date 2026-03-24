@@ -107,7 +107,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      * Connect to the given Bluetooth device and start polling OBD-II data.
      * Automatically detects whether to use Classic Bluetooth or BLE.
      */
-    override fun connect(device: BluetoothDevice?) {
+    override fun connect(device: BluetoothDevice?, forceBle: Boolean) {
         val btDevice = device ?: return
         if (_connectionState.value == Obd2Service.ConnectionState.CONNECTING ||
             _connectionState.value == Obd2Service.ConnectionState.CONNECTED) {
@@ -122,8 +122,8 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Auto-detect device type and create appropriate transport
-                transport = createTransport(btDevice)
+                // Create the transport based on device type and forceBle setting
+                transport = createTransport(btDevice, forceBle)
                 log("Detected device type: ${transport!!.getTransportType()}")
                 log("Establishing connection…")
                 transport!!.connect()
@@ -181,9 +181,17 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     /**
      * Auto-detect device type and create appropriate transport.
-     * Tries Classic Bluetooth first, falls back to BLE if device type is LE.
+     * If forceBle is true, always use BLE regardless of device type.
+     * Otherwise, tries Classic Bluetooth first, falls back to BLE if device type is LE.
      */
-    private fun createTransport(device: BluetoothDevice): Elm327Transport {
+    private fun createTransport(device: BluetoothDevice, forceBle: Boolean = false): Elm327Transport {
+        // If force BLE is enabled, always use BLE transport
+        if (forceBle) {
+            log("Force BLE enabled - using BLE transport")
+            return BleTransport(context ?: throw IllegalStateException("Context required for BLE"), device)
+        }
+        
+        // Otherwise, auto-detect based on device type
         return when (device.type) {
             BluetoothDevice.DEVICE_TYPE_LE -> {
                 log("Device type: BLE only")

@@ -100,6 +100,8 @@ class MainActivity : AppCompatActivity() {
         // Initialise OBD2 service mode BEFORE ViewPager/fragments are created
         if (ObdStateManager.isMockMode) {
             Obd2ServiceProvider.initMock(this)
+        } else {
+            Obd2ServiceProvider.initBluetooth(this)
         }
 
         // Set up ViewPager2 with 5 pages

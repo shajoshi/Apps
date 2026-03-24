@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Typeface
 import android.util.AttributeSet
 
 /**
@@ -27,7 +28,7 @@ class NumericDisplayView @JvmOverloads constructor(
     }
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
+        typeface = Typeface.DEFAULT_BOLD
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -51,28 +52,27 @@ class NumericDisplayView @JvmOverloads constructor(
         val fmt = "%.${decimalPlaces}f"
         val valueStr = String.format(fmt, currentValue)
 
-        // ── Optimized Layout - minimal padding ────────────────────────────────────────
-        val nameSize  = minDim * 0.12f  // Slightly larger name
-        val valueSize = minDim * 0.55f  // Larger value to fill space
-        val unitSize  = valueSize * 0.30f
+        // ── Compact layout ──────────────────────────────────────
+        val nameSize  = minDim * 0.12f
+        val valueSize = minDim * 0.60f
+        val unitSize  = valueSize * 0.25f
 
-        // Name at top - minimal top margin
+        // Name at top - tight top margin
         labelPaint.textAlign = Paint.Align.CENTER
         labelPaint.textSize  = nameSize
-        val nameBaseline = nameSize * 0.95f  // Reduced top margin
+        val nameBaseline = nameSize * 0.75f
 
         // Value baseline: centered vertically
         valuePaint.textSize = valueSize
-        val valueBaseline = cy + valueSize * 0.35f
+        val valueBaseline = cy + valueSize * 0.20f
 
-        // Unit superscript: top-right of value block
-        valuePaint.textSize = valueSize
-        val valueBlockW = valuePaint.measureText(valueStr)
-        val unitX = cx + valueBlockW / 2f + unitSize * 0.15f
+        // Unit: smaller, aligned to left side of widget
+        val pad = minDim * 0.05f
+        val unitX = pad + unitSize * 0.2f
         val unitBaseline = valueBaseline - valueSize * 0.60f
 
-        // Name below value - minimal bottom margin
-        val nameBottomBaseline = height - nameSize * 0.35f  // Reduced bottom margin
+        // Name below value - tight bottom margin
+        val nameBottomBaseline = height - nameSize * 0.20f
 
         // ── Trend arrow — top-left corner, smaller ────────────────────
         val trend = when {
@@ -102,9 +102,9 @@ class NumericDisplayView @JvmOverloads constructor(
 
         // ── Value ────────────────────────────────────────
         valuePaint.textAlign = Paint.Align.CENTER
-        valuePaint.color     = if (isWarning) colorScheme.warning else 0xFF2196F3.toInt() // Blue for better contrast
+        valuePaint.color     = if (isWarning) colorScheme.warning else colorScheme.accent
         valuePaint.textSize  = valueSize
-        canvas.drawText(valueStr, cx, valueBaseline, valuePaint)
+        drawTextWithGlow(canvas, valueStr, cx, valueBaseline, valuePaint)
 
         // ── Unit superscript ─────────────────────────────────
         if (metricUnit.isNotEmpty()) {
@@ -117,7 +117,7 @@ class NumericDisplayView @JvmOverloads constructor(
         // ── Metric name (below value, muted) ────────────────────
         labelPaint.textAlign = Paint.Align.CENTER
         labelPaint.textSize  = nameSize
-        labelPaint.color     = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
+        labelPaint.color     = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
         canvas.drawText(metricName.uppercase(), cx, nameBottomBaseline, labelPaint)
     }
 

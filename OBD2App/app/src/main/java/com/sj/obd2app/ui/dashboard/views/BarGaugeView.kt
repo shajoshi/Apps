@@ -6,6 +6,7 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.util.AttributeSet
 
 /**
@@ -37,7 +38,7 @@ class BarGaugeView @JvmOverloads constructor(
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        isFakeBoldText = true
+        typeface = Typeface.DEFAULT_BOLD
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -49,8 +50,8 @@ class BarGaugeView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val pad = minOf(width, height) * 0.03f  // Reduced from 0.06f
-        val cornerR = minOf(width, height) * 0.04f  // Reduced from 0.06f
+        val pad = minOf(width, height) * 0.02f
+        val cornerR = minOf(width, height) * 0.04f
 
         val range = (rangeMax - rangeMin).takeIf { it > 0f } ?: 1f
         val fraction = ((currentValue - rangeMin) / range).coerceIn(0f, 1f)
@@ -59,11 +60,11 @@ class BarGaugeView @JvmOverloads constructor(
             if (isVertical) currentValue <= it else currentValue >= it
         } ?: false
 
-        // ── Track area bounds - minimized padding ─────────────────────────────────────
-        val labelH = if (isVertical) height * 0.10f else height * 0.22f  // Reduced label height
-        val trackL = if (isVertical) pad * 1.5f else pad  // Reduced side padding
-        val trackT = if (isVertical) pad else height - labelH - pad - (height * 0.35f)
-        val trackR = if (isVertical) width - pad * 1.5f else width - pad  // Reduced side padding
+        // ── Track area bounds - compact layout ─────────────────────────────────────
+        val labelH = if (isVertical) height * 0.10f else height * 0.15f
+        val trackL = pad
+        val trackT = if (isVertical) pad else height - labelH - pad - (height * 0.40f)
+        val trackR = width - pad
         val trackB = if (isVertical) height - labelH - pad else height - labelH
 
         trackRect.set(trackL, trackT, trackR, trackB)
@@ -75,7 +76,7 @@ class BarGaugeView @JvmOverloads constructor(
         // ── Fill gradient ─────────────────────────────────────────
         val fillColor = when {
             isWarning -> colorScheme.warning
-            else -> 0xFFFFFF00.toInt() // Light yellow for better contrast
+            else -> colorScheme.accent
         }
 
         if (isVertical) {
@@ -109,17 +110,20 @@ class BarGaugeView @JvmOverloads constructor(
         // ── Tick marks ────────────────────────────────────────────
         val majorTickW = minOf(width, height) * 0.03f
         val minorTickW = minOf(width, height) * 0.015f
-        val totalMinorSteps = ((range / majorTickInterval) * (minorTickCount + 1)).toInt()
-            .coerceAtLeast(1)
-        val minorStepValue = range / totalMinorSteps
+        
+        // Override: Use consistent 50% major ticks with 4 minor ticks between them
+        val majorTickCount = 2  // 0%, 50%, 100%
+        val minorTicksPerMajor = 4
+        val totalTickCount = majorTickCount * (minorTicksPerMajor + 1)
+        val stepValue = range / totalTickCount
 
-        tickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x66000000.toInt()
+        tickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x77000000.toInt()
 
-        var v = rangeMin
-        while (v <= rangeMax + minorStepValue * 0.01f) {
-            val frac = ((v - rangeMin) / range).coerceIn(0f, 1f)
-            val isMajor = (((v - rangeMin) / majorTickInterval) % 1f) < 0.01f ||
-                          (((v - rangeMin) / majorTickInterval) % 1f) > 0.99f
+        var tickIndex = 0
+        while (tickIndex <= totalTickCount) {
+            val v = rangeMin + stepValue * tickIndex
+            val frac = tickIndex.toFloat() / totalTickCount
+            val isMajor = (tickIndex % (minorTicksPerMajor + 1)) == 0
             tickPaint.strokeWidth = if (isMajor) majorTickW else minorTickW
 
             if (isVertical) {
@@ -133,7 +137,48 @@ class BarGaugeView @JvmOverloads constructor(
                 canvas.drawLine(tx, trackRect.top, tx, trackRect.top + tickLen, tickPaint)
                 canvas.drawLine(tx, trackRect.bottom - tickLen, tx, trackRect.bottom, tickPaint)
             }
-            v += minorStepValue
+            tickIndex++
+        }
+
+        // ── Trip max/min indicators ───────────────────────────────
+        val maxMinTickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeWidth = majorTickW * 2f  // Bold tick
+        }
+        
+        // Draw red tick at max value
+        tripMaxValue?.let { maxVal ->
+            val maxFrac = ((maxVal - rangeMin) / range).coerceIn(0f, 1f)
+            maxMinTickPaint.color = 0xFFFF0000.toInt()  // Red
+            if (isVertical) {
+                val ty = trackRect.bottom - trackRect.height() * maxFrac
+                val tickLen = trackRect.width() * 0.4f
+                canvas.drawLine(trackRect.left, ty, trackRect.left + tickLen, ty, maxMinTickPaint)
+                canvas.drawLine(trackRect.right - tickLen, ty, trackRect.right, ty, maxMinTickPaint)
+            } else {
+                val tx = trackRect.left + trackRect.width() * maxFrac
+                val tickLen = trackRect.height() * 0.4f
+                canvas.drawLine(tx, trackRect.top, tx, trackRect.top + tickLen, maxMinTickPaint)
+                canvas.drawLine(tx, trackRect.bottom - tickLen, tx, trackRect.bottom, maxMinTickPaint)
+            }
+        }
+        
+        // Draw blue tick at min value
+        tripMinValue?.let { minVal ->
+            val minFrac = ((minVal - rangeMin) / range).coerceIn(0f, 1f)
+            maxMinTickPaint.color = 0xFF2196F3.toInt()  // Blue
+            if (isVertical) {
+                val ty = trackRect.bottom - trackRect.height() * minFrac
+                val tickLen = trackRect.width() * 0.4f
+                canvas.drawLine(trackRect.left, ty, trackRect.left + tickLen, ty, maxMinTickPaint)
+                canvas.drawLine(trackRect.right - tickLen, ty, trackRect.right, ty, maxMinTickPaint)
+            } else {
+                val tx = trackRect.left + trackRect.width() * minFrac
+                val tickLen = trackRect.height() * 0.4f
+                canvas.drawLine(tx, trackRect.top, tx, trackRect.top + tickLen, maxMinTickPaint)
+                canvas.drawLine(tx, trackRect.bottom - tickLen, tx, trackRect.bottom, maxMinTickPaint)
+            }
         }
 
         val fmt = "%.${decimalPlaces}f"
@@ -141,26 +186,25 @@ class BarGaugeView @JvmOverloads constructor(
         val trackCy = (trackRect.top + trackRect.bottom) / 2f
         val minDim = minOf(width, height).toFloat()
 
-        // ── Metric name — larger, positioned closer to bar ───────────────
-        val nameSize = minDim * 0.12f // Increased from 0.09f
+        // ── Metric name — compact, positioned closer to bar ───────────────
+        val nameSize = minDim * 0.14f
         labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB3000000.toInt()
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
         labelPaint.textSize = nameSize
-        // Position closer to the bar - just above the track area
-        val nameY = if (isVertical) trackT - nameSize * 0.3f else trackT - nameSize * 0.5f
+        val nameY = if (isVertical) trackT - nameSize * 0.2f else trackT - nameSize * 0.3f
         canvas.drawText(metricName.uppercase(), width / 2f, nameY, labelPaint)
 
         // ── Value text (centred in track) ─────────────────────────
-        val valueSize = if (isVertical) minDim * 0.16f else trackRect.height() * 0.52f
-        textPaint.color = 0xFF2196F3.toInt() // Blue for better contrast
+        val valueSize = if (isVertical) minDim * 0.22f else trackRect.height() * 0.70f
+        textPaint.color = if (isWarning) colorScheme.warning else colorScheme.accent
         textPaint.textSize = valueSize
         val valueOffset = (textPaint.descent() + textPaint.ascent()) / 2
         val valueCx = width / 2f
-        canvas.drawText(valueStr, valueCx, trackCy - valueOffset, textPaint)
+        drawTextWithGlow(canvas, valueStr, valueCx, trackCy - valueOffset, textPaint)
 
         // ── Unit superscript (top-right of value block) ───────────
         if (metricUnit.isNotEmpty()) {
-            val unitSize = valueSize * 0.38f
+            val unitSize = valueSize * 0.45f
             val valueBlockW = textPaint.measureText(valueStr)
             val unitX = valueCx + valueBlockW / 2f + unitSize * 0.2f
             val unitBaseline = trackCy - valueOffset - valueSize * 0.60f

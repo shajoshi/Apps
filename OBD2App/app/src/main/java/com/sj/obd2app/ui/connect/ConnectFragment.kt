@@ -110,6 +110,7 @@ class ConnectFragment : Fragment() {
         
         if (isMock) {
             binding.btnScan.visibility = View.GONE
+            binding.panelForceBle.visibility = View.GONE
 
             val mockAdapter = MockDeviceAdapter { 
                 viewModel.connectMock() 
@@ -122,10 +123,22 @@ class ConnectFragment : Fragment() {
 
         } else {
             binding.btnScan.visibility = View.VISIBLE
+            binding.panelForceBle.visibility = View.VISIBLE
+
+            // Setup Force BLE toggle
+            setupForceBleToggle()
 
             // Single sectioned adapter for all devices
             sectionedAdapter = SectionedDeviceAdapter(
-                onDeviceClick = { deviceInfo -> viewModel.connectToDevice(deviceInfo, requireContext()) },
+                onDeviceClick = { deviceInfo -> 
+                    // Check if we should show warning dialog
+                    if (AppSettings.isForceBleConnection(requireContext()) && 
+                        deviceInfo.device.type == android.bluetooth.BluetoothDevice.DEVICE_TYPE_CLASSIC) {
+                        showBleWarningDialog(deviceInfo)
+                    } else {
+                        viewModel.connectToDevice(deviceInfo, requireContext())
+                    }
+                },
                 onDisconnectClick = { viewModel.disconnect() }
             )
             binding.recyclerviewDevices.adapter = sectionedAdapter
@@ -221,6 +234,43 @@ class ConnectFragment : Fragment() {
         
         // Always load paired devices to ensure mock device names are populated
         viewModel.loadPairedDevices(requireContext())
+    }
+
+    private fun setupForceBleToggle() {
+        // Bind switch to current setting value
+        binding.switchForceBle.isChecked = AppSettings.isForceBleConnection(requireContext())
+        
+        // Save setting when switch changes
+        binding.switchForceBle.setOnCheckedChangeListener { _, isChecked ->
+            AppSettings.setForceBleConnection(requireContext(), isChecked)
+        }
+        
+        // Info icon shows explanation dialog
+        binding.btnBleInfo.setOnClickListener {
+            showBleInfoDialog()
+        }
+    }
+    
+    private fun showBleInfoDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Force BLE Connection")
+            .setMessage("Force BLE enables Bluetooth Low Energy protocol for connections.\n\n" +
+                    "Use this for BLE-only OBD2 adapters. Note: Classic Bluetooth devices " +
+                    "may fail to connect when this is enabled.")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+    
+    private fun showBleWarningDialog(deviceInfo: DeviceInfo) {
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Warning")
+            .setMessage("This device appears to be Classic Bluetooth only. " +
+                    "Forcing BLE connection may fail. Continue anyway?")
+            .setPositiveButton("Connect Anyway") { _, _ ->
+                viewModel.connectToDevice(deviceInfo, requireContext())
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun registerDiscoveryReceiver() {
