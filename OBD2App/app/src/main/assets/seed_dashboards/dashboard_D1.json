@@ -41,7 +41,7 @@
       "gridH": 5,
       "gridW": 18,
       "gridX": 0,
-      "gridY": 12,
+      "gridY": 10,
       "id": "c49e3f2f-a873-4fca-baa2-5c6fbbe55dbf",
       "majorTickInterval": 25.0,
       "metric": {
@@ -66,7 +66,7 @@
       "gridH": 5,
       "gridW": 18,
       "gridX": 0,
-      "gridY": 15,
+      "gridY": 13,
       "id": "34a36a60-0cb5-4f07-a353-2eb54f2be7c4",
       "majorTickInterval": 5.0,
       "metric": {
@@ -91,7 +91,7 @@
       "gridH": 5,
       "gridW": 18,
       "gridX": 0,
-      "gridY": 18,
+      "gridY": 16,
       "id": "a7e15581-44cf-4e43-8e05-3782876d0f97",
       "majorTickInterval": 100.0,
       "metric": {
@@ -103,7 +103,7 @@
         }
       },
       "minorTickCount": 4,
-      "rangeMax": 655.0,
+      "rangeMax": 40.0,
       "rangeMin": 0.0,
       "type": "BAR_GAUGE_H",
       "zOrder": 3
@@ -112,35 +112,30 @@
       "alpha": 1.0,
       "decimalPlaces": 0,
       "displayUnit": "km/h",
-      "gridH": 4,
-      "gridW": 8,
+      "gridH": 8,
+      "gridW": 9,
       "gridX": 0,
-      "gridY": 23,
+      "gridY": 20,
       "id": "71b60c6b-51fa-430f-b7b7-feffd0b2b607",
       "majorTickInterval": 20.0,
       "metric": {
-        "type": "Obd2Pid",
-        "data": {
-          "name": "Vehicle Speed",
-          "pid": "010D",
-          "unit": "km/h"
-        }
+        "type": "GpsSpeed"
       },
       "minorTickCount": 4,
       "rangeMax": 120.0,
       "rangeMin": 0.0,
       "type": "SEVEN_SEGMENT",
-      "warningThreshold": 180.0,
+      "warningThreshold": 60.0,
       "zOrder": 4
     },
     {
       "alpha": 1.0,
       "decimalPlaces": 0,
-      "displayUnit": "\u00b0C",
-      "gridH": 4,
-      "gridW": 10,
-      "gridX": 8,
-      "gridY": 23,
+      "displayUnit": "°C",
+      "gridH": 8,
+      "gridW": 9,
+      "gridX": 9,
+      "gridY": 20,
       "id": "d3ce06aa-a83f-4151-b29f-69b35e32f19b",
       "majorTickInterval": 20.0,
       "metric": {
@@ -148,7 +143,7 @@
         "data": {
           "name": "Engine Coolant Temperature",
           "pid": "0105",
-          "unit": "\u00b0C"
+          "unit": "°C"
         }
       },
       "minorTickCount": 4,
@@ -162,10 +157,10 @@
       "alpha": 1.0,
       "decimalPlaces": 1,
       "displayUnit": "km/L",
-      "gridH": 5,
+      "gridH": 6,
       "gridW": 9,
       "gridX": 0,
-      "gridY": 27,
+      "gridY": 28,
       "id": "4adf3b98-0297-41f8-b962-d549ab570364",
       "majorTickInterval": 5.0,
       "metric": {
@@ -187,10 +182,10 @@
       "alpha": 1.0,
       "decimalPlaces": 0,
       "displayUnit": "m",
-      "gridH": 5,
+      "gridH": 6,
       "gridW": 9,
       "gridX": 9,
-      "gridY": 27,
+      "gridY": 28,
       "id": "f34f489d-e5fc-4746-866c-b0df5bf13fbb",
       "majorTickInterval": 500.0,
       "metric": {
