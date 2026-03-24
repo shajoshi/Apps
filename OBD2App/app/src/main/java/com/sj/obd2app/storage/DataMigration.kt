@@ -22,6 +22,7 @@ object DataMigration {
         // Check if external storage is available
         if (!AppDataDirectory.isUsingExternalStorage(context)) {
             Log.d(TAG, "External storage not available")
+            Toast.makeText(context, "External storage not available", Toast.LENGTH_LONG).show()
             return
         }
 
@@ -29,7 +30,7 @@ object DataMigration {
         // This reassures user their data is preserved after reinstall
         if (hasExistingData(context)) {
             Log.i(TAG, "Existing data detected in .obd directory")
-            Toast.makeText(context, "Existing data found - your profiles and dashboards are preserved", Toast.LENGTH_LONG).show()
+            //Toast.makeText(context, "Existing data found - your profiles and dashboards are preserved", Toast.LENGTH_LONG).show()
         }
     }
 
