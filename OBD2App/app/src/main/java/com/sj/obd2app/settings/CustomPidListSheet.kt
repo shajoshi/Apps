@@ -51,7 +51,7 @@ class CustomPidListSheet : BottomSheetDialogFragment() {
         profileId = arguments?.getString(ARG_PROFILE_ID)
 
         adapter = CustomPidAdapter { customPid ->
-            val editSheet = CustomPidEditSheet.newInstance(customPid.id)
+            val editSheet = CustomPidEditSheet.newInstance(customPid.id, profileId)
             editSheet.onSaved = { refreshList() }
             editSheet.show(parentFragmentManager, "edit_custom_pid")
         }
@@ -65,7 +65,7 @@ class CustomPidListSheet : BottomSheetDialogFragment() {
         }
 
         binding.btnAddCustomPid.setOnClickListener {
-            val editSheet = CustomPidEditSheet.newInstance()
+            val editSheet = CustomPidEditSheet.newInstance(profileId = profileId)
             editSheet.onSaved = { refreshList() }
             editSheet.show(parentFragmentManager, "add_custom_pid")
         }
@@ -102,8 +102,9 @@ class CustomPidListSheet : BottomSheetDialogFragment() {
         private var items: List<CustomPid> = emptyList()
 
         fun submitList(list: List<CustomPid>) {
+            val diff = androidx.recyclerview.widget.DiffUtil.calculateDiff(CustomPidDiff(items, list))
             items = list
-            notifyDataSetChanged()
+            diff.dispatchUpdatesTo(this)
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {

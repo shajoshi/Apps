@@ -20,6 +20,17 @@ class PidDiscoveryService private constructor() {
                 instance ?: PidDiscoveryService().also { instance = it }
             }
         }
+        
+        // Constants for potentially dangerous PID ranges to skip during discovery
+        private const val TRANSMISSION_CONTROL_START = 0x80
+        private const val TRANSMISSION_CONTROL_END = 0x9F
+        private const val ACTUATOR_CONTROL_START = 0xE0
+        private const val ACTUATOR_CONTROL_END = 0xEF
+        
+        // Constants for PID ranges
+        private const val PID_RANGE_START = 0x00
+        private const val PID_RANGE_END = 0xFF
+        private const val MAX_CONSOLE_MESSAGES = 1000
     }
     
     // Discovery state
@@ -56,12 +67,12 @@ class PidDiscoveryService private constructor() {
         selectedHeaders: List<String> = commonHeaders,
         selectedModes: List<String> = scanModes
     ) {
-        if (_discoveryState.value != DiscoveryState.IDLE) {
-            return
+        // Atomic check-and-set to prevent race condition
+        if (!_discoveryState.compareAndSet(DiscoveryState.IDLE, DiscoveryState.SCANNING)) {
+            return // State was not IDLE, another discovery is running
         }
         
         this.obdService = obdService
-        _discoveryState.value = DiscoveryState.SCANNING
         _discoveredPids.value = emptyList()
         _consoleOutput.value = emptyList()
         
@@ -121,6 +132,7 @@ class PidDiscoveryService private constructor() {
      */
     fun stopDiscovery() {
         discoveryJob?.cancel()
+        discoveryJob = null
         _discoveryState.value = DiscoveryState.CANCELLED
         logConsole("Stopping discovery...")
     }
@@ -140,6 +152,12 @@ class PidDiscoveryService private constructor() {
      * Switch to specified ECU header.
      */
     private suspend fun switchHeader(header: String): Boolean {
+        // Validate header format to prevent command injection
+        if (!header.matches(Regex("^[0-9A-F]{3}$"))) {
+            logConsole("Invalid header format: $header (must be 3 hex characters)")
+            return false
+        }
+        
         return try {
             val response = sendCommand("AT SH$header")
             val success = response.contains("OK", ignoreCase = true)
@@ -161,10 +179,10 @@ class PidDiscoveryService private constructor() {
     private suspend fun scanMode(header: String, mode: String): List<DiscoveredPid> {
         val discovered = mutableListOf<DiscoveredPid>()
         val pidRange = when (mode) {
-            "21" -> 0x00..0xFF
-            "22" -> 0x00..0xFF
-            "23" -> 0x00..0xFF
-            else -> 0x00..0xFF
+            "21" -> PID_RANGE_START..PID_RANGE_END
+            "22" -> PID_RANGE_START..PID_RANGE_END
+            "23" -> PID_RANGE_START..PID_RANGE_END
+            else -> PID_RANGE_START..PID_RANGE_END
         }
         
         var commandsInMode = 0
@@ -271,6 +289,13 @@ class PidDiscoveryService private constructor() {
         
         // Normalize: strip all spaces and work with raw hex
         val rawHex = response.replace(" ", "").uppercase()
+        
+        // Validate hex string format
+        if (!rawHex.matches(Regex("^[0-9A-F]*$"))) {
+            logConsole("Invalid hex characters in response: $response")
+            return null
+        }
+        
         val matchPrefix = "$expectedResponseByte$pid".uppercase()
         
         val prefixIndex = rawHex.indexOf(matchPrefix)
@@ -307,9 +332,9 @@ class PidDiscoveryService private constructor() {
     private fun isActuatorPid(mode: String, pid: Int): Boolean {
         // Skip known potentially dangerous ranges
         return when (mode) {
-            "21" -> pid in 0x80..0x9F // Some transmission control ranges
-            "22" -> pid in 0xE0..0xEF // Some actuator ranges
-            "23" -> pid in 0x80..0xFF // Manufacturer-specific control
+            "21" -> pid in TRANSMISSION_CONTROL_START..TRANSMISSION_CONTROL_END // Some transmission control ranges
+            "22" -> pid in ACTUATOR_CONTROL_START..ACTUATOR_CONTROL_END // Some actuator ranges
+            "23" -> pid in TRANSMISSION_CONTROL_START..PID_RANGE_END // Manufacturer-specific control
             else -> false
         }
     }
@@ -374,14 +399,15 @@ class PidDiscoveryService private constructor() {
      */
     private fun logConsole(message: String) {
         val timestamp = System.currentTimeMillis()
-        val newOutput = _consoleOutput.value + "[$timestamp] $message"
+        val newMessage = "[$timestamp] $message"
+        val current = _consoleOutput.value.toMutableList()
+        current.add(newMessage)
         
-        // Keep only last 1000 messages to prevent memory issues
-        _consoleOutput.value = if (newOutput.size > 1000) {
-            newOutput.takeLast(1000)
-        } else {
-            newOutput
+        // Keep only last MAX_CONSOLE_MESSAGES messages to prevent memory issues
+        if (current.size > MAX_CONSOLE_MESSAGES) {
+            current.removeAt(0)
         }
+        _consoleOutput.value = current
     }
     
     /**
@@ -389,7 +415,7 @@ class PidDiscoveryService private constructor() {
      */
     private fun getPidCount(mode: String): Int {
         return when (mode) {
-            "21", "22", "23" -> 256 // 00 to FF
+            "21", "22", "23" -> PID_RANGE_END - PID_RANGE_START + 1 // 00 to FF
             else -> 0
         }
     }

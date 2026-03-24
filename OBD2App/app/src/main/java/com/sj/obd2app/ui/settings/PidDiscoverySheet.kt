@@ -62,11 +62,23 @@ class PidDiscoverySheet : BottomSheetDialogFragment() {
         discoveryService = PidDiscoveryService.getInstance()
         profileRepository = VehicleProfileRepository.getInstance(requireContext())
         
+        // Debug logging to trace profile selection
+        android.util.Log.d("PidDiscoverySheet", "Arguments bundle: ${arguments}")
+        android.util.Log.d("PidDiscoverySheet", "ARG_PROFILE_ID value: ${arguments?.getString(ARG_PROFILE_ID)}")
+        android.util.Log.d("PidDiscoverySheet", "Bundle contents: ${arguments?.keySet()?.map { key -> "$key=${arguments?.getString(key)}" }}")
+        
         // Get profile ID from arguments, or fall back to active profile
         val argProfileId = arguments?.getString(ARG_PROFILE_ID)
-        val fallbackId = com.sj.obd2app.settings.AppSettings.getActiveProfileId(requireContext())
-        activeProfileId = argProfileId ?: fallbackId
-        android.util.Log.d("PidDiscoverySheet", "Init: argProfileId=$argProfileId, fallbackId=$fallbackId, using=$activeProfileId")
+        if (argProfileId != null) {
+            // Opened with specific profile - use it
+            activeProfileId = argProfileId
+            android.util.Log.d("PidDiscoverySheet", "PROFILE CONTEXT: Using specified profile $argProfileId")
+        } else {
+            // Opened without profile context - use active profile
+            val fallbackId = com.sj.obd2app.settings.AppSettings.getActiveProfileId(requireContext())
+            activeProfileId = fallbackId
+            android.util.Log.d("PidDiscoverySheet", "GLOBAL CONTEXT: Using active profile $fallbackId")
+        }
         
         setupUI()
         setupObservers()

@@ -121,15 +121,21 @@ class VehicleProfileRepository private constructor(private val context: Context)
     // ── Write ─────────────────────────────────────────────────────────────────
 
     fun save(profile: VehicleProfile) {
+        android.util.Log.d("VehicleProfileRepository", "Saving profile: ${profile.name} (${profile.id}) with ${profile.customPids.size} custom PIDs")
+        
         // Check if this is the first profile being created
         val existingProfiles = getAll()
         val isFirstProfile = existingProfiles.isEmpty()
         
         if (AppDataDirectory.isUsingExternalStorage(context)) {
+            android.util.Log.d("VehicleProfileRepository", "Using external storage for profile save")
             saveToFile(profile)
         } else {
+            android.util.Log.d("VehicleProfileRepository", "Using internal storage for profile save")
             saveToPreferences(profile)
         }
+        
+        android.util.Log.d("VehicleProfileRepository", "Profile save completed: ${profile.name}")
         
         // Automatically set the first profile as active
         if (isFirstProfile) {
@@ -141,10 +147,14 @@ class VehicleProfileRepository private constructor(private val context: Context)
         val profileFile = AppDataDirectory.getProfileFileDocumentFile(context, profile.name)
         if (profileFile != null) {
             val json = profile.toJson()
+            android.util.Log.d("VehicleProfileRepository", "Writing profile to external file: ${profileFile.uri}")
             // Use "wt" mode to truncate before writing — "w" alone does NOT truncate on Android 10+
             context.contentResolver.openOutputStream(profileFile.uri, "wt")?.use { output ->
                 output.write(json.toString(2).toByteArray())
+                android.util.Log.d("VehicleProfileRepository", "External file write completed for profile: ${profile.name}")
             }
+        } else {
+            android.util.Log.e("VehicleProfileRepository", "Failed to get external file for profile: ${profile.name}")
         }
     }
 
@@ -152,7 +162,9 @@ class VehicleProfileRepository private constructor(private val context: Context)
         // Save to app-private file with new naming convention
         val profileFile = AppDataDirectory.getProfileFilePrivate(context, profile.name)
         val json = profile.toJson()
+        android.util.Log.d("VehicleProfileRepository", "Writing profile to internal file: ${profileFile.absolutePath}")
         profileFile.writeText(json.toString(2))
+        android.util.Log.d("VehicleProfileRepository", "Internal file write completed for profile: ${profile.name}")
     }
 
     fun delete(id: String) {
