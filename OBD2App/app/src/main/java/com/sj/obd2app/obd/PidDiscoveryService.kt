@@ -26,6 +26,8 @@ class PidDiscoveryService private constructor() {
         private const val TRANSMISSION_CONTROL_END = 0x9F
         private const val ACTUATOR_CONTROL_START = 0xE0
         private const val ACTUATOR_CONTROL_END = 0xEF
+        private const val MFG_CONTROL_START = 0x80
+        private const val MFG_CONTROL_END = 0xFF
         
         // Constants for PID ranges
         private const val PID_RANGE_START = 0x00
@@ -334,7 +336,7 @@ class PidDiscoveryService private constructor() {
         return when (mode) {
             "21" -> pid in TRANSMISSION_CONTROL_START..TRANSMISSION_CONTROL_END // Some transmission control ranges
             "22" -> pid in ACTUATOR_CONTROL_START..ACTUATOR_CONTROL_END // Some actuator ranges
-            "23" -> pid in TRANSMISSION_CONTROL_START..PID_RANGE_END // Manufacturer-specific control
+            "23" -> pid in MFG_CONTROL_START..MFG_CONTROL_END // Manufacturer-specific control
             else -> false
         }
     }
