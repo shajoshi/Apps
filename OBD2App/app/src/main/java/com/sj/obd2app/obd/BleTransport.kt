@@ -44,10 +44,11 @@ class BleTransport(
         
         // Common ELM327 BLE service UUIDs
         private val ELM327_SERVICE_UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb")
-        private val ELM327_TX_CHAR_UUID_1 = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
-        private val ELM327_TX_CHAR_UUID_2 = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
-        private val ELM327_RX_CHAR_UUID_1 = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
-        private val ELM327_RX_CHAR_UUID_2 = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
+        // Note: fff1 has NOTIFY (RX), fff2 is write-only (TX) on many adapters
+        private val ELM327_TX_CHAR_UUID_1 = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
+        private val ELM327_TX_CHAR_UUID_2 = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
+        private val ELM327_RX_CHAR_UUID_1 = UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb")
+        private val ELM327_RX_CHAR_UUID_2 = UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb")
         
         // Nordic UART Service (NUS) - used by some adapters
         private val NUS_SERVICE_UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
@@ -66,23 +67,49 @@ class BleTransport(
     private val responseBuffer = StringBuilder()
     private var responseComplete = false
     
+    private var connectionState = BluetoothProfile.STATE_DISCONNECTED
+    private var servicesDiscovered = false
+    private var notificationsEnabled = false
+    
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            connectionState = newState
+            android.util.Log.d(TAG, "Connection state change - status: $status, newState: $newState")
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    android.util.Log.d(TAG, "GATT connected, discovering services...")
-                    gatt.discoverServices()
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        android.util.Log.d(TAG, "GATT connected successfully, discovering services...")
+                        servicesDiscovered = false
+                        gatt.discoverServices()
+                    } else {
+                        android.util.Log.e(TAG, "GATT connection failed with status: $status")
+                    }
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    android.util.Log.d(TAG, "GATT disconnected")
+                    android.util.Log.d(TAG, "GATT disconnected, status: $status")
+                    servicesDiscovered = false
                 }
             }
         }
         
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            android.util.Log.d(TAG, "Services discovered callback - status: $status")
+            servicesDiscovered = true
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                android.util.Log.d(TAG, "Services discovered")
+                android.util.Log.d(TAG, "Services discovered successfully")
                 discoverCharacteristics(gatt)
+            } else {
+                android.util.Log.e(TAG, "Service discovery failed with status: $status")
+            }
+        }
+        
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            android.util.Log.d(TAG, "Descriptor write callback - status: $status, descriptor: ${descriptor.uuid}")
+            if (status == BluetoothGatt.GATT_SUCCESS && descriptor.uuid == CCCD_UUID) {
+                notificationsEnabled = true
+                android.util.Log.d(TAG, "Notifications enabled successfully")
+            } else {
+                android.util.Log.e(TAG, "Failed to enable notifications, status: $status")
             }
         }
         
@@ -111,17 +138,23 @@ class BleTransport(
         value: ByteArray
     ) {
         val data = String(value, Charsets.ISO_8859_1)
-        android.util.Log.v(TAG, "RX: $data")
+        val hexData = value.joinToString(" ") { "%02X".format(it) }
+        android.util.Log.v(TAG, "RX: '$data' (hex: $hexData)")
         
         synchronized(responseBuffer) {
             responseBuffer.append(data)
+            android.util.Log.v(TAG, "Response buffer now: '${responseBuffer}'")
             if (data.contains('>')) {
                 responseComplete = true
+                android.util.Log.d(TAG, "Response complete (found '>')")
             }
         }
     }
     
     private fun discoverCharacteristics(gatt: BluetoothGatt) {
+        // Log all available services and characteristics for debugging
+        logAllServicesAndCharacteristics(gatt)
+        
         // Try ELM327 service first
         var service = gatt.getService(ELM327_SERVICE_UUID)
         if (service != null) {
@@ -142,43 +175,221 @@ class BleTransport(
             }
         }
         
+        // Try auto-detection if standard services not found
+        if (txCharacteristic == null || rxCharacteristic == null) {
+            android.util.Log.d(TAG, "Standard services not found, attempting auto-detection...")
+            autoDetectCharacteristics(gatt)
+        }
+        
         // Enable notifications on RX characteristic
         rxCharacteristic?.let { rx ->
-            gatt.setCharacteristicNotification(rx, true)
+            android.util.Log.d(TAG, "Setting up notifications for RX characteristic: ${rx.uuid}")
+            android.util.Log.d(TAG, "RX characteristic properties: ${getCharacteristicProperties(rx)}")
+            
+            val notifySet = gatt.setCharacteristicNotification(rx, true)
+            android.util.Log.d(TAG, "setCharacteristicNotification returned: $notifySet")
+            
             val descriptor = rx.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                // Check if characteristic supports NOTIFY or INDICATE
+                val supportsNotify = (rx.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0
+                val supportsIndicate = (rx.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
+                
+                android.util.Log.d(TAG, "Characteristic supports - NOTIFY: $supportsNotify, INDICATE: $supportsIndicate")
+                
+                // Use INDICATE if NOTIFY is not supported
+                val descriptorValue = if (supportsIndicate && !supportsNotify) {
+                    android.util.Log.d(TAG, "Using ENABLE_INDICATION_VALUE")
+                    BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+                } else {
+                    android.util.Log.d(TAG, "Using ENABLE_NOTIFICATION_VALUE")
+                    BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                }
+                
+                val writeResult = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeDescriptor(descriptor, descriptorValue)
                 } else {
                     @Suppress("DEPRECATION")
-                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    descriptor.value = descriptorValue
                     @Suppress("DEPRECATION")
                     gatt.writeDescriptor(descriptor)
                 }
-                android.util.Log.d(TAG, "Enabled notifications on RX characteristic")
+                android.util.Log.d(TAG, "writeDescriptor returned: $writeResult")
+            } else {
+                android.util.Log.e(TAG, "CCCD descriptor not found! Notifications may not work.")
+                android.util.Log.d(TAG, "Available descriptors: ${rx.descriptors.map { it.uuid }}")
+            }
+        }
+    }
+    
+    private fun logAllServicesAndCharacteristics(gatt: BluetoothGatt) {
+        android.util.Log.d(TAG, "=== Available Services and Characteristics ===")
+        gatt.services.forEach { service ->
+            android.util.Log.d(TAG, "Service: ${service.uuid}")
+            service.characteristics.forEach { characteristic ->
+                val properties = getCharacteristicProperties(characteristic)
+                android.util.Log.d(TAG, "  Characteristic: ${characteristic.uuid} - $properties")
+            }
+        }
+        android.util.Log.d(TAG, "=============================================")
+    }
+    
+    private fun getCharacteristicProperties(characteristic: BluetoothGattCharacteristic): String {
+        val props = mutableListOf<String>()
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) {
+            props.add("READ")
+        }
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) {
+            props.add("WRITE")
+        }
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) {
+            props.add("WRITE_NO_RESPONSE")
+        }
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) {
+            props.add("NOTIFY")
+        }
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) {
+            props.add("INDICATE")
+        }
+        return props.joinToString("|")
+    }
+    
+    private fun autoDetectCharacteristics(gatt: BluetoothGatt) {
+        // Look for any characteristics that could be TX/RX
+        gatt.services.forEach { service ->
+            service.characteristics.forEach { characteristic ->
+                // Try to identify TX characteristic (writeable)
+                if (txCharacteristic == null && 
+                    (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ||
+                     characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0)) {
+                    txCharacteristic = characteristic
+                    android.util.Log.d(TAG, "Auto-detected TX characteristic: ${characteristic.uuid}")
+                }
+                
+                // Try to identify RX characteristic (notifiable)
+                if (rxCharacteristic == null && 
+                    characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) {
+                    rxCharacteristic = characteristic
+                    android.util.Log.d(TAG, "Auto-detected RX characteristic: ${characteristic.uuid}")
+                }
             }
         }
     }
     
     override suspend fun connect() {
         withContext(Dispatchers.IO) {
+            // Clean up any existing connection first
+            gatt?.let {
+                android.util.Log.d(TAG, "Cleaning up existing GATT connection")
+                try {
+                    it.disconnect()
+                    it.close()
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "Error cleaning up old connection: ${e.message}")
+                }
+                gatt = null
+            }
+            
+            // Reset state
+            connectionState = BluetoothProfile.STATE_DISCONNECTED
+            servicesDiscovered = false
+            notificationsEnabled = false
+            txCharacteristic = null
+            rxCharacteristic = null
+            
             gatt = suspendCancellableCoroutine { continuation ->
-                val g = device.connectGatt(context, false, gattCallback)
+                android.util.Log.d(TAG, "Attempting to connect to device: ${device.address}, type: ${device.type}")
+                
+                // Small delay to ensure cleanup is complete
+                Thread.sleep(100)
+                
+                // Use explicit BLE transport for better compatibility
+                val g = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    android.util.Log.d(TAG, "Using TRANSPORT_LE for connection")
+                    device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+                } else {
+                    device.connectGatt(context, false, gattCallback)
+                }
+                
                 if (g == null) {
+                    android.util.Log.e(TAG, "connectGatt returned null")
                     continuation.resumeWithException(IOException("Failed to connect GATT"))
                 } else {
                     gatt = g
-                    // Wait for service discovery
-                    Thread.sleep(2000)
+                    android.util.Log.d(TAG, "GATT connection object created, waiting for connection...")
                     
-                    if (txCharacteristic == null || rxCharacteristic == null) {
-                        g.close()
-                        continuation.resumeWithException(
-                            IOException("Failed to discover ELM327 characteristics")
-                        )
-                    } else {
-                        continuation.resume(g)
+                    // Give the connection a moment to start
+                    Thread.sleep(200)
+                    
+                    // Wait for connection and service discovery with timeout
+                    var attempts = 0
+                    val maxAttempts = 10 // 10 * 500ms = 5 seconds
+                    
+                    while (attempts < maxAttempts) {
+                        Thread.sleep(500)
+                        attempts++
+                        
+                        android.util.Log.d(TAG, "Connection check $attempts: state=$connectionState (0=disconnected, 1=connecting, 2=connected), servicesDiscovered=$servicesDiscovered, notificationsEnabled=$notificationsEnabled")
+                        
+                        if (connectionState == BluetoothProfile.STATE_CONNECTED && servicesDiscovered) {
+                            // Check if characteristics were found and notifications enabled
+                            if (txCharacteristic != null && rxCharacteristic != null) {
+                                if (notificationsEnabled) {
+                                    android.util.Log.d(TAG, "Successfully connected. TX: ${txCharacteristic?.uuid}, RX: ${rxCharacteristic?.uuid}")
+                                    continuation.resume(g)
+                                    return@suspendCancellableCoroutine
+                                } else if (attempts >= 4) {
+                                    // Some devices don't fire descriptor write callback, proceed anyway after 2 seconds
+                                    android.util.Log.w(TAG, "Descriptor write callback not received, proceeding anyway...")
+                                    // Give extra time for the descriptor write to complete
+                                    Thread.sleep(500)
+                                    notificationsEnabled = true
+                                    android.util.Log.d(TAG, "Successfully connected (fallback). TX: ${txCharacteristic?.uuid}, RX: ${rxCharacteristic?.uuid}")
+                                    continuation.resume(g)
+                                    return@suspendCancellableCoroutine
+                                } else {
+                                    android.util.Log.d(TAG, "Characteristics found, waiting for notifications to be enabled...")
+                                }
+                            } else {
+                                android.util.Log.w(TAG, "Connected but characteristics not found. TX: ${txCharacteristic != null}, RX: ${rxCharacteristic != null}")
+                                // Try manual service discovery
+                                if (attempts == 3) {
+                                    android.util.Log.d(TAG, "Attempting manual service discovery...")
+                                    g.discoverServices()
+                                }
+                            }
+                        }
+                        
+                        // If disconnected, fail immediately
+                        if (connectionState == BluetoothProfile.STATE_DISCONNECTED) {
+                            android.util.Log.e(TAG, "Connection lost during discovery")
+                            g.close()
+                            continuation.resumeWithException(IOException("Connection lost during service discovery"))
+                            return@suspendCancellableCoroutine
+                        }
                     }
+                    
+                    // Timeout reached
+                    android.util.Log.e(TAG, "Connection timeout. Final state: connected=${connectionState == BluetoothProfile.STATE_CONNECTED}, servicesDiscovered=$servicesDiscovered")
+                    android.util.Log.e(TAG, "Characteristics: TX=${txCharacteristic != null}, RX=${rxCharacteristic != null}")
+                    
+                    // Last resort - try to force service discovery
+                    if (connectionState == BluetoothProfile.STATE_CONNECTED && !servicesDiscovered) {
+                        android.util.Log.d(TAG, "Last resort: forcing service discovery...")
+                        g.discoverServices()
+                        Thread.sleep(1000)
+                        
+                        if (txCharacteristic != null && rxCharacteristic != null) {
+                            android.util.Log.d(TAG, "Last resort succeeded. TX: ${txCharacteristic?.uuid}, RX: ${rxCharacteristic?.uuid}")
+                            continuation.resume(g)
+                            return@suspendCancellableCoroutine
+                        }
+                    }
+                    
+                    g.close()
+                    continuation.resumeWithException(
+                        IOException("Failed to discover ELM327 characteristics. Check logs for available services.")
+                    )
                 }
             }
         }
