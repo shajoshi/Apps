@@ -343,7 +343,7 @@
                     android:background="#222244"
                     android:layout_marginHorizontal="16dp" />
 
-                <!-- BT Connection Logging row -->
+                <!-- Verbose BT log row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -360,7 +360,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="BT Connection Logging"
+                            android:text="Verbose BT log"
                             android:textColor="#FFFFFF"
                             android:textSize="15sp" />
 
@@ -376,7 +376,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="Log Bluetooth connection events to bt_connection.log"
+                        android:text="Show detailed BLE connection logs in logcat (filter by 'BleTransport')"
                         android:textColor="#888888"
                         android:textSize="12sp" />
 

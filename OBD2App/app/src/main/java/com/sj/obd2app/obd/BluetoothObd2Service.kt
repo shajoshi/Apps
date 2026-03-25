@@ -81,8 +81,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     private var consecutiveFailures = 0
     private val MAX_CONSECUTIVE_FAILURES = 10  // ~2-3 seconds of failures
     
-    // Bluetooth connection logger
-    private val btLogger = context?.let { BluetoothConnectionLogger.getInstance(it) }
+    // Bluetooth connection logger removed - now using logcat only
 
     private val _connectionState = MutableStateFlow(Obd2Service.ConnectionState.DISCONNECTED)
     override val connectionState: StateFlow<Obd2Service.ConnectionState> = _connectionState
@@ -118,7 +117,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         _errorMessage.value = null
         _connectionLog.value = emptyList()
         log("Connecting to ${btDevice.name ?: btDevice.address}…")
-        btLogger?.logConnectionAttempt(btDevice.name ?: "Unknown", btDevice.address)
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -158,7 +156,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
                 _connectedDeviceName.value = btDevice.name ?: btDevice.address
                 _connectionState.value = Obd2Service.ConnectionState.CONNECTED
-                btLogger?.logConnectionSuccess(btDevice.name ?: "Unknown", supportedPids.size)
                 startPolling()
 
             } catch (e: IOException) {
@@ -166,14 +163,12 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 log("✗ $msg")
                 _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
-                btLogger?.logConnectionFailure(btDevice.name ?: "Unknown", e.message ?: "IOException")
                 closeTransport()
             } catch (e: SecurityException) {
                 val msg = "Bluetooth permission denied"
                 log("✗ $msg")
                 _errorMessage.value = msg
                 _connectionState.value = Obd2Service.ConnectionState.ERROR
-                btLogger?.logConnectionFailure(btDevice.name ?: "Unknown", "Permission denied")
                 closeTransport()
             }
         }
@@ -218,7 +213,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         closeTransport()
         supportedPids = emptySet()
         consecutiveFailures = 0
-        btLogger?.logDisconnection("User initiated")
         _connectedDeviceName.value = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
@@ -319,7 +313,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 // Check socket health every 10 cycles (~2 seconds)
                 if (cycleCount % 10 == 0 && !isSocketHealthy()) {
                     android.util.Log.e(TAG, "Socket health check failed - marking connection as lost")
-                    btLogger?.logSocketHealthFailure()
                     _connectionState.value = Obd2Service.ConnectionState.ERROR
                     _errorMessage.value = "Bluetooth socket disconnected"
                     break
@@ -374,7 +367,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                     
                     if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
                         android.util.Log.e(TAG, "Too many consecutive failures ($consecutiveFailures) - marking connection as lost")
-                        btLogger?.logPollingError(consecutiveFailures, MAX_CONSECUTIVE_FAILURES)
                         _connectionState.value = Obd2Service.ConnectionState.ERROR
                         _errorMessage.value = "Connection lost - no data received"
                         break

@@ -9,7 +9,9 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.os.Build
+import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -57,6 +59,9 @@ class BleTransport(
         
         // Client Characteristic Configuration Descriptor (for enabling notifications)
         private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        
+        // Max response buffer size to prevent memory exhaustion
+        private const val MAX_RESPONSE_BUFFER_SIZE = 4096
     }
     
     private var gatt: BluetoothGatt? = null
@@ -70,15 +75,20 @@ class BleTransport(
     private var connectionState = BluetoothProfile.STATE_DISCONNECTED
     private var servicesDiscovered = false
     private var notificationsEnabled = false
+    private val verboseLogging: Boolean = context.let { AppSettings.isBtLoggingEnabled(it) }
     
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             connectionState = newState
-            android.util.Log.d(TAG, "Connection state change - status: $status, newState: $newState")
+            if (verboseLogging) {
+                android.util.Log.d(TAG, "Connection state change - status: $status, newState: $newState")
+            }
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     if (status == BluetoothGatt.GATT_SUCCESS) {
-                        android.util.Log.d(TAG, "GATT connected successfully, discovering services...")
+                        if (verboseLogging) {
+                            android.util.Log.d(TAG, "GATT connected successfully, discovering services...")
+                        }
                         servicesDiscovered = false
                         gatt.discoverServices()
                     } else {
@@ -86,17 +96,23 @@ class BleTransport(
                     }
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    android.util.Log.d(TAG, "GATT disconnected, status: $status")
+                    if (verboseLogging) {
+                        android.util.Log.d(TAG, "GATT disconnected, status: $status")
+                    }
                     servicesDiscovered = false
                 }
             }
         }
         
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            android.util.Log.d(TAG, "Services discovered callback - status: $status")
+            if (verboseLogging) {
+                android.util.Log.d(TAG, "Services discovered callback - status: $status")
+            }
             servicesDiscovered = true
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                android.util.Log.d(TAG, "Services discovered successfully")
+                if (verboseLogging) {
+                    android.util.Log.d(TAG, "Services discovered successfully")
+                }
                 discoverCharacteristics(gatt)
             } else {
                 android.util.Log.e(TAG, "Service discovery failed with status: $status")
@@ -104,9 +120,10 @@ class BleTransport(
         }
         
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-            android.util.Log.d(TAG, "Descriptor write callback - status: $status, descriptor: ${descriptor.uuid}")
+            if (verboseLogging) {
+                android.util.Log.d(TAG, "Descriptor write callback - status: $status, descriptor: ${descriptor.uuid}")
+            }
             if (status == BluetoothGatt.GATT_SUCCESS && descriptor.uuid == CCCD_UUID) {
-                notificationsEnabled = true
                 android.util.Log.d(TAG, "Notifications enabled successfully")
             } else {
                 android.util.Log.e(TAG, "Failed to enable notifications, status: $status")
@@ -138,22 +155,36 @@ class BleTransport(
         value: ByteArray
     ) {
         val data = String(value, Charsets.ISO_8859_1)
-        val hexData = value.joinToString(" ") { "%02X".format(it) }
-        android.util.Log.v(TAG, "RX: '$data' (hex: $hexData)")
+        if (verboseLogging) {
+            val hexData = value.joinToString(" ") { "%02X".format(it) }
+            android.util.Log.v(TAG, "RX: '$data' (hex: $hexData)")
+        }
         
         synchronized(responseBuffer) {
+            if (responseBuffer.length + data.length > MAX_RESPONSE_BUFFER_SIZE) {
+                android.util.Log.w(TAG, "Response buffer overflow (${responseBuffer.length + data.length} > $MAX_RESPONSE_BUFFER_SIZE), truncating")
+                responseBuffer.clear()
+                responseComplete = true
+                return
+            }
             responseBuffer.append(data)
-            android.util.Log.v(TAG, "Response buffer now: '${responseBuffer}'")
+            if (verboseLogging) {
+                android.util.Log.v(TAG, "Response buffer now: '${responseBuffer}'")
+            }
             if (data.contains('>')) {
                 responseComplete = true
-                android.util.Log.d(TAG, "Response complete (found '>')")
+                if (verboseLogging) {
+                    android.util.Log.d(TAG, "Response complete (found '>')")
+                }
             }
         }
     }
     
     private fun discoverCharacteristics(gatt: BluetoothGatt) {
         // Log all available services and characteristics for debugging
-        logAllServicesAndCharacteristics(gatt)
+        if (verboseLogging) {
+            logAllServicesAndCharacteristics(gatt)
+        }
         
         // Try ELM327 service first
         var service = gatt.getService(ELM327_SERVICE_UUID)
@@ -183,11 +214,15 @@ class BleTransport(
         
         // Enable notifications on RX characteristic
         rxCharacteristic?.let { rx ->
-            android.util.Log.d(TAG, "Setting up notifications for RX characteristic: ${rx.uuid}")
-            android.util.Log.d(TAG, "RX characteristic properties: ${getCharacteristicProperties(rx)}")
+            if (verboseLogging) {
+                android.util.Log.d(TAG, "Setting up notifications for RX characteristic: ${rx.uuid}")
+                android.util.Log.d(TAG, "RX characteristic properties: ${getCharacteristicProperties(rx)}")
+            }
             
             val notifySet = gatt.setCharacteristicNotification(rx, true)
-            android.util.Log.d(TAG, "setCharacteristicNotification returned: $notifySet")
+            if (verboseLogging) {
+                android.util.Log.d(TAG, "setCharacteristicNotification returned: $notifySet")
+            }
             
             val descriptor = rx.getDescriptor(CCCD_UUID)
             if (descriptor != null) {
@@ -195,14 +230,20 @@ class BleTransport(
                 val supportsNotify = (rx.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0
                 val supportsIndicate = (rx.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
                 
-                android.util.Log.d(TAG, "Characteristic supports - NOTIFY: $supportsNotify, INDICATE: $supportsIndicate")
+                if (verboseLogging) {
+                    android.util.Log.d(TAG, "Characteristic supports - NOTIFY: $supportsNotify, INDICATE: $supportsIndicate")
+                }
                 
                 // Use INDICATE if NOTIFY is not supported
                 val descriptorValue = if (supportsIndicate && !supportsNotify) {
-                    android.util.Log.d(TAG, "Using ENABLE_INDICATION_VALUE")
+                    if (verboseLogging) {
+                        android.util.Log.d(TAG, "Using ENABLE_INDICATION_VALUE")
+                    }
                     BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
                 } else {
-                    android.util.Log.d(TAG, "Using ENABLE_NOTIFICATION_VALUE")
+                    if (verboseLogging) {
+                        android.util.Log.d(TAG, "Using ENABLE_NOTIFICATION_VALUE")
+                    }
                     BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                 }
                 
@@ -214,10 +255,14 @@ class BleTransport(
                     @Suppress("DEPRECATION")
                     gatt.writeDescriptor(descriptor)
                 }
-                android.util.Log.d(TAG, "writeDescriptor returned: $writeResult")
+                if (verboseLogging) {
+                    android.util.Log.d(TAG, "writeDescriptor returned: $writeResult")
+                }
             } else {
                 android.util.Log.e(TAG, "CCCD descriptor not found! Notifications may not work.")
-                android.util.Log.d(TAG, "Available descriptors: ${rx.descriptors.map { it.uuid }}")
+                if (verboseLogging) {
+                    android.util.Log.d(TAG, "Available descriptors: ${rx.descriptors.map { it.uuid }}")
+                }
             }
         }
     }
@@ -298,14 +343,18 @@ class BleTransport(
             rxCharacteristic = null
             
             gatt = suspendCancellableCoroutine { continuation ->
-                android.util.Log.d(TAG, "Attempting to connect to device: ${device.address}, type: ${device.type}")
+                if (verboseLogging) {
+                    android.util.Log.d(TAG, "Attempting to connect to device: ${device.address}, type: ${device.type}")
+                }
                 
                 // Small delay to ensure cleanup is complete
                 Thread.sleep(100)
                 
                 // Use explicit BLE transport for better compatibility
                 val g = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    android.util.Log.d(TAG, "Using TRANSPORT_LE for connection")
+                    if (verboseLogging) {
+                        android.util.Log.d(TAG, "Using TRANSPORT_LE for connection")
+                    }
                     device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
                 } else {
                     device.connectGatt(context, false, gattCallback)
@@ -316,7 +365,9 @@ class BleTransport(
                     continuation.resumeWithException(IOException("Failed to connect GATT"))
                 } else {
                     gatt = g
-                    android.util.Log.d(TAG, "GATT connection object created, waiting for connection...")
+                    if (verboseLogging) {
+                        android.util.Log.d(TAG, "GATT connection object created, waiting for connection...")
+                    }
                     
                     // Give the connection a moment to start
                     Thread.sleep(200)
@@ -329,7 +380,9 @@ class BleTransport(
                         Thread.sleep(500)
                         attempts++
                         
-                        android.util.Log.d(TAG, "Connection check $attempts: state=$connectionState (0=disconnected, 1=connecting, 2=connected), servicesDiscovered=$servicesDiscovered, notificationsEnabled=$notificationsEnabled")
+                        if (verboseLogging) {
+                            android.util.Log.d(TAG, "Connection check $attempts: state=$connectionState (0=disconnected, 1=connecting, 2=connected), servicesDiscovered=$servicesDiscovered, notificationsEnabled=$notificationsEnabled")
+                        }
                         
                         if (connectionState == BluetoothProfile.STATE_CONNECTED && servicesDiscovered) {
                             // Check if characteristics were found and notifications enabled
@@ -351,10 +404,14 @@ class BleTransport(
                                     android.util.Log.d(TAG, "Characteristics found, waiting for notifications to be enabled...")
                                 }
                             } else {
-                                android.util.Log.w(TAG, "Connected but characteristics not found. TX: ${txCharacteristic != null}, RX: ${rxCharacteristic != null}")
+                                if (verboseLogging) {
+                                    android.util.Log.w(TAG, "Connected but characteristics not found. TX: ${txCharacteristic != null}, RX: ${rxCharacteristic != null}")
+                                }
                                 // Try manual service discovery
                                 if (attempts == 3) {
-                                    android.util.Log.d(TAG, "Attempting manual service discovery...")
+                                    if (verboseLogging) {
+                                        android.util.Log.d(TAG, "Attempting manual service discovery...")
+                                    }
                                     g.discoverServices()
                                 }
                             }
@@ -375,7 +432,9 @@ class BleTransport(
                     
                     // Last resort - try to force service discovery
                     if (connectionState == BluetoothProfile.STATE_CONNECTED && !servicesDiscovered) {
-                        android.util.Log.d(TAG, "Last resort: forcing service discovery...")
+                        if (verboseLogging) {
+                            android.util.Log.d(TAG, "Last resort: forcing service discovery...")
+                        }
                         g.discoverServices()
                         Thread.sleep(1000)
                         
@@ -398,10 +457,15 @@ class BleTransport(
     override suspend fun sendCommand(command: String): String {
         return withContext(Dispatchers.IO) {
             responseMutex.withLock {
-                val tx = txCharacteristic ?: throw IOException("Not connected")
-                val g = gatt ?: throw IOException("Not connected")
+                if (connectionState != BluetoothProfile.STATE_CONNECTED) {
+                    throw IOException("BLE not connected (state=$connectionState)")
+                }
+                val tx = txCharacteristic ?: throw IOException("TX characteristic not available")
+                val g = gatt ?: throw IOException("GATT not available")
                 
-                // Clear previous response
+                if (verboseLogging) {
+                    android.util.Log.v(TAG, "TX: $command")
+                }
                 synchronized(responseBuffer) {
                     responseBuffer.clear()
                     responseComplete = false
@@ -409,10 +473,9 @@ class BleTransport(
                 
                 // Send command
                 val cmdBytes = "$command\r".toByteArray(Charsets.ISO_8859_1)
-                android.util.Log.v(TAG, "TX: $command")
                 
-                val success = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    g.writeCharacteristic(tx, cmdBytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+                val writeOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    g.writeCharacteristic(tx, cmdBytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
                 } else {
                     @Suppress("DEPRECATION")
                     tx.value = cmdBytes
@@ -420,7 +483,7 @@ class BleTransport(
                     g.writeCharacteristic(tx)
                 }
                 
-                if (success != BluetoothGatt.GATT_SUCCESS && !success.toString().toBoolean()) {
+                if (!writeOk) {
                     throw IOException("Failed to write characteristic")
                 }
                 
@@ -428,7 +491,7 @@ class BleTransport(
                 try {
                     withTimeout(5000L) {
                         while (!responseComplete) {
-                            Thread.sleep(10)
+                            delay(10)
                         }
                     }
                 } catch (e: Exception) {
@@ -457,14 +520,23 @@ class BleTransport(
         }
     }
     
-    override fun close() {
-        try {
-            gatt?.disconnect()
-            gatt?.close()
-        } catch (_: Exception) {}
+    fun disconnect() {
+        gatt?.let {
+            if (verboseLogging) {
+                android.util.Log.d(TAG, "Disconnecting GATT")
+            }
+            it.disconnect()
+            it.close()
+        }
         gatt = null
         txCharacteristic = null
         rxCharacteristic = null
+    }
+    
+    override fun close() {
+        try {
+            disconnect()
+        } catch (_: Exception) {}
     }
     
     override fun getTransportType(): String = "BLE (GATT)"

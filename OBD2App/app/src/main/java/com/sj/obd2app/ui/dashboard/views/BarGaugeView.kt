@@ -200,6 +200,20 @@ class BarGaugeView @JvmOverloads constructor(
         textPaint.textSize = valueSize
         val valueOffset = (textPaint.descent() + textPaint.ascent()) / 2
         val valueCx = width / 2f
+        
+        // Draw dark pill background behind value for visibility
+        val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = (colorScheme.background and 0x00FFFFFF) or 0xAA000000.toInt()
+        }
+        val pillHalfW = textPaint.measureText(valueStr) / 2f + valueSize * 0.15f
+        val pillHalfH = valueSize * 0.55f
+        val pillRect = RectF(
+            valueCx - pillHalfW, trackCy - valueOffset - pillHalfH,
+            valueCx + pillHalfW, trackCy - valueOffset + pillHalfH
+        )
+        canvas.drawRoundRect(pillRect, pillHalfH * 0.3f, pillHalfH * 0.3f, pillPaint)
+        
         drawTextWithGlow(canvas, valueStr, valueCx, trackCy - valueOffset, textPaint)
 
         // ── Unit superscript (top-right of value block) ───────────
@@ -212,6 +226,39 @@ class BarGaugeView @JvmOverloads constructor(
             labelPaint.color = colorScheme.text
             labelPaint.textSize = unitSize
             canvas.drawText(metricUnit, unitX, unitBaseline, labelPaint)
+        }
+        
+        // ── Max value display at 87.5% position ───────────────────
+        tripMaxValue?.let { maxVal ->
+            val maxValueStr = String.format(fmt, maxVal)
+            val maxValueSize = valueSize * 0.60f
+            val maxValuePaint = Paint(textPaint).apply {
+                textSize = maxValueSize
+                color = 0xFFFF0000.toInt()  // Red
+                textAlign = Paint.Align.CENTER
+            }
+            
+            val maxValueOffset = (maxValuePaint.descent() + maxValuePaint.ascent()) / 2
+            
+            // Calculate position at 87.5% (midpoint between 75-100%)
+            val maxX = if (isVertical) width / 2f else trackRect.left + trackRect.width() * 0.875f
+            val maxY = if (isVertical) trackRect.bottom - trackRect.height() * 0.875f else trackCy
+            
+            // Draw pill background for max value
+            val maxPillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = (colorScheme.background and 0x00FFFFFF) or 0xAA000000.toInt()
+            }
+            val maxPillHalfW = maxValuePaint.measureText(maxValueStr) / 2f + maxValueSize * 0.15f
+            val maxPillHalfH = maxValueSize * 0.55f
+            val maxPillRect = RectF(
+                maxX - maxPillHalfW, maxY - maxValueOffset - maxPillHalfH,
+                maxX + maxPillHalfW, maxY - maxValueOffset + maxPillHalfH
+            )
+            canvas.drawRoundRect(maxPillRect, maxPillHalfH * 0.3f, maxPillHalfH * 0.3f, maxPillPaint)
+            
+            // Draw max value text
+            drawTextWithGlow(canvas, maxValueStr, maxX, maxY - maxValueOffset, maxValuePaint)
         }
     }
 }

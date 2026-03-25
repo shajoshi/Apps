@@ -25,7 +25,6 @@ import com.sj.obd2app.databinding.ActivityMainBinding
 import com.sj.obd2app.gps.GpsDataSource
 import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.metrics.TripPhase
-import com.sj.obd2app.obd.BluetoothConnectionLogger
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.settings.AppSettings

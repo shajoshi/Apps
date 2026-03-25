@@ -43,7 +43,7 @@ class ObdConnectionManager private constructor(private val context: Context) {
 
     private val metricsCalculator = MetricsCalculator.getInstance(context)
     private val obdService = Obd2ServiceProvider.getService()
-    private val btLogger = BluetoothConnectionLogger.getInstance(context)
+    // Bluetooth connection logger removed - now using logcat only
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     
     private var monitoringJob: Job? = null
@@ -120,7 +120,6 @@ class ObdConnectionManager private constructor(private val context: Context) {
                     // Connection restored - reset attempt counter
                     if (attemptCount > 0) {
                         Log.d(TAG, "OBD reconnected successfully after $attemptCount attempts")
-                        btLogger.logReconnectionSuccess(attemptCount)
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "OBD reconnected", Toast.LENGTH_SHORT).show()
                         }
@@ -206,7 +205,6 @@ class ObdConnectionManager private constructor(private val context: Context) {
             // Get the Bluetooth device
             val device: BluetoothDevice = bluetoothAdapter.getRemoteDevice(deviceMac)
             Log.d(TAG, "Attempting to reconnect to ${device.name ?: deviceMac}")
-            btLogger.logReconnectionAttempt(attemptCount, deviceMac)
             
             // Trigger connection
             withContext(Dispatchers.Main) {
