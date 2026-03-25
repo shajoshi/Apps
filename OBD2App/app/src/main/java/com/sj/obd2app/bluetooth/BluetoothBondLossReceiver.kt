@@ -6,12 +6,14 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.sj.obd2app.obd.ObdConnectionManager
+import com.sj.obd2app.settings.AppSettings
 
 /**
  * BroadcastReceiver to handle Bluetooth bond loss events for improved OBD2 connection stability.
  * 
- * This receiver monitors Bluetooth device bond state changes and notifies the ObdConnectionManager
- * when a device bond is lost, allowing for proactive connection management.
+ * This receiver monitors Bluetooth device bond state changes and properly handles bond loss
+ * by disconnecting and clearing the device, preventing auto-reconnection spam when users
+ * tap "Forget Device" in Android settings.
  */
 class BluetoothBondLossReceiver : BroadcastReceiver() {
     
@@ -52,11 +54,21 @@ class BluetoothBondLossReceiver : BroadcastReceiver() {
             val connectionManager = ObdConnectionManager.getInstance(context)
             
             // Check if this is the currently connected OBD device
-            // Note: You may need to add a method to ObdConnectionManager to check current device
-            Log.i(TAG, "Notifying connection manager about bond loss for ${device.address}")
+            val lastDeviceMac = AppSettings.getLastDeviceMac(context)
             
-            // For now, we'll trigger a reconnection attempt
-            // In a future enhancement, you could add: connectionManager.onBondLost(device)
+            if (device.address == lastDeviceMac) {
+                Log.w(TAG, "Bond lost for currently connected OBD device: ${device.address}")
+                
+                // Properly handle bond loss - disconnect and clear device
+                // This prevents auto-reconnection spam when user taps "Forget Device"
+                connectionManager.onBondLost()
+                
+                // Optional: Show user notification about bond loss
+                // In a future enhancement, you could show a toast or notification
+                Log.i(TAG, "Bond loss handled - user must manually reconnect in app")
+            } else {
+                Log.d(TAG, "Bond lost for non-active device: ${device.address} (ignoring)")
+            }
             
         } catch (e: Exception) {
             Log.e(TAG, "Error handling bond loss for ${device.address}", e)

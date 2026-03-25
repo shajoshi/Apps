@@ -249,4 +249,31 @@ class ObdConnectionManager private constructor(private val context: Context) {
         manualDisconnect = true
         Log.d(TAG, "Marked as manual disconnect - auto-reconnect disabled")
     }
+    
+    /**
+     * Handle Bluetooth bond loss by properly disconnecting and clearing device.
+     * Called when a device bond is lost (user tapped "Forget Device").
+     */
+    fun onBondLost() {
+        Log.w(TAG, "Bluetooth bond lost - forcing disconnect and clearing device")
+        
+        // Stop any reconnection attempts
+        reconnectionJob?.cancel()
+        reconnectionJob = null
+        
+        // Force disconnect from OBD service
+        obdService.disconnect()
+        
+        // Clear the last known device to prevent auto-reconnection
+        lastKnownDeviceMac = null
+        AppSettings.setLastDeviceMac(context, "")
+        
+        // Stop monitoring since bond is lost
+        stopMonitoring()
+        
+        // Mark as manual disconnect to prevent auto-reconnection
+        manualDisconnect = true
+        
+        Log.i(TAG, "Bond loss handled - device cleared, user must manually reconnect")
+    }
 }
