@@ -1,6 +1,7 @@
 package com.sj.obd2app.storage
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
@@ -17,12 +18,49 @@ import java.io.File
 object AppDataDirectory {
 
     private const val TAG = "AppDataDirectory"
+    private const val DEBUG_LOG_FILE = "debug_log.txt"
     private const val OBD_DIR_NAME = ".obd"
     private const val PROFILES_DIR_NAME = "profiles"
     private const val LAYOUTS_DIR_NAME = "layouts"
     private const val SETTINGS_FILE_NAME = "obdapp_settings.json"
     private const val PROFILE_FILE_PREFIX = "vehicle_profile_"
     private const val DASHBOARD_FILE_PREFIX = "dashboard_"
+
+    /**
+     * Checks if URI permissions are still valid on app startup.
+     * If permissions are lost, clears the invalid URI so user can re-select.
+     * Should be called early in MainActivity.onCreate().
+     */
+    fun ensureUriPermissions(context: Context) {
+        val uriStr = AppSettings.getLogFolderUri(context)
+        if (uriStr == null) {
+            Log.d(TAG, "ensureUriPermissions: no URI configured")
+            return
+        }
+        
+        val uri = Uri.parse(uriStr)
+        
+        try {
+            // Check if we still have persisted permission
+            val persistedUris = context.contentResolver.persistedUriPermissions
+            val hasPermission = persistedUris.any { 
+                it.uri == uri && it.isReadPermission && it.isWritePermission 
+            }
+            
+            if (!hasPermission) {
+                Log.e(TAG, "ensureUriPermissions: URI permission lost! Clearing invalid URI.")
+                
+                // Clear the invalid URI - user will need to re-select folder
+                AppSettings.setLogFolderUri(context, null)
+                
+                Log.w(TAG, "ensureUriPermissions: User needs to re-select log folder in Settings")
+            } else {
+                Log.d(TAG, "ensureUriPermissions: permissions OK")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "ensureUriPermissions: error checking permissions", e)
+        }
+    }
 
     /**
      * Returns true if external storage (.obd directory) is available and should be used.
@@ -206,6 +244,7 @@ object AppDataDirectory {
         return obdDir.findFile(SETTINGS_FILE_NAME)
             ?: obdDir.createFile("application/json", SETTINGS_FILE_NAME)
     }
+
 
     /**
      * Helper function to list files in a directory, with fallback for stale cache.

@@ -29,6 +29,8 @@ import com.sj.obd2app.obd.BluetoothConnectionLogger
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.settings.VehicleProfileRepository
+import com.sj.obd2app.storage.AppDataDirectory
 import com.sj.obd2app.storage.DataMigration
 import kotlinx.coroutines.launch
 
@@ -77,6 +79,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Re-take URI permissions BEFORE any file operations
+        // This fixes permission loss after cold start
+        AppDataDirectory.ensureUriPermissions(this)
 
         // Pad content below the system status bar and above the navigation bar.
         // Required because targetSdk 35+ enforces edge-to-edge rendering.
