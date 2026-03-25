@@ -53,7 +53,13 @@ class BarGaugeView @JvmOverloads constructor(
         val pad = minOf(width, height) * 0.02f
         val cornerR = minOf(width, height) * 0.04f
 
-        val range = (rangeMax - rangeMin).takeIf { it > 0f } ?: 1f
+        val range = (rangeMax - rangeMin).let { 
+            if (it > 0f) it else {
+                // Invalid range: rangeMax must be greater than rangeMin
+                android.util.Log.w("BarGaugeView", "Invalid range: min=$rangeMin, max=$rangeMax")
+                1f
+            }
+        }
         val fraction = ((currentValue - rangeMin) / range).coerceIn(0f, 1f)
 
         val isWarning = warningThreshold?.let {

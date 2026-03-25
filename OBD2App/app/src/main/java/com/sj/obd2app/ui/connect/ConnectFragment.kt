@@ -286,7 +286,14 @@ class ConnectFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         if (receiverRegistered) {
-            try { requireContext().unregisterReceiver(viewModel.discoveryReceiver) } catch (_: Exception) {}
+            try { 
+                requireContext().unregisterReceiver(viewModel.discoveryReceiver) 
+            } catch (e: IllegalArgumentException) {
+                // Receiver was not registered, safe to ignore
+            } catch (e: Exception) {
+                // Log unexpected errors for debugging
+                android.util.Log.e("ConnectFragment", "Error unregistering receiver", e)
+            }
             receiverRegistered = false
         }
         viewModel.stopScan()
