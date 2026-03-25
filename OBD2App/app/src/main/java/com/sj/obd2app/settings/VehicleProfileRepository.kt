@@ -1,12 +1,15 @@
 package com.sj.obd2app.settings
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.sj.obd2app.obd.CustomPid
 import com.sj.obd2app.storage.AppDataDirectory
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * CRUD repository for [VehicleProfile] objects.
@@ -21,6 +24,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
         private const val TAG = "VehicleProfileRepository"
         private const val PREFS_NAME = "obd2_prefs"
         private const val KEY_PROFILES = "vehicle_profiles"
+        private const val PROFILE_FILE_PREFIX = "vehicle_profile_"
 
         @Volatile
         private var INSTANCE: VehicleProfileRepository? = null
@@ -32,15 +36,54 @@ class VehicleProfileRepository private constructor(private val context: Context)
     }
 
     private val prefs get() = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    
+    private val profilesDir = File(context.filesDir, "profiles").apply {
+        if (!exists()) {
+            val created = mkdirs()
+            if (!created) {
+                Log.e(TAG, "Failed to create profiles directory: ${absolutePath}")
+            }
+        }
+    }
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
     fun getAll(): List<VehicleProfile> {
-        return if (AppDataDirectory.isUsingExternalStorage(context)) {
-            getAllFromFiles()
-        } else {
-            getAllFromPreferences()
+        // Always use internal storage for performance
+        return getAllFromInternalFiles()
+    }
+
+    private fun getAllFromInternalFiles(): List<VehicleProfile> {
+        Log.d(TAG, "getAllFromInternalFiles: loading profiles from internal storage")
+        val profileFiles = profilesDir.listFiles { file -> 
+            file.isFile && file.name.startsWith(PROFILE_FILE_PREFIX) && file.name.endsWith(".json")
+        }?.sortedBy { it.name } ?: emptyList()
+        
+        Log.d(TAG, "getAllFromInternalFiles: found ${profileFiles.size} profile files")
+        
+        val profiles = mutableListOf<VehicleProfile>()
+        var errorCount = 0
+        
+        profileFiles.forEach { file ->
+            try {
+                val content = file.readText(Charsets.UTF_8)
+                val profile = JSONObject(content).toProfile()
+                profiles.add(profile)
+                Log.d(TAG, "getAllFromInternalFiles: loaded profile '${profile.name}'")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load profile from ${file.name}", e)
+                errorCount++
+            }
         }
+        
+        if (errorCount > 0) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, "$errorCount profile(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        Log.d(TAG, "getAllFromInternalFiles: returning ${profiles.size} profiles")
+        return profiles
     }
 
     private fun getAllFromFiles(): List<VehicleProfile> {
@@ -68,7 +111,9 @@ class VehicleProfileRepository private constructor(private val context: Context)
         }
         
         if (errorCount > 0) {
-            Toast.makeText(context, "$errorCount profile(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(context, "$errorCount profile(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
+            }
         }
         
         Log.d(TAG, "getAllFromFiles: returning ${profiles.size} profiles")
@@ -127,19 +172,57 @@ class VehicleProfileRepository private constructor(private val context: Context)
         val existingProfiles = getAll()
         val isFirstProfile = existingProfiles.isEmpty()
         
-        if (AppDataDirectory.isUsingExternalStorage(context)) {
-            android.util.Log.d("VehicleProfileRepository", "Using external storage for profile save")
-            saveToFile(profile)
-        } else {
-            android.util.Log.d("VehicleProfileRepository", "Using internal storage for profile save")
-            saveToPreferences(profile)
-        }
+        // Always use internal storage for performance
+        android.util.Log.d("VehicleProfileRepository", "Using internal storage for profile save")
+        saveToInternalFile(profile)
         
         android.util.Log.d("VehicleProfileRepository", "Profile save completed: ${profile.name}")
         
         // Automatically set the first profile as active
         if (isFirstProfile) {
             AppSettings.setActiveProfileId(context, profile.id)
+        }
+    }
+
+    private fun saveToInternalFile(profile: VehicleProfile) {
+        val fileName = "$PROFILE_FILE_PREFIX${profile.name}.json"
+        val profileFile = File(profilesDir, fileName)
+        
+        try {
+            profileFile.writeText(JSONObject().apply {
+                put("id", profile.id)
+                put("name", profile.name)
+                put("fuelType", profile.fuelType.name)
+                put("tankCapacityL", profile.tankCapacityL)
+                put("fuelPricePerLitre", profile.fuelPricePerLitre)
+                put("enginePowerBhp", profile.enginePowerBhp)
+                put("vehicleMassKg", profile.vehicleMassKg)
+                put("engineDisplacementCc", profile.engineDisplacementCc)
+                put("volumetricEfficiencyPct", profile.volumetricEfficiencyPct)
+                put("dieselCorrectionFactor", profile.dieselCorrectionFactor)
+                put("availablePids", JSONObject(profile.availablePids))
+                put("customPids", JSONArray().apply {
+                    profile.customPids.forEach { pid ->
+                        put(JSONObject().apply {
+                            put("id", pid.id)
+                            put("name", pid.name)
+                            put("header", pid.header)
+                            put("mode", pid.mode)
+                            put("pid", pid.pid)
+                            put("bytesReturned", pid.bytesReturned)
+                            put("unit", pid.unit)
+                            put("formula", pid.formula)
+                            put("signed", pid.signed)
+                            put("enabled", pid.enabled)
+                        })
+                    }
+                })
+            }.toString(), Charsets.UTF_8)
+            
+            android.util.Log.d("VehicleProfileRepository", "Internal file write completed for profile: ${profile.name}")
+        } catch (e: Exception) {
+            android.util.Log.e("VehicleProfileRepository", "Failed to save profile to internal file: ${profile.name}", e)
+            Toast.makeText(context, "Failed to save profile: ${profile.name}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -171,16 +254,27 @@ class VehicleProfileRepository private constructor(private val context: Context)
         // Find profile by ID to get its name
         val profile = getById(id)
         if (profile != null) {
-            if (AppDataDirectory.isUsingExternalStorage(context)) {
-                deleteFromFile(profile.name)
-            } else {
-                deleteFromPreferences(profile.name)
-            }
+            // Always use internal storage for performance
+            deleteFromInternalFile(profile.name)
             
             if (AppSettings.getActiveProfileId(context) == id) {
                 AppSettings.setActiveProfileId(context, getAll().firstOrNull()?.id)
             }
             // PIDs are now part of the profile JSON, so they're automatically deleted
+        }
+    }
+
+    private fun deleteFromInternalFile(profileName: String) {
+        val fileName = "$PROFILE_FILE_PREFIX$profileName.json"
+        val profileFile = File(profilesDir, fileName)
+        
+        try {
+            if (profileFile.exists()) {
+                profileFile.delete()
+                android.util.Log.d("VehicleProfileRepository", "Deleted internal profile file: $fileName")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("VehicleProfileRepository", "Failed to delete internal profile file: $fileName", e)
         }
     }
 

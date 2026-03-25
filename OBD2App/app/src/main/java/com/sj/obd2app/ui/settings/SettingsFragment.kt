@@ -1,7 +1,11 @@
 package com.sj.obd2app.ui.settings
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,6 +13,8 @@ import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -23,6 +29,7 @@ import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfile
 import com.sj.obd2app.settings.VehicleProfileEditSheet
 import com.sj.obd2app.settings.VehicleProfileRepository
+import com.sj.obd2app.storage.ExportImportManager
 import com.sj.obd2app.ui.attachNavOverflow
 
 class SettingsFragment : Fragment() {
@@ -43,13 +50,42 @@ class SettingsFragment : Fragment() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             
-            // Check if there's an existing folder with data to migrate
-            val oldFolderUri = AppSettings.getLogFolderUri(requireContext())
-            if (oldFolderUri != null && oldFolderUri != uri.toString()) {
-                showMigrationDialog(oldFolderUri, uri.toString())
-            } else {
-                AppSettings.setLogFolderUri(requireContext(), uri.toString())
-                updateLogFolderLabel()
+            AppSettings.setLogFolderUri(requireContext(), uri.toString())
+            updateLogFolderLabel()
+        }
+    }
+
+    private val exportFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Don't take persistable permissions for one-time export operations
+            val exportSettings = binding.checkboxExportSettings.isChecked
+            val exportProfiles = binding.checkboxExportProfiles.isChecked
+            val exportLayouts = binding.checkboxExportLayouts.isChecked
+            
+            ExportImportManager.exportData(
+                requireContext(),
+                uri,
+                exportSettings,
+                exportProfiles,
+                exportLayouts
+            )
+        }
+    }
+
+    private val importFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Don't take persistable permissions for one-time import operations
+            val result = ExportImportManager.importData(requireContext(), uri)
+            
+            // Refresh UI after import
+            if (result.success) {
+                profileAdapter.refresh()
+                loadCurrentSettings()
+                AppSettings.invalidateCache() // Invalidate cache to refresh other components
             }
         }
     }
@@ -60,6 +96,10 @@ class SettingsFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentSettingsBinding.inflate(inflater, container, false)
+        
+        // Show save button only on settings screen
+        binding.topBarInclude.btnTopSave.visibility = View.VISIBLE
+        
         return binding.root
     }
 
@@ -76,31 +116,31 @@ class SettingsFragment : Fragment() {
         setupConnectionToggles()
         setupDataLogging()
         setupDebugSettings()
+        setupExportImport()
     }
 
     override fun onResume() {
         super.onResume()
         profileAdapter.refresh()
         loadCurrentSettings()
-        updateSaveButtonVisibility()
     }
 
     // ── Save/Discard ─────────────────────────────────────────────────────────
 
     private fun setupSaveButton() {
-        binding.btnSaveSettings.setOnClickListener {
+        binding.topBarInclude.btnTopSave.setOnClickListener {
             saveSettings()
         }
-        updateSaveButtonVisibility()
+        // Top save button is always visible, no need to hide/show
     }
 
     private fun markAsChanged() {
         hasUnsavedChanges = true
-        updateSaveButtonVisibility()
+        // No need to update visibility - top save button is always visible
     }
 
     private fun updateSaveButtonVisibility() {
-        binding.btnSaveSettings.visibility = if (hasUnsavedChanges) View.VISIBLE else View.GONE
+        // No longer needed - top save button is always visible
     }
 
     private fun loadCurrentSettings() {
@@ -240,130 +280,11 @@ class SettingsFragment : Fragment() {
             "Downloads (default)"
         }
     }
-    
-    private fun showMigrationDialog(oldFolderUri: String, newFolderUri: String) {
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("Migrate Data to New Folder?")
-            .setMessage("Would you like to copy your settings, vehicle profiles, and dashboards from the old folder to the new folder?\n\nThis will not delete data from the old folder.")
-            .setPositiveButton("Migrate") { _, _ ->
-                // Set new folder first
-                AppSettings.setLogFolderUri(requireContext(), newFolderUri)
-                updateLogFolderLabel()
-                
-                // Perform migration
-                migrateDataBetweenFolders(oldFolderUri, newFolderUri)
-            }
-            .setNegativeButton("Skip") { _, _ ->
-                // Just set new folder without migration
-                AppSettings.setLogFolderUri(requireContext(), newFolderUri)
-                updateLogFolderLabel()
-                Toast.makeText(requireContext(), "Folder changed. Old data not migrated.", Toast.LENGTH_SHORT).show()
-            }
-            .setCancelable(false)
-            .show()
-    }
-    
-    private fun migrateDataBetweenFolders(oldFolderUri: String, newFolderUri: String) {
-        try {
-            val ctx = requireContext()
-            val oldUri = Uri.parse(oldFolderUri)
-            val newUri = Uri.parse(newFolderUri)
-            
-            val oldRoot = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, oldUri)
-            val newRoot = androidx.documentfile.provider.DocumentFile.fromTreeUri(ctx, newUri)
-            
-            if (oldRoot == null || newRoot == null) {
-                Toast.makeText(ctx, "Migration failed: Cannot access folders", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            // Find .obd directory in old folder
-            val oldObdDir = oldRoot.findFile(".obd")
-            if (oldObdDir == null || !oldObdDir.isDirectory) {
-                Toast.makeText(ctx, "No data to migrate from old folder", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            // Create .obd directory in new folder
-            var newObdDir = newRoot.findFile(".obd")
-            if (newObdDir == null) {
-                newObdDir = newRoot.createDirectory(".obd")
-            }
-            
-            if (newObdDir == null) {
-                Toast.makeText(ctx, "Migration failed: Cannot create .obd directory", Toast.LENGTH_SHORT).show()
-                return
-            }
-            
-            var filesCopied = 0
-            
-            // Copy all subdirectories and files
-            oldObdDir.listFiles().forEach { oldItem ->
-                if (oldItem.isDirectory) {
-                    // Copy directory
-                    var newSubDir = newObdDir.findFile(oldItem.name ?: "")
-                    if (newSubDir == null) {
-                        newSubDir = newObdDir.createDirectory(oldItem.name ?: "")
-                    }
-                    
-                    if (newSubDir != null) {
-                        oldItem.listFiles().forEach { oldFile ->
-                            if (oldFile.isFile) {
-                                copyFile(ctx, oldFile, newSubDir)
-                                filesCopied++
-                            }
-                        }
-                    }
-                } else if (oldItem.isFile) {
-                    // Copy file directly in .obd directory
-                    copyFile(ctx, oldItem, newObdDir)
-                    filesCopied++
-                }
-            }
-            
-            Toast.makeText(ctx, "Migration complete: $filesCopied file(s) copied", Toast.LENGTH_LONG).show()
-            
-            // Refresh profile list to show migrated profiles
-            profileAdapter.refresh()
-            
-        } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Migration failed: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-    
-    private fun copyFile(
-        context: android.content.Context,
-        sourceFile: androidx.documentfile.provider.DocumentFile,
-        targetDir: androidx.documentfile.provider.DocumentFile
-    ) {
-        try {
-            val fileName = sourceFile.name ?: return
-            
-            // Check if file already exists in target
-            var targetFile = targetDir.findFile(fileName)
-            if (targetFile == null) {
-                // Create new file
-                val mimeType = sourceFile.type ?: "application/octet-stream"
-                targetFile = targetDir.createFile(mimeType, fileName)
-            }
-            
-            if (targetFile != null) {
-                // Copy content
-                context.contentResolver.openInputStream(sourceFile.uri)?.use { input ->
-                    // Use "wt" mode to truncate before writing — "w" alone does NOT truncate on Android 10+
-                    context.contentResolver.openOutputStream(targetFile.uri, "wt")?.use { output ->
-                        input.copyTo(output)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            // Log error but continue with other files
-            android.util.Log.e("SettingsFragment", "Failed to copy file: ${sourceFile.name}", e)
-        }
-    }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // Hide save button when leaving settings screen
+        binding?.topBarInclude?.btnTopSave?.visibility = View.GONE
         _binding = null
     }
 
@@ -434,6 +355,18 @@ class SettingsFragment : Fragment() {
         // Handle scenario change button
         binding.btnChangeScenario.setOnClickListener {
             showScenarioSelector()
+        }
+    }
+    
+    private fun setupExportImport() {
+        // Export button
+        binding.btnExportData.setOnClickListener {
+            exportFolderLauncher.launch(null)
+        }
+        
+        // Import button
+        binding.btnImportData.setOnClickListener {
+            importFolderLauncher.launch(null)
         }
     }
     

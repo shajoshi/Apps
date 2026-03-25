@@ -27,10 +27,15 @@ class LayoutRepository(private val context: Context) {
     }
 
     private val useExternalStorage: Boolean
-        get() = AppDataDirectory.isUsingExternalStorage(context)
+        get() = false // Always use internal storage for performance
 
     private val layoutsDir = File(context.filesDir, "layouts").apply {
-        if (!exists()) mkdirs()
+        if (!exists()) {
+            val created = mkdirs()
+            if (!created) {
+                Log.e(TAG, "Failed to create layouts directory: ${absolutePath}")
+            }
+        }
     }
 
     // Gson requires a custom adapter for the sealed class [DashboardMetric]
@@ -46,11 +51,8 @@ class LayoutRepository(private val context: Context) {
         return try {
             val json = gson.toJson(layout)
             
-            if (useExternalStorage) {
-                saveToExternalStorage(layout.name, json)
-            } else {
-                saveToAppStorage(layout.name, json)
-            }
+            // Always use internal storage for performance
+            saveToAppStorage(layout.name, json)
             
             Result.success(File("")) // Return dummy file for compatibility
         } catch (e: Exception) {
@@ -69,20 +71,18 @@ class LayoutRepository(private val context: Context) {
     }
 
     private fun saveToAppStorage(layoutName: String, json: String) {
-        val file = AppDataDirectory.getLayoutFilePrivate(context, layoutName)
+        val fileName = "dashboard_$layoutName.json"
+        val file = File(layoutsDir, fileName)
         file.writeText(json)
+        Log.d(TAG, "Saved layout to internal storage: $fileName")
     }
 
     /**
      * Deserialize all JSON layouts.
      */
     fun getSavedLayouts(): List<DashboardLayout> {
-        Log.d(TAG, "getSavedLayouts: useExternalStorage=$useExternalStorage")
-        return if (useExternalStorage) {
-            getLayoutsFromExternalStorage()
-        } else {
-            getLayoutsFromAppStorage()
-        }
+        Log.d(TAG, "getSavedLayouts: using internal storage")
+        return getLayoutsFromAppStorage()
     }
 
     private fun getLayoutsFromExternalStorage(): List<DashboardLayout> {
@@ -117,7 +117,12 @@ class LayoutRepository(private val context: Context) {
     }
 
     private fun getLayoutsFromAppStorage(): List<DashboardLayout> {
-        val files = AppDataDirectory.listLayoutFilesPrivate(context)
+        val files = layoutsDir.listFiles { file -> 
+            file.isFile && file.name.startsWith("dashboard_") && file.name.endsWith(".json")
+        }?.sortedBy { it.name } ?: emptyList()
+        
+        Log.d(TAG, "getLayoutsFromAppStorage: found ${files.size} layout files")
+        
         val layouts = mutableListOf<DashboardLayout>()
         var errorCount = 0
         
@@ -125,6 +130,7 @@ class LayoutRepository(private val context: Context) {
             try {
                 val layout = gson.fromJson(file.readText(), DashboardLayout::class.java)
                 layouts.add(layout)
+                Log.d(TAG, "getLayoutsFromAppStorage: loaded layout '${layout.name}'")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load layout from ${file.name}", e)
                 errorCount++
@@ -135,7 +141,7 @@ class LayoutRepository(private val context: Context) {
             Toast.makeText(context, "$errorCount dashboard(s) could not be loaded (corrupted files)", Toast.LENGTH_SHORT).show()
         }
         
-        Log.d(TAG, "getLayoutsFromExternalStorage: returning ${layouts.size} layouts")
+        Log.d(TAG, "getLayoutsFromAppStorage: returning ${layouts.size} layouts")
         return layouts
     }
 
@@ -172,11 +178,12 @@ class LayoutRepository(private val context: Context) {
     }
 
     fun deleteLayout(name: String) {
-        if (useExternalStorage) {
-            AppDataDirectory.deleteLayoutFile(context, name)
-        } else {
-            val file = AppDataDirectory.getLayoutFilePrivate(context, name)
-            if (file.exists()) file.delete()
+        // Always use internal storage for performance
+        val fileName = "dashboard_$name.json"
+        val file = File(layoutsDir, fileName)
+        if (file.exists()) {
+            file.delete()
+            Log.d(TAG, "Deleted layout from internal storage: $fileName")
         }
         
         if (getDefaultLayoutName() == name) clearDefaultLayout()

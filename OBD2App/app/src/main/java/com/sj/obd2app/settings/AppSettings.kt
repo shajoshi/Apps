@@ -63,11 +63,8 @@ object AppSettings {
         synchronized(cacheLock) {
             cachedSettings?.let { return it }
 
-            val settings = if (AppDataDirectory.isUsingExternalStorage(context)) {
-                loadFromJson(context)
-            } else {
-                loadFromPreferences(context)
-            }
+            // Always load from SharedPreferences for performance
+            val settings = loadFromPreferences(context)
 
             cachedSettings = settings
             return settings
@@ -127,13 +124,9 @@ object AppSettings {
 
     private fun saveSettings(context: Context, settings: SettingsData) {
         synchronized(cacheLock) {
+            // Always save to SharedPreferences for performance
+            saveToPreferences(context, settings)
             cachedSettings = settings
-
-            if (AppDataDirectory.isUsingExternalStorage(context)) {
-                saveToJson(context, settings)
-            } else {
-                saveToPreferences(context, settings)
-            }
         }
     }
 
@@ -208,10 +201,14 @@ object AppSettings {
      */
     fun updatePendingSettings(context: Context, update: (SettingsData) -> Unit) {
         synchronized(cacheLock) {
-            val pending = getPendingSettings(context)
-            update(pending)
-            pendingSettings = pending
+            val settings = loadSettings(context).copy()
+            update(settings)
+            saveSettings(context, settings)
         }
+    }
+
+    fun getAllSettings(context: Context): SettingsData {
+        return loadSettings(context)
     }
 
     /**

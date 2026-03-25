@@ -231,6 +231,110 @@
 
                 </LinearLayout>
 
+                <!-- Export/Import section -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Data Management"
+                        android:textColor="#FFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="8dp" />
+
+                    <!-- Export section -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="#1E1E1E"
+                        android:padding="12dp"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Export Data"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:layout_marginBottom="8dp" />
+
+                        <CheckBox
+                            android:id="@+id/checkbox_export_settings"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Settings"
+                            android:textColor="#CCCCCC"
+                            android:checked="true" />
+
+                        <CheckBox
+                            android:id="@+id/checkbox_export_profiles"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Vehicle Profiles"
+                            android:textColor="#CCCCCC"
+                            android:checked="true" />
+
+                        <CheckBox
+                            android:id="@+id/checkbox_export_layouts"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Dashboard Layouts"
+                            android:textColor="#CCCCCC"
+                            android:checked="true" />
+
+                        <Button
+                            android:id="@+id/btn_export_data"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Export All Data"
+                            android:textColor="#4FC3F7"
+                            style="@style/Widget.MaterialComponents.Button.TextButton"
+                            android:layout_marginTop="8dp" />
+
+                    </LinearLayout>
+
+                    <!-- Import section -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:background="#1E1E1E"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Import Data"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:layout_marginBottom="8dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Import data from a folder or ZIP file. Existing items with the same name will be overwritten."
+                            android:textColor="#888888"
+                            android:textSize="12sp"
+                            android:layout_marginBottom="8dp" />
+
+                        <Button
+                            android:id="@+id/btn_import_data"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Import Data"
+                            android:textColor="#4FC3F7"
+                            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
             </LinearLayout>
 
         </androidx.cardview.widget.CardView>
@@ -280,7 +384,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Log Folder"
+                            android:text="Trip Log Folder"
                             android:textColor="#FFFFFF"
                             android:textSize="15sp" />
 
@@ -512,21 +616,6 @@
             </LinearLayout>
 
         </androidx.cardview.widget.CardView>
-
-        <!-- Save Button (appears when changes are made) -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_save_settings"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_margin="16dp"
-            android:text="Save Settings"
-            android:textColor="#FFFFFF"
-            android:visibility="gone"
-            app:backgroundTint="#4FC3F7"
-            app:cornerRadius="8dp"
-            app:icon="@android:drawable/ic_menu_save"
-            app:iconTint="#FFFFFF"
-            tools:visibility="visible" />
 
     </LinearLayout>
 </ScrollView>

@@ -1,6 +1,8 @@
 package com.sj.obd2app.settings
 
 import com.sj.obd2app.obd.CustomPid
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 
 enum class FuelType(
@@ -67,4 +69,59 @@ data class VehicleProfile(
             .replace(Regex("\\s+"), "_")
             .replace(Regex("[^A-Za-z0-9_\\-]"), "")
             .ifEmpty { "Vehicle" }
+    
+    companion object {
+        fun fromJSON(json: JSONObject): VehicleProfile {
+            val fuelTypeStr = json.optString("fuelType", "PETROL")
+            val fuelType = try {
+                FuelType.valueOf(fuelTypeStr)
+            } catch (e: IllegalArgumentException) {
+                FuelType.PETROL
+            }
+            
+            val customPids = mutableListOf<CustomPid>()
+            val customPidsArray = json.optJSONArray("customPids")
+            if (customPidsArray != null) {
+                for (i in 0 until customPidsArray.length()) {
+                    val pidJson = customPidsArray.getJSONObject(i)
+                    customPids.add(CustomPid(
+                        name = pidJson.optString("name", ""),
+                        header = pidJson.optString("header", ""),
+                        mode = pidJson.optString("mode", "22"),
+                        pid = pidJson.optString("pid", ""),
+                        bytesReturned = pidJson.optInt("bytesReturned", 2),
+                        unit = pidJson.optString("units", ""),
+                        formula = pidJson.optString("formula", "A"),
+                        signed = pidJson.optBoolean("signed", false),
+                        enabled = pidJson.optBoolean("enabled", true)
+                    ))
+                }
+            }
+            
+            val availablePids = mutableMapOf<String, String>()
+            val availablePidsObj = json.optJSONObject("availablePids")
+            if (availablePidsObj != null) {
+                val keys = availablePidsObj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    availablePids[key] = availablePidsObj.optString(key, "")
+                }
+            }
+            
+            return VehicleProfile(
+                id = json.optString("id", UUID.randomUUID().toString()),
+                name = json.optString("name", "My Vehicle"),
+                fuelType = fuelType,
+                tankCapacityL = json.optDouble("tankCapacityL", 40.0).toFloat(),
+                fuelPricePerLitre = json.optDouble("fuelPricePerLitre", 0.0).toFloat(),
+                enginePowerBhp = json.optDouble("enginePowerBhp", 0.0).toFloat(),
+                vehicleMassKg = json.optDouble("vehicleMassKg", 0.0).toFloat(),
+                engineDisplacementCc = json.optInt("engineDisplacementCc", 0),
+                volumetricEfficiencyPct = json.optDouble("volumetricEfficiencyPct", 85.0).toFloat(),
+                dieselCorrectionFactor = json.optDouble("dieselCorrectionFactor", 0.25).toFloat(),
+                availablePids = availablePids,
+                customPids = customPids
+            )
+        }
+    }
 }
