@@ -266,7 +266,7 @@ class ObdConnectionManager private constructor(private val context: Context) {
         
         // Clear the last known device to prevent auto-reconnection
         lastKnownDeviceMac = null
-        AppSettings.setLastDeviceMac(context, "")
+        AppSettings.setLastDevice(context, "", null)
         
         // Stop monitoring since bond is lost
         stopMonitoring()

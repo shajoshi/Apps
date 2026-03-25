@@ -123,10 +123,13 @@ class MainActivity : AppCompatActivity() {
                     val currentPage = viewPager.currentItem
                     val calculator = MetricsCalculator.getInstance(this@MainActivity)
                     
+                    android.util.Log.d("MainActivity", "Page changed to: $currentPage, trip phase: ${calculator.tripPhase.value}")
+                    
                     // Check if trying to access Settings during active trip
                     if (currentPage == MainPagerAdapter.PAGE_SETTINGS) {
                         val currentPhase = calculator.tripPhase.value
                         if (currentPhase != TripPhase.IDLE) {
+                            android.util.Log.d("MainActivity", "Blocking Settings access during trip, navigating back to Trip")
                             // Navigate back to Trip page and show message
                             viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, false)
                             Toast.makeText(
@@ -206,13 +209,11 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Called by ConnectFragment when OBD connection is established.
-     * Navigates to the Trip screen.
+     * No longer auto-navigates - users have full control over navigation.
      */
     fun onObd2Connected() {
-        // Only navigate to Trip if not in mock mode
-        if (!Obd2ServiceProvider.useMock) {
-            viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, true)
-        }
+        android.util.Log.d("MainActivity", "onObd2Connected called - auto-navigation disabled")
+        // Auto-navigation removed - users stay on their current page
     }
 
     /** Navigate to a specific page by index — used by TopBarHelper overflow menu. */
