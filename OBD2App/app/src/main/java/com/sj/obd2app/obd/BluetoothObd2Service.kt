@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.widget.Toast
+import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfileRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -141,7 +142,10 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 log("Querying supported PIDs from ECU…")
                 supportedPids = discoverSupportedPids()
                 log("✓ ${supportedPids.size} PIDs supported — starting data polling")
+                
+                // Cache discovered PIDs for this MAC address
                 context?.let { ctx ->
+                    cacheDiscoveredPids(ctx, btDevice.address, supportedPids)
                     CoroutineScope(Dispatchers.Main).launch {
                         Toast.makeText(ctx, "${supportedPids.size} PIDs supported", Toast.LENGTH_SHORT).show()
                     }
@@ -570,6 +574,30 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             value = value,
             unit = customPid.unit
         )
+    }
+
+    private fun cacheDiscoveredPids(context: Context, macAddress: String, supportedPids: Set<Int>) {
+        try {
+            // Convert supported PIDs to a map of PID names -> empty values
+            val pidMap = mutableMapOf<String, String>()
+            
+            supportedPids.forEach { pidNumber ->
+                // Find the command with this PID number
+                val command = Obd2CommandRegistry.commands.find { cmd ->
+                    cmd.pid.substring(2).toIntOrNull(16) == pidNumber
+                }
+                command?.let {
+                    pidMap[it.name] = "" // Empty value initially
+                }
+            }
+            
+            // Save to AppSettings
+            AppSettings.savePidCache(context, macAddress, pidMap)
+            log("✓ Cached ${pidMap.size} PIDs for MAC: $macAddress")
+            
+        } catch (e: Exception) {
+            log("✗ Failed to cache PIDs: ${e.message}")
+        }
     }
 
     private fun closeTransport() {

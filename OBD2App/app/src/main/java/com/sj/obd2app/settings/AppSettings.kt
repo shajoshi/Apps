@@ -28,7 +28,9 @@ object AppSettings {
         var btLoggingEnabled: Boolean = false,
         var forceBleConnection: Boolean = false,
         var lastDeviceMac: String? = null,
-        var lastDeviceName: String? = null
+        var lastDeviceName: String? = null,
+        var pidCacheMap: Map<String, PidCache> = emptyMap(),
+        var lastTripSnapshot: LastTripSnapshot? = null
     )
 
     @Volatile
@@ -96,7 +98,9 @@ object AppSettings {
                 btLoggingEnabled = json.optBoolean("btLoggingEnabled", false),
                 forceBleConnection = json.optBoolean("forceBleConnection", false),
                 lastDeviceMac = json.optString("lastDeviceMac", "").takeIf { it.isNotEmpty() },
-                lastDeviceName = json.optString("lastDeviceName", "").takeIf { it.isNotEmpty() }
+                lastDeviceName = json.optString("lastDeviceName", "").takeIf { it.isNotEmpty() },
+                pidCacheMap = parsePidCacheMap(json.optJSONObject("pidCacheMap")),
+                lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) }
             )
         } catch (e: Exception) {
             SettingsData()
@@ -147,6 +151,14 @@ object AppSettings {
             put("forceBleConnection", settings.forceBleConnection)
             settings.lastDeviceMac?.let { put("lastDeviceMac", it) }
             settings.lastDeviceName?.let { put("lastDeviceName", it) }
+            
+            // Serialize PID cache map
+            if (settings.pidCacheMap.isNotEmpty()) {
+                put("pidCacheMap", serializePidCacheMap(settings.pidCacheMap))
+            }
+            
+            // Serialize last trip snapshot
+            settings.lastTripSnapshot?.let { put("lastTripSnapshot", it.toJSON()) }
         }
 
         try {
@@ -377,6 +389,79 @@ object AppSettings {
         settings.lastDeviceMac = mac
         settings.lastDeviceName = name
         saveSettings(context, settings)
+    }
+
+    // ── PID Cache Management ─────────────────────────────────────────────────
+
+    fun savePidCache(context: Context, macAddress: String, discoveredPids: Map<String, String>) {
+        val settings = loadSettings(context)
+        val newCache = PidCache(
+            macAddress = macAddress,
+            discoveredPids = discoveredPids,
+            timestamp = System.currentTimeMillis()
+        )
+        
+        // Keep only last 10 MAC addresses to prevent unlimited growth
+        val updatedCache = settings.pidCacheMap.toMutableMap()
+        updatedCache[macAddress] = newCache
+        
+        // Remove oldest entries if we have more than 10
+        if (updatedCache.size > 10) {
+            val sortedEntries = updatedCache.entries.sortedBy { it.value.timestamp }
+            val toRemove = sortedEntries.take(updatedCache.size - 10)
+            toRemove.forEach { updatedCache.remove(it.key) }
+        }
+        
+        settings.pidCacheMap = updatedCache
+        saveSettings(context, settings)
+    }
+
+    fun getPidCache(context: Context, macAddress: String): Map<String, String>? {
+        val settings = loadSettings(context)
+        return settings.pidCacheMap[macAddress]?.discoveredPids
+    }
+
+    fun getAllPidCaches(context: Context): Map<String, PidCache> {
+        return loadSettings(context).pidCacheMap
+    }
+
+    // ── Last Trip Snapshot Management ─────────────────────────────────────────
+
+    fun saveLastTripSnapshot(context: Context, snapshot: LastTripSnapshot) {
+        val settings = loadSettings(context)
+        settings.lastTripSnapshot = snapshot
+        saveSettings(context, settings)
+    }
+
+    fun getLastTripSnapshot(context: Context): LastTripSnapshot? {
+        return loadSettings(context).lastTripSnapshot
+    }
+
+    fun clearLastTripSnapshot(context: Context) {
+        val settings = loadSettings(context)
+        settings.lastTripSnapshot = null
+        saveSettings(context, settings)
+    }
+
+    // ── Helper Methods ───────────────────────────────────────────────────────
+
+    private fun parsePidCacheMap(json: JSONObject?): Map<String, PidCache> {
+        if (json == null) return emptyMap()
+        
+        val cacheMap = mutableMapOf<String, PidCache>()
+        json.keys().forEach { macAddress ->
+            val cacheJson = json.getJSONObject(macAddress)
+            cacheMap[macAddress] = PidCache.fromJSON(cacheJson)
+        }
+        return cacheMap
+    }
+
+    private fun serializePidCacheMap(cacheMap: Map<String, PidCache>): JSONObject {
+        val json = JSONObject()
+        cacheMap.forEach { (macAddress, cache) ->
+            json.put(macAddress, cache.toJSON())
+        }
+        return json
     }
 
 }

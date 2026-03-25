@@ -8,6 +8,8 @@ import com.sj.obd2app.obd.Obd2DataItem
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
+import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.settings.LastTripSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -33,6 +35,13 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected
+
+    // Cached data for offline viewing
+    private val _cachedPids = MutableStateFlow<Map<String, String>>(emptyMap())
+    val cachedPids: StateFlow<Map<String, String>> = _cachedPids
+
+    private val _lastTripSnapshot = MutableStateFlow<LastTripSnapshot?>(null)
+    val lastTripSnapshot: StateFlow<LastTripSnapshot?> = _lastTripSnapshot
 
 
     init {
@@ -73,6 +82,38 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
             .collect { (connState, _) ->
                 _isConnected.value = connState == ObdStateManager.ConnectionState.CONNECTED
                 _connectionStatus.value = ObdStateManager.getConnectionStatusText()
+                
+                // Load cached data when disconnected
+                if (!_isConnected.value) {
+                    loadCachedData()
+                }
+            }
+        }
+        
+        // Load initial cached data
+        loadCachedData()
+    }
+    
+    private fun loadCachedData() {
+        viewModelScope.launch {
+            try {
+                val context = getApplication<android.app.Application>()
+                
+                // Load cached PIDs for last connected device
+                val lastMac = AppSettings.getLastDeviceMac(context)
+                if (!lastMac.isNullOrEmpty()) {
+                    val cachedPids = AppSettings.getPidCache(context, lastMac) ?: emptyMap()
+                    _cachedPids.value = cachedPids
+                }
+                
+                // Load last trip snapshot
+                val lastTrip = AppSettings.getLastTripSnapshot(context)
+                _lastTripSnapshot.value = lastTrip
+                
+            } catch (e: Exception) {
+                // Handle errors gracefully
+                _cachedPids.value = emptyMap()
+                _lastTripSnapshot.value = null
             }
         }
     }

@@ -199,7 +199,13 @@ class MetricsCalculator private constructor(private val context: Context) {
         vehicleBasis = null
         capturedGravityVector = null
         waitingForGravityCapture = false
-        logger.close()
+        
+        // Get current metrics and profile before closing logger
+        val currentMetrics = metrics.value
+        val currentProfile = VehicleProfileRepository.getInstance(context).activeProfile
+        
+        logger.close(context, currentMetrics, currentProfile)
+        
         // Stop OBD connection monitoring when trip ends
         com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).stopMonitoring()
     }

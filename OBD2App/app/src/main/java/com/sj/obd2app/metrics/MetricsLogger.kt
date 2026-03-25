@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import com.sj.obd2app.obd.Obd2Command
 import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.settings.LastTripSnapshot
 import com.sj.obd2app.settings.VehicleProfile
 import org.json.JSONArray
 import org.json.JSONObject
@@ -55,7 +56,10 @@ class MetricsLogger {
         profile: VehicleProfile?,
         supportedPids: List<Obd2Command>
     ) {
-        if (isOpen) close()
+        if (isOpen) close(context, null, null)
+
+        // Clear last trip snapshot when starting a new trip
+        AppSettings.clearLastTripSnapshot(context)
 
         val ts = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.US).format(Date())
         val safeName = profile?.sanitisedName ?: "Unknown"
@@ -85,11 +89,18 @@ class MetricsLogger {
 
     /** Closes the JSON array and object, then flushes and closes the writer. */
     @Synchronized
-    fun close() {
+    fun close(context: Context?, currentMetrics: VehicleMetrics?, profile: VehicleProfile?) {
         try {
             writer?.write("\n  ]\n}")
             writer?.flush()
             writer?.close()
+            
+            // Save last trip snapshot
+            context?.let { ctx ->
+                currentMetrics?.let { metrics ->
+                    saveLastTripSnapshot(ctx, metrics, profile)
+                }
+            }
         } catch (_: Exception) {}
         writer = null
         firstSample = true
@@ -335,5 +346,57 @@ class MetricsLogger {
             put("pctHighway", pctHighway)
             put("pctIdle", pctIdle)
         })
+    }
+    
+    private fun saveLastTripSnapshot(context: Context, metrics: VehicleMetrics, profile: VehicleProfile?) {
+        try {
+            // Convert VehicleMetrics to a map of metric names -> values
+            val metricsMap = mutableMapOf<String, String>()
+            
+            // Add OBD metrics
+            metricsMap["RPM"] = metrics.rpm?.toString() ?: ""
+            metricsMap["Speed"] = metrics.vehicleSpeedKmh?.toString() ?: ""
+            metricsMap["MAF"] = metrics.mafGs?.toString() ?: ""
+            metricsMap["Throttle"] = metrics.throttlePct?.toString() ?: ""
+            metricsMap["Engine Fuel Rate"] = metrics.fuelRateLh?.toString() ?: ""
+            metricsMap["Engine Load"] = metrics.engineLoadPct?.toString() ?: ""
+            metricsMap["Coolant Temp"] = metrics.coolantTempC?.toString() ?: ""
+            metricsMap["Intake Temp"] = metrics.intakeTempC?.toString() ?: ""
+            metricsMap["Fuel Pressure"] = metrics.fuelPressureKpa?.toString() ?: ""
+            metricsMap["Intake Pressure"] = metrics.intakeMapKpa?.toString() ?: ""
+            metricsMap["Timing Advance"] = metrics.timingAdvanceDeg?.toString() ?: ""
+            
+            // Add calculated metrics
+            metricsMap["Instant Fuel"] = metrics.fuelRateEffectiveLh?.toString() ?: ""
+            metricsMap["Instant Economy"] = metrics.instantKpl?.toString() ?: ""
+            metricsMap["Trip Fuel"] = metrics.tripFuelUsedL?.toString() ?: ""
+            metricsMap["Trip Economy"] = metrics.tripAvgKpl?.toString() ?: ""
+            metricsMap["Trip Distance"] = metrics.tripDistanceKm?.toString() ?: ""
+            metricsMap["Trip Time"] = metrics.tripTimeSec?.toString() ?: ""
+            metricsMap["Avg Speed"] = metrics.tripAvgSpeedKmh?.toString() ?: ""
+            metricsMap["Max Speed"] = metrics.tripMaxSpeedKmh?.toString() ?: ""
+            
+            // Add GPS metrics if available
+            metricsMap["GPS Speed"] = metrics.gpsSpeedKmh?.toString() ?: ""
+            metricsMap["GPS Altitude"] = metrics.altitudeMslM?.toString() ?: ""
+            metricsMap["GPS Accuracy"] = metrics.gpsAccuracyM?.toString() ?: ""
+            
+            // Get last connected MAC address
+            val lastMac = AppSettings.getLastDeviceMac(context)
+            
+            // Create and save snapshot
+            val snapshot = LastTripSnapshot(
+                timestamp = System.currentTimeMillis(),
+                macAddress = lastMac,
+                vehicleProfileName = profile?.name,
+                metrics = metricsMap
+            )
+            
+            AppSettings.saveLastTripSnapshot(context, snapshot)
+            android.util.Log.d("MetricsLogger", "✓ Saved last trip snapshot with ${metricsMap.size} metrics")
+            
+        } catch (e: Exception) {
+            android.util.Log.e("MetricsLogger", "✗ Failed to save last trip snapshot: ${e.message}")
+        }
     }
 }
