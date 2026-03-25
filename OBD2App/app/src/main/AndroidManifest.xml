@@ -57,6 +57,14 @@
                 android:resource="@xml/file_provider_paths" />
         </provider>
 
+        <!-- Bluetooth bond loss receiver for connection stability -->
+        <receiver android:name=".bluetooth.BluetoothBondLossReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.BOND_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

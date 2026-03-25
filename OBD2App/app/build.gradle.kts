@@ -62,6 +62,14 @@ android {
     buildFeatures {
         viewBinding = true
     }
+    
+    packaging {
+        resources {
+            jniLibs {
+                useLegacyPackaging = false
+            }
+        }
+    }
 }
 
 base.archivesName.set("OBD2Viewer")
