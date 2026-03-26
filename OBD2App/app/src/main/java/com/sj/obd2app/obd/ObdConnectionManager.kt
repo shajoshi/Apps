@@ -17,8 +17,11 @@ import kotlinx.coroutines.flow.combine
  * Manages OBD connection monitoring and automatic reconnection during active trips.
  * 
  * Features:
- * - Monitors OBD connection state only during RUNNING or PAUSED trips
+ * - Monitors OBD connection state only during RUNNING trips
+ * - Pauses reconnection attempts when trip is PAUSED
+ * - Resumes reconnection attempts when trip resumes
  * - Adaptive backoff reconnection: 5 attempts at 10s intervals, then 60s intervals
+ * - Only starts monitoring if OBD was connected before or during the trip
  * - Resets attempt counter on successful reconnection
  * - Notifies user of connection status changes
  */
@@ -52,18 +55,30 @@ class ObdConnectionManager private constructor(private val context: Context) {
     private var attemptCount = 0
     private var manualDisconnect = false
     private var isMonitoring = false
+    private var isPaused = false
+    private var hadConnectionBeforeTrip = false
     
     /**
      * Start monitoring OBD connection state during an active trip.
+     * Only starts if OBD was connected before or during the trip.
      * Called when trip starts (RUNNING phase).
+     *
+     * @param obdWasConnected true if OBD was connected when the trip started
      */
-    fun startMonitoring() {
+    fun startMonitoring(obdWasConnected: Boolean = false) {
         if (isMonitoring) {
             Log.d(TAG, "Already monitoring, ignoring duplicate start")
             return
         }
         
+        hadConnectionBeforeTrip = obdWasConnected
+        if (!hadConnectionBeforeTrip) {
+            Log.d(TAG, "OBD was not connected at trip start — skipping monitoring")
+            return
+        }
+        
         isMonitoring = true
+        isPaused = false
         attemptCount = 0
         manualDisconnect = false
         lastKnownDeviceMac = AppSettings.getLastDeviceMac(context)
@@ -87,12 +102,48 @@ class ObdConnectionManager private constructor(private val context: Context) {
         Log.d(TAG, "Stopping OBD connection monitoring")
         
         isMonitoring = false
+        isPaused = false
+        hadConnectionBeforeTrip = false
         monitoringJob?.cancel()
         monitoringJob = null
         reconnectionJob?.cancel()
         reconnectionJob = null
         attemptCount = 0
         manualDisconnect = false
+    }
+    
+    /**
+     * Pause reconnection attempts during trip pause.
+     * Monitoring stays active but reconnection loop is suspended.
+     */
+    fun pauseMonitoring() {
+        if (!isMonitoring || isPaused) return
+        
+        isPaused = true
+        reconnectionJob?.cancel()
+        reconnectionJob = null
+        Log.d(TAG, "Paused reconnection attempts (trip paused)")
+    }
+    
+    /**
+     * Resume reconnection attempts when trip resumes.
+     * If OBD is currently disconnected, restarts the reconnection loop.
+     */
+    fun resumeMonitoring() {
+        if (!isMonitoring || !isPaused) return
+        
+        isPaused = false
+        Log.d(TAG, "Resumed reconnection monitoring (trip resumed)")
+        
+        // If currently disconnected, restart reconnection loop
+        val currentState = obdService.connectionState.value
+        if (currentState == Obd2Service.ConnectionState.DISCONNECTED ||
+            currentState == Obd2Service.ConnectionState.ERROR) {
+            if (!manualDisconnect && reconnectionJob == null) {
+                Log.d(TAG, "OBD still disconnected after resume — restarting reconnection")
+                startReconnectionLoop()
+            }
+        }
     }
     
     /**
@@ -132,9 +183,9 @@ class ObdConnectionManager private constructor(private val context: Context) {
                 
                 Obd2Service.ConnectionState.DISCONNECTED,
                 Obd2Service.ConnectionState.ERROR -> {
-                    // Only auto-reconnect if not a manual disconnect
-                    if (!manualDisconnect && reconnectionJob == null) {
-                        Log.d(TAG, "OBD disconnected during trip, starting reconnection attempts")
+                    // Only auto-reconnect during RUNNING phase (not PAUSED)
+                    if (!manualDisconnect && !isPaused && reconnectionJob == null) {
+                        Log.d(TAG, "OBD disconnected during running trip, starting reconnection")
                         withContext(Dispatchers.Main) {
                             Toast.makeText(
                                 context, 
@@ -241,6 +292,57 @@ class ObdConnectionManager private constructor(private val context: Context) {
         attemptCount = 0
     }
     
+    /**
+     * One-shot auto-connect attempt at trip start.
+     * If auto-connect setting is ON and OBD is not connected, tries to connect
+     * to the last known device. Shows Toast warning if connection is not possible.
+     * Returns true if OBD is already connected or a connect attempt was initiated.
+     */
+    @SuppressLint("MissingPermission")
+    fun tryConnectForTripStart(): Boolean {
+        val currentState = obdService.connectionState.value
+        if (currentState == Obd2Service.ConnectionState.CONNECTED) return true
+        if (currentState == Obd2Service.ConnectionState.CONNECTING) return true
+
+        if (!AppSettings.isAutoConnect(context)) {
+            Log.d(TAG, "Auto-connect disabled — skipping trip-start connect")
+            showToast("No OBD connected — recording GPS/Accel only")
+            return false
+        }
+
+        val deviceMac = AppSettings.getLastDeviceMac(context)
+        if (deviceMac.isNullOrEmpty()) {
+            Log.d(TAG, "No last device MAC — cannot auto-connect at trip start")
+            showToast("No OBD connected — recording GPS/Accel only")
+            return false
+        }
+
+        val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val btAdapter = btManager?.adapter
+        if (btAdapter == null || !btAdapter.isEnabled) {
+            Log.w(TAG, "Bluetooth unavailable at trip start")
+            showToast("Bluetooth unavailable — recording GPS/Accel only")
+            return false
+        }
+
+        return try {
+            val device = btAdapter.getRemoteDevice(deviceMac)
+            Log.d(TAG, "Trip start: auto-connecting to ${device.name ?: deviceMac}")
+            scope.launch(Dispatchers.Main) { obdService.connect(device) }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Trip start auto-connect failed: ${e.message}")
+            showToast("No OBD connected — recording GPS/Accel only")
+            false
+        }
+    }
+
+    private fun showToast(msg: String) {
+        scope.launch(Dispatchers.Main) {
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
+
     /**
      * Mark the next disconnect as manual (user-initiated).
      * This prevents auto-reconnection.

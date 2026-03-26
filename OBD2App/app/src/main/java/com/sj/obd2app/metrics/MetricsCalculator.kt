@@ -161,8 +161,13 @@ class MetricsCalculator private constructor(private val context: Context) {
             val profile = VehicleProfileRepository.getInstance(context).activeProfile
             logger.open(context, profile, supportedPids)
         }
+        // Try auto-connect at trip start if OBD not connected
+        val connectionManager = com.sj.obd2app.obd.ObdConnectionManager.getInstance(context)
+        val obdConnected = connectionManager.tryConnectForTripStart()
+        
         // Start OBD connection monitoring for auto-reconnect during trip
-        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).startMonitoring()
+        // Only monitor if OBD was connected at trip start or auto-connect succeeded
+        connectionManager.startMonitoring(obdWasConnected = obdConnected)
     }
 
     fun pauseTrip() {
@@ -172,6 +177,7 @@ class MetricsCalculator private constructor(private val context: Context) {
         }
         currentPauseStartMs = pauseStartMs
         _tripPhase.value = TripPhase.PAUSED
+        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).pauseMonitoring()
     }
 
     fun resumeTrip() {
@@ -184,6 +190,7 @@ class MetricsCalculator private constructor(private val context: Context) {
         pauseStartMs = null
         currentPauseStartMs = null
         _tripPhase.value = TripPhase.RUNNING
+        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).resumeMonitoring()
     }
 
     fun stopTrip() {

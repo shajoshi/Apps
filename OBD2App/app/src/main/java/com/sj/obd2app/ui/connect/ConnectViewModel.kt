@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.widget.Toast
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -17,6 +18,8 @@ import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -73,6 +76,17 @@ class ConnectViewModel : ViewModel() {
 
     private var btAdapter: BluetoothAdapter? = null
     private val discoveredDevicesMap = mutableMapOf<String, DeviceInfo>() // MAC -> DeviceInfo with RSSI
+    private var autoConnectRetryJob: Job? = null
+
+    companion object {
+        private const val AUTO_CONNECT_MAX_RETRIES = 3
+        private const val AUTO_CONNECT_RETRY_DELAY_MS = 10_000L  // 10 seconds
+        private val OBD_KEYWORDS = listOf("OBD", "ELM", "OBDII", "VGATE", "ICAR", "VEEPEAK", "KONNWEI", "CARISTA", "BLUEDRIVER", "CARLY")
+        
+        fun isObdLikelyDevice(name: String?): Boolean {
+            return OBD_KEYWORDS.any { name?.uppercase()?.contains(it) ?: false }
+        }
+    }
 
     /**
      * BroadcastReceiver for discovered BT devices during scan.
@@ -227,36 +241,94 @@ class ConnectViewModel : ViewModel() {
     }
 
     /**
-     * Try to auto-connect to the last successfully used device.
+     * Try to auto-connect to the last successfully used device with retry logic.
+     * Attempts up to 3 times at 10-second intervals. Shows Toast on each failure
+     * and a final Toast when giving up.
+     *
      * Should be called after [loadPairedDevices].
-     * Returns true if an auto-connect was attempted.
      */
     @SuppressLint("MissingPermission")
-    fun tryAutoConnect(context: Context): Boolean {
-        if (Obd2ServiceProvider.useMock) return false
+    fun tryAutoConnect(context: Context) {
+        if (Obd2ServiceProvider.useMock) return
         if (service.connectionState.value == Obd2Service.ConnectionState.CONNECTED ||
             service.connectionState.value == Obd2Service.ConnectionState.CONNECTING
-        ) return false
+        ) return
 
-        val lastMac = AppSettings.getLastDeviceMac(context) ?: return false
+        val lastMac = AppSettings.getLastDeviceMac(context)
+        if (lastMac.isNullOrEmpty()) return
+
+        autoConnectRetryJob?.cancel()
+        autoConnectRetryJob = viewModelScope.launch {
+            for (attempt in 1..AUTO_CONNECT_MAX_RETRIES) {
+                // Check if already connected (e.g. manual connect happened)
+                if (service.connectionState.value == Obd2Service.ConnectionState.CONNECTED) return@launch
+
+                val connected = attemptSingleConnect(context, lastMac)
+                if (connected) return@launch
+
+                // Wait for the connection attempt to settle
+                delay(AUTO_CONNECT_RETRY_DELAY_MS)
+
+                // After delay, re-check if connection succeeded
+                if (service.connectionState.value == Obd2Service.ConnectionState.CONNECTED) return@launch
+
+                if (attempt < AUTO_CONNECT_MAX_RETRIES) {
+                    Toast.makeText(
+                        context,
+                        "Auto-connect attempt $attempt/$AUTO_CONNECT_MAX_RETRIES failed, retrying...",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+
+            // All retries exhausted
+            if (service.connectionState.value != Obd2Service.ConnectionState.CONNECTED) {
+                Toast.makeText(
+                    context,
+                    "Could not auto-connect to last OBD device. Please connect manually.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    /**
+     * Single auto-connect attempt. Returns true if the attempt was initiated.
+     */
+    @SuppressLint("MissingPermission")
+    private fun attemptSingleConnect(context: Context, mac: String): Boolean {
+        if (service.connectionState.value == Obd2Service.ConnectionState.CONNECTED ||
+            service.connectionState.value == Obd2Service.ConnectionState.CONNECTING
+        ) return true
+
         val forceBle = AppSettings.isForceBleConnection(context)
 
         // Look for the device in paired list first
-        val device = _pairedDevices.value?.find { it.address == lastMac }
+        val device = _pairedDevices.value?.find { it.address == mac }
         if (device != null) {
+            _connectingDeviceMac.postValue(device.address)
             service.connect(device, forceBle)
             return true
         }
 
-        // If the adapter knows the device by MAC (even if not currently paired)
+        // If the adapter knows the device by MAC
         val adapter = btAdapter ?: return false
-        try {
-            val remoteDevice = adapter.getRemoteDevice(lastMac)
+        return try {
+            val remoteDevice = adapter.getRemoteDevice(mac)
+            _connectingDeviceMac.postValue(remoteDevice.address)
             service.connect(remoteDevice, forceBle)
-            return true
+            true
         } catch (_: Exception) {
-            return false
+            false
         }
+    }
+
+    /**
+     * Cancel any ongoing auto-connect retry loop.
+     */
+    fun cancelAutoConnect() {
+        autoConnectRetryJob?.cancel()
+        autoConnectRetryJob = null
     }
 
     fun getLastDeviceName(context: Context): String? {
@@ -319,11 +391,4 @@ class ConnectViewModel : ViewModel() {
         _allDevices.postValue(items)
     }
 
-    companion object {
-        private val OBD_KEYWORDS = listOf("OBD", "ELM", "OBDII", "VGATE", "ICAR", "VEEPEAK", "KONNWEI", "CARISTA", "BLUEDRIVER", "CARLY")
-        
-        fun isObdLikelyDevice(name: String?): Boolean {
-            return OBD_KEYWORDS.any { name?.uppercase()?.contains(it) ?: false }
-        }
-    }
 }

@@ -55,8 +55,60 @@ class DetailsFragment : Fragment() {
         // Observe OBD2 data
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.obd2Data.collect { items ->
-                adapter.submitList(items)
-                binding.textPidCount.text = getString(R.string.pid_count_format, items.size)
+                // Only show live data when connected
+                if (viewModel.isConnected.value) {
+                    adapter.submitList(items)
+                    binding.textPidCount.text = getString(R.string.pid_count_format, items.size)
+                }
+            }
+        }
+
+        // Observe cached PIDs for offline viewing
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.cachedPids.collect { cachedPids ->
+                // Show cached data when disconnected and no last trip data
+                if (!viewModel.isConnected.value && 
+                    cachedPids.isNotEmpty() && 
+                    viewModel.lastTripSnapshot.value == null) {
+                    val cachedItems = cachedPids.map { (name, value) ->
+                        com.sj.obd2app.obd.Obd2DataItem(
+                            pid = "CACHED",
+                            name = name,
+                            value = value.ifEmpty { "N/A" },
+                            unit = ""
+                        )
+                    }
+                    adapter.submitList(cachedItems)
+                    binding.textPidCount.text = getString(R.string.pid_count_format, cachedItems.size)
+                }
+            }
+        }
+
+        // Observe last trip snapshot
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.lastTripSnapshot.collect { snapshot ->
+                snapshot?.let {
+                    // Update UI to show last trip data
+                    showLastTripData(it)
+                } ?: run {
+                    // Clear last trip data if snapshot is null
+                    if (!viewModel.isConnected.value) {
+                        // Try to show cached PIDs if no last trip data
+                        val cachedPids = viewModel.cachedPids.value
+                        if (cachedPids.isNotEmpty()) {
+                            val cachedItems = cachedPids.map { (name, value) ->
+                                com.sj.obd2app.obd.Obd2DataItem(
+                                    pid = "CACHED",
+                                    name = name,
+                                    value = value.ifEmpty { "N/A" },
+                                    unit = ""
+                                )
+                            }
+                            adapter.submitList(cachedItems)
+                            binding.textPidCount.text = getString(R.string.pid_count_format, cachedItems.size)
+                        }
+                    }
+                }
             }
         }
 
@@ -197,6 +249,35 @@ class DetailsFragment : Fragment() {
         val s = totalSec % 60
         return if (h > 0) "%d:%02d:%02d".format(h, m, s)
         else "%02d:%02d".format(m, s)
+    }
+
+    private fun showLastTripData(snapshot: com.sj.obd2app.settings.LastTripSnapshot) {
+        try {
+            // Update connection status to show last trip data
+            val timestamp = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(snapshot.timestamp))
+            binding.textConnectionStatus.text = "Last Trip: $timestamp"
+            
+            // Show last trip metrics when disconnected (higher priority than cached PIDs)
+            if (!viewModel.isConnected.value) {
+                val tripItems = snapshot.metrics.map { (name, value) ->
+                    com.sj.obd2app.obd.Obd2DataItem(
+                        pid = "TRIP",
+                        name = name,
+                        value = value.ifEmpty { "N/A" },
+                        unit = ""
+                    )
+                }
+                adapter.submitList(tripItems)
+                binding.textPidCount.text = getString(R.string.pid_count_format, tripItems.size)
+            }
+            
+            // Optionally, update a header or show a toast
+            android.util.Log.d("DetailsFragment", "Showing last trip data from ${snapshot.vehicleProfileName}")
+            
+        } catch (e: Exception) {
+            android.util.Log.e("DetailsFragment", "Error showing last trip data: ${e.message}")
+        }
     }
 
     override fun onDestroyView() {

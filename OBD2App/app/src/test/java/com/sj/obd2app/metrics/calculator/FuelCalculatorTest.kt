@@ -363,9 +363,10 @@ class FuelCalculatorTest {
     @Test
     fun `calculateDieselAfrCorrection returns 1_0 for non-diesel`() {
         val correction = fuelCalculator.calculateDieselAfrCorrection(
-            boostKpa = 48f,
-            rpm = 1500f,
+            mafGs = 15f,
             engineLoadPct = 64f,
+            mapKpa = 141f, // 93 kPa barometric + 48 kPa boost
+            baroKpa = 93f,
             fuelType = FuelType.PETROL
         )
         
@@ -376,9 +377,10 @@ class FuelCalculatorTest {
     fun `calculateDieselAfrCorrection heavy boost scenario`() {
         // Sample 477: 1453 RPM, 64.3% load, +48 kPa boost
         val correction = fuelCalculator.calculateDieselAfrCorrection(
-            boostKpa = 48f,
-            rpm = 1453f,
+            mafGs = 18f,
             engineLoadPct = 64.3f,
+            mapKpa = 141f, // 93 kPa barometric + 48 kPa boost
+            baroKpa = 93f,
             fuelType = FuelType.DIESEL
         )
         
@@ -390,9 +392,10 @@ class FuelCalculatorTest {
     fun `calculateDieselAfrCorrection light load vacuum scenario`() {
         // Sample 186: 1007 RPM, 27.1% load, -1 kPa boost (vacuum)
         val correction = fuelCalculator.calculateDieselAfrCorrection(
-            boostKpa = -1f,
-            rpm = 1007f,
+            mafGs = 8f,
             engineLoadPct = 27.1f,
+            mapKpa = 92f, // 93 kPa barometric - 1 kPa vacuum
+            baroKpa = 93f,
             fuelType = FuelType.DIESEL
         )
         
@@ -404,9 +407,10 @@ class FuelCalculatorTest {
     fun `calculateDieselAfrCorrection medium boost scenario`() {
         // Sample 196: 1625 RPM, 50.6% load, +1 kPa boost
         val correction = fuelCalculator.calculateDieselAfrCorrection(
-            boostKpa = 1f,
-            rpm = 1625f,
+            mafGs = 12f,
             engineLoadPct = 50.6f,
+            mapKpa = 94f, // 93 kPa barometric + 1 kPa boost
+            baroKpa = 93f,
             fuelType = FuelType.DIESEL
         )
         
