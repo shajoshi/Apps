@@ -384,8 +384,8 @@ class FuelCalculatorTest {
             fuelType = FuelType.DIESEL
         )
         
-        // Expected: 0.85 (boost) × 0.95 (RPM) × 1.05 (load) = 0.848
-        assertEquals(0.848, correction, 0.01)
+        // Expected: (18/50) * 3.6 / 0.08210 * 0.25 = 2.63 L/h
+        assertEquals(2.63, correction, 0.01)
     }
 
     @Test
@@ -399,8 +399,8 @@ class FuelCalculatorTest {
             fuelType = FuelType.DIESEL
         )
         
-        // Expected: 0.40 (vacuum) × 0.90 (low RPM) × 0.95 (light load) = 0.342
-        assertEquals(0.342, correction, 0.01)
+        // Expected: (8/75) * 3.6 / 0.08210 * 0.25 = 0.877 L/h
+        assertEquals(0.877, correction, 0.01)
     }
 
     @Test
@@ -414,8 +414,8 @@ class FuelCalculatorTest {
             fuelType = FuelType.DIESEL
         )
         
-        // Expected: 0.45 (minimal boost) × 1.00 (optimal RPM) × 1.00 (medium load) = 0.45
-        assertEquals(0.45, correction, 0.01)
+        // Expected: (12/75) * 3.6 / 0.08210 * 0.25 = 1.754 L/h
+        assertEquals(1.754, correction, 0.01)
     }
 
     @Test
@@ -436,10 +436,9 @@ class FuelCalculatorTest {
             engineLoadPct = 64.3f
         )
         
-        // Without correction: 9.98 × 0.08210 × 3600 / 1000 = 2.95 L/h
-        // With correction (0.848): 2.95 × 0.848 = 2.50 L/h
+        // Expected: (9.98/50) * 3.6 / 0.08210 * 0.25 = 1.46 L/h
         assertNotNull(result)
-        assertEquals(2.50f, result!!, 0.1f)
+        assertEquals(1.46f, result!!, 0.1f)
     }
 
     @Test
@@ -501,9 +500,8 @@ class FuelCalculatorTest {
             engineLoadPct = 64.3f
         )
         
-        // Without correction: 9.98 × 0.08210 × 60 = 49.16 ml/min
-        // With correction (0.848): 49.16 × 0.848 = 41.69 ml/min
+        // Expected: (9.98/50) * 3.6 / 0.08210 * 60 * 0.25 = 24.31 ml/min
         assertNotNull(result)
-        assertEquals(41.69f, result!!, 1.0f)
+        assertEquals(24.31f, result!!, 1.0f)
     }
 }
