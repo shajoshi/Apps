@@ -43,6 +43,16 @@ class MetricsCalculator private constructor(private val context: Context) {
                     it.startCollecting()
                 }
             }
+
+        // ── Outlier Detection Thresholds ─────────────────────────────────────────
+        private const val MAX_SPEED_KMH = 150f
+        private const val MAX_RPM_DIESEL = 5000f
+        private const val MAX_RPM_PETROL = 9000f
+        private const val MAX_MAF_GS = 200f
+        private const val MAX_MAP_KPA = 300f
+        private const val MAX_ENGINE_LOAD_PCT = 100f
+        private const val MAX_CONTROL_MODULE_VOLTAGE = 20f
+        private const val MIN_CONTROL_MODULE_VOLTAGE = 8f
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -58,7 +68,7 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     private val tripState = TripState()
     private val logger = MetricsLogger()
-    @Volatile private var isTripPaused = false
+    @Volatile private var isTripPaused: Boolean = false
     @Volatile private var pauseStartMs: Long? = null
     @Volatile private var pausedAccumMs: Long = 0L
 
@@ -67,10 +77,6 @@ class MetricsCalculator private constructor(private val context: Context) {
     private val powerCalculator = PowerCalculator()
     private val tripCalculator = TripCalculator()
     private val dataOrchestrator = DataOrchestrator(context, scope, this)
-
-    /** Wall-clock ms when the current trip was started; null when IDLE. */
-    @Volatile var tripStartMs: Long? = null
-        private set
 
     /** Accumulated paused ms for current trip (excludes any ongoing pause). */
     @Volatile var pausedAccumMsPublic: Long = 0L
@@ -82,7 +88,7 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     /** Elapsed active trip seconds, honouring pauses. 0 when IDLE. */
     fun elapsedTripSec(): Long {
-        val start = tripStartMs ?: return 0L
+        val start = tripState.tripStartMs
         val now = System.currentTimeMillis()
         val pauseOngoing = currentPauseStartMs?.let { now - it } ?: 0L
         return ((now - start - pausedAccumMsPublic - pauseOngoing) / 1000L).coerceAtLeast(0L)
@@ -145,7 +151,6 @@ class MetricsCalculator private constructor(private val context: Context) {
         isTripPaused = false
         pauseStartMs = null
         pausedAccumMs = 0L
-        tripStartMs = System.currentTimeMillis()
         pausedAccumMsPublic = 0L
         currentPauseStartMs = null
         _tripPhase.value = TripPhase.RUNNING
@@ -197,7 +202,6 @@ class MetricsCalculator private constructor(private val context: Context) {
         isTripPaused = false
         pauseStartMs = null
         pausedAccumMs = 0L
-        tripStartMs = null
         pausedAccumMsPublic = 0L
         currentPauseStartMs = null
         tripState.reset()
@@ -218,6 +222,62 @@ class MetricsCalculator private constructor(private val context: Context) {
     }
 
     fun getLogShareUri() = logger.getShareUri()
+
+    // ── Outlier Detection ─────────────────────────────────────────────────────
+
+    /**
+     * Detects outlier values in OBD data based on predefined thresholds.
+     * Returns a list of parameter names that exceeded their limits.
+     */
+    private fun detectOutliers(
+        rpm: Float?,
+        speed: Float?,
+        maf: Float?,
+        map: Float?,
+        engineLoad: Float?,
+        voltage: Float?,
+        fuelType: FuelType
+    ): List<String> {
+        val outliers = mutableListOf<String>()
+
+        // Check RPM based on fuel type
+        rpm?.let {
+            val maxRpm = when (fuelType) {
+                FuelType.DIESEL -> MAX_RPM_DIESEL
+                FuelType.PETROL, FuelType.E20, FuelType.CNG -> MAX_RPM_PETROL
+            }
+            if (it > maxRpm) outliers.add("rpm")
+        }
+
+        // Check speed
+        speed?.let {
+            if (it > MAX_SPEED_KMH) outliers.add("speed")
+        }
+
+        // Check MAF
+        maf?.let {
+            if (it > MAX_MAF_GS) outliers.add("maf")
+        }
+
+        // Check MAP
+        map?.let {
+            if (it > MAX_MAP_KPA) outliers.add("map")
+        }
+
+        // Check engine load
+        engineLoad?.let {
+            if (it > MAX_ENGINE_LOAD_PCT) outliers.add("engineLoad")
+        }
+
+        // Check control module voltage
+        voltage?.let {
+            if (it > MAX_CONTROL_MODULE_VOLTAGE || it < MIN_CONTROL_MODULE_VOLTAGE) {
+                outliers.add("voltage")
+            }
+        }
+
+        return outliers
+    }
 
     // ── Calculation ───────────────────────────────────────────────────────────
 
@@ -422,8 +482,23 @@ class MetricsCalculator private constructor(private val context: Context) {
             }
         }
 
-        // Update trip accumulators (skipped when paused)
-        if (!isTripPaused) tripState.update(speedKmh, fuelRateEffective ?: 0f)
+        // Detect outliers in OBD data
+        val outlierList = detectOutliers(
+            rpm = rpm,
+            speed = obdSpeedKmh,
+            maf = maf,
+            map = map,
+            engineLoad = engineLoad,
+            voltage = moduleVoltage,
+            fuelType = fuelType
+        )
+        val hasOutliers = outlierList.isNotEmpty()
+        val outlierNamesStr = if (hasOutliers) outlierList.joinToString(",") else null
+
+        // Update trip accumulators (skipped when paused or outliers detected)
+        if (!isTripPaused && !hasOutliers) {
+            tripState.update(speedKmh, fuelRateEffective ?: 0f)
+        }
 
         // Instantaneous consumption
         val (instantLpk, instantKplVal) = fuelCalculator.instantaneous(fuelRateEffective, speedKmh)
@@ -564,7 +639,9 @@ class MetricsCalculator private constructor(private val context: Context) {
             accelLatMax            = accelMetrics?.latMax,
             accelLatMean           = accelMetrics?.latMean,
             accelLeanAngleDeg      = accelMetrics?.leanAngleDeg,
-            accelRawSampleCount    = accelMetrics?.rawAccelSampleCount
+            accelRawSampleCount    = accelMetrics?.rawAccelSampleCount,
+            outlierDetected        = hasOutliers,
+            outlierNames           = outlierNamesStr
         )
     }
 }

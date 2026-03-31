@@ -161,5 +161,13 @@ data class VehicleMetrics(
     val accelLatMax: Float? = null,
     val accelLatMean: Float? = null,
     val accelLeanAngleDeg: Float? = null,
-    val accelRawSampleCount: Int? = null
+    val accelRawSampleCount: Int? = null,
+
+    // ── Outlier Detection ─────────────────────────────────────────────────────
+
+    /** True if any outliers were detected in this sample */
+    val outlierDetected: Boolean = false,
+
+    /** Comma-separated list of outlier parameter names */
+    val outlierNames: String? = null
 )

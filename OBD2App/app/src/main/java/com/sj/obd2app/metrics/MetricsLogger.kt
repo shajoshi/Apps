@@ -346,6 +346,12 @@ class MetricsLogger {
             put("pctHighway", pctHighway)
             put("pctIdle", pctIdle)
         })
+
+        // data quality sub-object
+        put("data", JSONObject().apply {
+            put("outlierDetected", if (outlierDetected) "Y" else "N")
+            outlierNames?.let { put("outlierNames", it) }
+        })
     }
     
     private fun saveLastTripSnapshot(context: Context, metrics: VehicleMetrics, profile: VehicleProfile?) {
