@@ -5,6 +5,10 @@
         android:icon="@drawable/ic_details"
         android:title="Trip" />
     <item
+        android:id="@+id/nav_trip_summary"
+        android:icon="@drawable/ic_details"
+        android:title="Trip Summary" />
+    <item
         android:id="@+id/nav_connect"
         android:icon="@drawable/ic_bluetooth"
         android:title="@string/menu_connect" />

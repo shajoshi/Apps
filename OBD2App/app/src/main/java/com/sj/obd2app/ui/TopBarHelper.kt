@@ -36,6 +36,7 @@ fun Fragment.attachNavOverflow(anchor: View) {
                 R.id.nav_connect     -> activity?.navigateToPage(MainPagerAdapter.PAGE_CONNECT)
                 R.id.nav_layout_list -> activity?.navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
                 R.id.nav_details     -> activity?.navigateToPage(MainPagerAdapter.PAGE_DETAILS)
+                R.id.nav_trip_summary-> activity?.navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
                 R.id.nav_settings    -> {
                     if (currentPhase == TripPhase.IDLE) {
                         activity?.navigateToPage(MainPagerAdapter.PAGE_SETTINGS)

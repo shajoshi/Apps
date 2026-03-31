@@ -7,30 +7,33 @@ import com.sj.obd2app.ui.connect.ConnectFragment
 import com.sj.obd2app.ui.details.DetailsFragment
 import com.sj.obd2app.ui.settings.SettingsFragment
 import com.sj.obd2app.ui.trip.TripFragment
+import com.sj.obd2app.ui.tripsummary.TripSummaryFragment
 
 /**
- * ViewPager2 adapter hosting the 5 main screens:
- * 0 = Connect, 1 = Trip, 2 = Dashboards, 3 = Details, 4 = Settings
+ * ViewPager2 adapter hosting the 6 main screens:
+ * 0 = Connect, 1 = Trip, 2 = Dashboards, 3 = Details, 4 = Trip Summary, 5 = Settings
  */
 class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
 
     companion object {
-        const val PAGE_CONNECT    = 0
-        const val PAGE_TRIP       = 1
-        const val PAGE_DASHBOARDS = 2
-        const val PAGE_DETAILS    = 3
-        const val PAGE_SETTINGS   = 4
-        const val PAGE_COUNT      = 5
+        const val PAGE_CONNECT      = 0
+        const val PAGE_TRIP         = 1
+        const val PAGE_DASHBOARDS   = 2
+        const val PAGE_DETAILS      = 3
+        const val PAGE_TRIP_SUMMARY = 4
+        const val PAGE_SETTINGS     = 5
+        const val PAGE_COUNT        = 6
     }
 
     override fun getItemCount(): Int = PAGE_COUNT
 
     override fun createFragment(position: Int): Fragment = when (position) {
-        PAGE_CONNECT    -> ConnectFragment()
-        PAGE_TRIP       -> TripFragment()
-        PAGE_DASHBOARDS -> DashboardsHostFragment()
-        PAGE_DETAILS    -> DetailsFragment()
-        PAGE_SETTINGS   -> SettingsFragment()
-        else            -> ConnectFragment()
+        PAGE_CONNECT      -> ConnectFragment()
+        PAGE_TRIP         -> TripFragment()
+        PAGE_DASHBOARDS   -> DashboardsHostFragment()
+        PAGE_DETAILS      -> DetailsFragment()
+        PAGE_TRIP_SUMMARY -> TripSummaryFragment()
+        PAGE_SETTINGS     -> SettingsFragment()
+        else              -> ConnectFragment()
     }
 }

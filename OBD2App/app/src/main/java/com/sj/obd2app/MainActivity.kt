@@ -10,8 +10,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
+import androidx.drawerlayout.widget.DrawerLayout
+import com.google.android.material.navigation.NavigationView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -109,10 +112,10 @@ class MainActivity : AppCompatActivity() {
             Obd2ServiceProvider.initBluetooth(this)
         }
 
-        // Set up ViewPager2 with 5 pages
+        // Set up ViewPager2 with 6 pages
         viewPager = binding.root.findViewById(R.id.main_view_pager)
         viewPager.adapter = MainPagerAdapter(this)
-        viewPager.offscreenPageLimit = 2
+        viewPager.offscreenPageLimit = 3
 
         // Prevent swipe navigation to Settings during active trips and when Dashboard is in edit mode
         viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
@@ -123,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                     val currentPage = viewPager.currentItem
                     val calculator = MetricsCalculator.getInstance(this@MainActivity)
                     
-                    android.util.Log.d("MainActivity", "Page changed to: $currentPage, trip phase: ${calculator.tripPhase.value}")
+                    android.util.Log.d("MainActivity", "Page changed to: $currentPage (Trip Summary=${currentPage == MainPagerAdapter.PAGE_TRIP_SUMMARY}), trip phase: ${calculator.tripPhase.value}")
                     
                     // Check if trying to access Settings during active trip
                     if (currentPage == MainPagerAdapter.PAGE_SETTINGS) {
@@ -149,6 +152,9 @@ class MainActivity : AppCompatActivity() {
                 viewPager.isUserInputEnabled = !isEditMode
             }
         }
+        
+        // Set up navigation drawer for large tablets
+        setupNavigationDrawer()
 
         // Start GPS tracking
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
@@ -206,6 +212,50 @@ class MainActivity : AppCompatActivity() {
     private fun navigateToLayoutList() {
         viewPager.setCurrentItem(MainPagerAdapter.PAGE_DASHBOARDS, true)
     }
+    
+    private fun setupNavigationDrawer() {
+        // Check if navigation drawer exists in this layout
+        val navView: NavigationView? = binding.root.findViewById(R.id.nav_view)
+        val drawerLayout: DrawerLayout? = binding.root.findViewById(R.id.drawer_layout)
+        
+        if (navView != null && drawerLayout != null) {
+            navView.setNavigationItemSelectedListener { item ->
+                when (item.itemId) {
+                    R.id.nav_connect -> {
+                        navigateToPage(MainPagerAdapter.PAGE_CONNECT)
+                        drawerLayout.closeDrawers()
+                        true
+                    }
+                    R.id.nav_dashboard -> {
+                        navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
+                        drawerLayout.closeDrawers()
+                        true
+                    }
+                    R.id.nav_details -> {
+                        navigateToPage(MainPagerAdapter.PAGE_DETAILS)
+                        drawerLayout.closeDrawers()
+                        true
+                    }
+                    R.id.nav_trip_summary -> {
+                        navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                        drawerLayout.closeDrawers()
+                        true
+                    }
+                    R.id.nav_layout_list -> {
+                        navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
+                        drawerLayout.closeDrawers()
+                        true
+                    }
+                    R.id.nav_settings -> {
+                        navigateToPage(MainPagerAdapter.PAGE_SETTINGS)
+                        drawerLayout.closeDrawers()
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+    }
 
     /**
      * Called by ConnectFragment when OBD connection is established.
@@ -218,6 +268,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Navigate to a specific page by index — used by TopBarHelper overflow menu. */
     fun navigateToPage(pageIndex: Int) {
+        Log.d("MainActivity", "navigateToPage: Navigating to page $pageIndex")
         // Check if trying to access Settings during active trip
         if (pageIndex == MainPagerAdapter.PAGE_SETTINGS) {
             val currentPhase = MetricsCalculator.getInstance(this).tripPhase.value
@@ -230,7 +281,9 @@ class MainActivity : AppCompatActivity() {
                 return
             }
         }
+        Log.d("MainActivity", "navigateToPage: Setting ViewPager to page $pageIndex")
         viewPager.setCurrentItem(pageIndex, true)
+        Log.d("MainActivity", "navigateToPage: ViewPager current item is now ${viewPager.currentItem}")
     }
 
     private fun requestBluetoothPermissions() {
