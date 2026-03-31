@@ -6,7 +6,9 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.sj.obd2app.metrics.TrackFileMapParser
 import com.sj.obd2app.metrics.TrackFileParser
+import com.sj.obd2app.ui.tripsummary.TripSelectionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -149,6 +151,17 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
                         fileItem.name
                     )
                     if (parsed != null) {
+                        val mapPath = TrackFileMapParser.parseTrackPath(getApplication(), fileItem.uri, fileItem.name)
+                        if (mapPath != null) {
+                            TripSelectionStore.setSelectedTrack(
+                                TripSelectionStore.SelectedTrack(
+                                    fileName = fileItem.name,
+                                    uri = fileItem.uri,
+                                    lastSample = parsed.lastSample,
+                                    samples = mapPath.samples
+                                )
+                            )
+                        }
                         extractSummaryData(fileItem.name, parsed.vehicleProfile, parsed.lastSample)
                     } else {
                         null

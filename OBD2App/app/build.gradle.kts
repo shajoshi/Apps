@@ -90,6 +90,7 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.androidx.viewpager2)
     implementation(libs.androidx.documentfile)
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0D1117"
+    android:orientation="vertical">
+
+    <include
+        android:id="@+id/top_bar_include"
+        layout="@layout/include_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp" />
+
+    <TextView
+        android:id="@+id/tv_track_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="12dp"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="middle"
+        android:text="Track" />
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/map_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/tv_cursor_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="12dp"
+        android:textColor="#AAAAAA"
+        android:textSize="13sp"
+        android:text="Sample 1 / 1" />
+
+    <SeekBar
+        android:id="@+id/seek_route"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/btn_details"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Details" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp"
+        android:gravity="center"
+        android:textColor="#AAAAAA"
+        android:visibility="gone"
+        android:text="No map data" />
+
+</LinearLayout>

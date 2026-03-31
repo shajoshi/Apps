@@ -41,6 +41,16 @@
         android:visibility="gone" />
 
     <ImageButton
+        android:id="@+id/btn_top_map"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Show on map"
+        android:src="@android:drawable/ic_menu_mapmode"
+        android:tint="#4FC3F7"
+        android:visibility="gone" />
+
+    <ImageButton
         android:id="@+id/btn_top_overflow"
         android:layout_width="44dp"
         android:layout_height="44dp"

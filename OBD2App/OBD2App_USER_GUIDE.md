@@ -73,7 +73,15 @@ OBD2 Viewer transforms your Android phone into a powerful vehicle diagnostics to
 - **Satellite count**: Shows GPS signal quality
 - **Speed validation**: Cross-checks OBD speed vs GPS speed
 
-### **📱 Accelerometer Analysis** (Optional)
+### **�️ Trip Map View**
+- **Visual trip tracking**: View recorded trips on OpenStreetMap
+- **Complete route**: Shows full trip path with start and end markers
+- **Interactive scrub bar**: Move cursor along the trip timeline
+- **Sample details**: Tap "Details" to view full JSON data at any point
+- **GPSLogger-style cursor**: Black marker with white ring for visibility
+- **Color-coded markers**: Green start, red end markers with white borders
+
+### **� Accelerometer Analysis** (Optional)
 - **Road quality tracking**: Detects bumps and potholes
 - **G-force measurement**: Forward/lateral/vertical acceleration
 - **Lean angle**: Vehicle tilt during cornering
@@ -90,6 +98,8 @@ Swipe between 5 main screens or use the bottom navigation bar:
 3. **Dashboards** — Customizable gauge layouts
 4. **Details** — Full OBD-II parameter table
 5. **Settings** — Vehicle profiles and preferences
+
+**Map View** is accessible from the Trip Summary screen after recording a trip.
 
 ### **Recording a Trip**
 
@@ -108,6 +118,26 @@ Swipe between 5 main screens or use the bottom navigation bar:
 - Tap **"Stop Trip"** to end recording
 - Trip log is automatically saved (if logging enabled in Settings)
 - View trip summary before closing
+
+### **Viewing Trip on Map**
+
+**Open Map View:**
+1. After stopping a trip, view the Trip Summary screen
+2. Tap the **map icon** in the top bar
+3. Map loads showing your complete trip route
+
+**Using Map View:**
+- **Green marker**: Trip start point
+- **Red marker**: Trip end point  
+- **Black cursor**: Current position on timeline
+- **Scrub bar**: Drag to move along trip timeline
+- **Details button**: View full JSON data at cursor position
+- **Back navigation**: Use Android back button to return to Trip Summary
+
+**Sample Details:**
+- Tap "Details" to see complete sensor data at any point
+- Scroll through JSON data with vertical scrollbar
+- Copy JSON text to clipboard using "Copy JSON" button
 
 ### **Creating Custom Dashboards**
 
@@ -211,6 +241,17 @@ Swipe between 5 main screens or use the bottom navigation bar:
 - Close other GPS apps running in background
 - Limit custom PID polling frequency
 
+**Map not showing track?**
+- Ensure trip had GPS data during recording
+- Check if GPS was enabled during trip
+- Verify trip file contains valid coordinates
+- Try reopening Map View from Trip Summary
+
+**Map tiles not loading?**
+- Check internet connection (required for OpenStreetMap tiles)
+- Wait for tiles to load on slow connections
+- Try panning/zooming to refresh tile cache
+
 ---
 
 ## 📁 Trip Logs
@@ -234,6 +275,7 @@ Swipe between 5 main screens or use the bottom navigation bar:
 | **Bluetooth** | Connect to OBD-II adapter |
 | **Location** | GPS tracking for distance/speed + required for Bluetooth scanning on Android 12+ |
 | **Foreground Service** | Keep trip recording active in background |
+| **Internet** | Load OpenStreetMap tiles for Map View |
 
 **Privacy:** All data stays on your device. No data is sent to external servers.
 
@@ -299,6 +341,18 @@ A: Yes, you can configure PIDs from different ECUs (engine, transmission, ABS, e
 *Q: Will custom PIDs affect app performance?*  
 A: Custom PIDs are polled at a slower rate to minimize impact on performance.
 
+*Q: Can I view my trips on a map?*  
+A: Yes! After recording a trip, open Trip Summary and tap the map icon to view your route on OpenStreetMap.
+
+*Q: Why is my trip track not showing on the map?*  
+A: Ensure GPS was enabled during the trip and that the trip contains valid GPS coordinates.
+
+*Q: Do I need internet for Map View?*  
+A: Yes, Map View requires an internet connection to load OpenStreetMap tiles. The GPS track data itself is stored locally.
+
+*Q: Can I export trip data from Map View?*  
+A: You can copy individual sample JSON data using the Details button. For full trip export, enable logging in Settings.
+
 ---
 
 ## 🎯 Quick Reference Card
@@ -309,6 +363,9 @@ A: Custom PIDs are polled at a slower rate to minimize impact on performance.
 | **Start trip** | Trip tab → Start Trip button |
 | **Pause trip** | Trip tab → Pause button |
 | **Stop trip** | Trip tab → Stop Trip button |
+| **View trip on map** | Trip Summary → Tap map icon |
+| **Navigate map** | Drag scrub bar to move cursor |
+| **View sample data** | Map View → Details button |
 | **View live data** | Details tab (full table) or Dashboards tab (gauges) |
 | **Create dashboard** | Dashboards → ⋮ menu → New Layout |
 | **Add vehicle** | Settings → + Add Profile |

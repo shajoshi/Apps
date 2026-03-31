@@ -16,6 +16,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.sj.obd2app.MainActivity
+import com.sj.obd2app.MainPagerAdapter
 import com.sj.obd2app.databinding.FragmentTripSummaryBinding
 import com.sj.obd2app.databinding.ItemTrackFileBinding
 import com.sj.obd2app.settings.AppSettings
@@ -84,11 +86,20 @@ class TripSummaryFragment : Fragment() {
 
         binding.topBarInclude.txtTopBarTitle.text = "Trip Summary"
         attachNavOverflow(binding.topBarInclude.btnTopOverflow)
+        binding.topBarInclude.btnTopMap.visibility = View.VISIBLE
         
         // Setup back button click handler
         binding.topBarInclude.btnTopBack.setOnClickListener {
             // Clear summary to go back to file list
             viewModel.clearSummary()
+        }
+
+        binding.topBarInclude.btnTopMap.setOnClickListener {
+            if (viewModel.summary.value != null) {
+                (activity as? MainActivity)?.navigateToPage(MainPagerAdapter.PAGE_MAP_VIEW)
+            } else {
+                Toast.makeText(requireContext(), "Select a track file first", Toast.LENGTH_SHORT).show()
+            }
         }
 
         setupRecyclerView()
@@ -145,6 +156,7 @@ class TripSummaryFragment : Fragment() {
                     binding.cardFileList.visibility = View.GONE
                     // Show back button when viewing summary
                     binding.topBarInclude.btnTopBack.visibility = View.VISIBLE
+                    binding.topBarInclude.btnTopMap.visibility = View.VISIBLE
                     Log.d(TAG, "observeViewModel: Set layoutSummary visibility to VISIBLE, current: ${binding.layoutSummary.visibility}")
                 } else {
                     Log.d(TAG, "observeViewModel: Hiding summary layout")
@@ -155,6 +167,7 @@ class TripSummaryFragment : Fragment() {
                     }
                     // Hide back button when viewing file list
                     binding.topBarInclude.btnTopBack.visibility = View.GONE
+                    binding.topBarInclude.btnTopMap.visibility = View.GONE
                     Log.d(TAG, "observeViewModel: Set layoutSummary visibility to GONE, current: ${binding.layoutSummary.visibility}")
                 }
             }
