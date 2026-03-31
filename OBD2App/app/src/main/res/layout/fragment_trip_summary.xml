@@ -117,7 +117,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_marginTop="8dp"
-            android:text="Loading trip summary..."
+            android:text="Loading track files..."
             android:textColor="#AAAAAA"
             android:textSize="14sp"
             android:visibility="gone" />

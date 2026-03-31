@@ -175,6 +175,15 @@ class TripSummaryFragment : Fragment() {
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.loadingType.collect { loadingType ->
+                binding.tvLoadingMessage.text = when (loadingType) {
+                    TripSummaryLoadingType.FILE_LIST -> "Loading track files..."
+                    TripSummaryLoadingType.TRIP_SUMMARY -> "Loading track summary..."
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
             viewModel.error.collect { error ->
                 if (error != null) {
                     binding.tvError.text = error

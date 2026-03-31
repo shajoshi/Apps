@@ -45,6 +45,11 @@ data class TripSummaryData(
     val pctIdle: Float
 )
 
+enum class TripSummaryLoadingType {
+    FILE_LIST,
+    TRIP_SUMMARY
+}
+
 class TripSummaryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val TAG = "TripSummaryViewModel"
@@ -57,6 +62,9 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _loadingType = MutableStateFlow(TripSummaryLoadingType.FILE_LIST)
+    val loadingType: StateFlow<TripSummaryLoadingType> = _loadingType
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
@@ -71,6 +79,7 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
         Log.d(TAG, "listTrackFiles: Starting file listing for URI: $directoryUri")
         viewModelScope.launch {
             _isLoading.value = true
+            _loadingType.value = TripSummaryLoadingType.FILE_LIST
             _error.value = null
             
             try {
@@ -128,6 +137,7 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
     fun loadTrackFile(fileItem: TrackFileItem) {
         viewModelScope.launch {
             _isLoading.value = true
+            _loadingType.value = TripSummaryLoadingType.TRIP_SUMMARY
             _error.value = null
             _summary.value = null
 

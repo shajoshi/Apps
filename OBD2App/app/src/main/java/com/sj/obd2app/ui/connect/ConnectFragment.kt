@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -35,6 +36,7 @@ class ConnectFragment : Fragment() {
     private lateinit var viewModel: ConnectViewModel
     private var sectionedAdapter: SectionedDeviceAdapter? = null
     private var receiverRegistered = false
+    private var wasScanning = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -165,6 +167,12 @@ class ConnectFragment : Fragment() {
             }
 
             viewModel.isScanning.observe(viewLifecycleOwner) { scanning ->
+                if (scanning && !wasScanning) {
+                    Toast.makeText(requireContext(), "Bluetooth Scan started", Toast.LENGTH_SHORT).show()
+                } else if (!scanning && wasScanning) {
+                    Toast.makeText(requireContext(), "Bluetooth Scan ended", Toast.LENGTH_SHORT).show()
+                }
+                wasScanning = scanning
                 binding.btnScan.alpha = if (scanning) 0.4f else 1.0f
                 binding.btnScan.isEnabled = !scanning
             }
@@ -285,6 +293,7 @@ class ConnectFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        wasScanning = false
         if (receiverRegistered) {
             try { 
                 requireContext().unregisterReceiver(viewModel.discoveryReceiver) 
