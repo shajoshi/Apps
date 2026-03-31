@@ -77,15 +77,23 @@ internal class TripState {
         tripDistanceKm = (preciseDistanceM / 1000.0).toFloat()
         tripFuelUsedL = (preciseFuelUsedMl / 1000.0).toFloat()
 
-        // Time buckets (moving = speed > 2 km/h)
-        if (speedKmh > 2f) {
-            movingTimeSec += (dtSec).toLong()
-        } else {
-            stoppedTimeSec += (dtSec).toLong()
+        // Time buckets for trip summary
+        val dtSecLong = (dtSec).toLong()
+        when {
+            speedKmh > 2f -> {
+                movingTimeSec += dtSecLong
+            }
+            speedKmh > 0f -> {
+                // Idling: engine running but vehicle not moving (0 < speed <= 2 km/h)
+                stoppedTimeSec += dtSecLong
+            }
+            else -> {
+                // Completely stopped: speed = 0
+                stoppedTimeSec += dtSecLong
+            }
         }
 
-        // Trip-level drive mode time accumulation
-        val dtSecLong = (dtSec).toLong()
+        // Trip-level drive mode time accumulation (more detailed classification)
         when {
             speedKmh <= 2f  -> idleTimeSec += dtSecLong
             speedKmh <= 60f -> cityTimeSec += dtSecLong
