@@ -71,16 +71,22 @@ class MapViewFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        binding.mapView.onResume()
-        bindSelectedTrack()
+        if (_binding != null) {
+            binding.mapView.onResume()
+            bindSelectedTrack()
+        }
     }
 
     private fun setupMap() {
-        binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
-        binding.mapView.setMultiTouchControls(true)
+        if (_binding != null) {
+            binding.mapView.setTileSource(TileSourceFactory.MAPNIK)
+            binding.mapView.setMultiTouchControls(true)
+        }
     }
 
     private fun bindSelectedTrack() {
+        if (_binding == null) return
+        
         val track = viewModel.selectedTrack
         if (track == null) {
             showEmptyState("No track selected")
@@ -114,6 +120,7 @@ class MapViewFragment : Fragment() {
     }
 
     private fun showEmptyState(message: String) {
+        if (_binding == null) return
         binding.tvEmptyState.visibility = View.VISIBLE
         binding.tvEmptyState.text = message
         binding.seekRoute.isEnabled = false
@@ -131,6 +138,8 @@ class MapViewFragment : Fragment() {
     }
 
     private fun renderRoute() {
+        if (_binding == null) return
+        
         routePolyline = Polyline().apply {
             setPoints(pathPoints)
             outlinePaint.color = 0xFF2F80ED.toInt()
@@ -158,6 +167,8 @@ class MapViewFragment : Fragment() {
     }
 
     private fun setupCursor() {
+        if (_binding == null) return
+        
         cursorMarker = Marker(binding.mapView).apply {
             position = pathPoints.first()
             title = "Cursor"
@@ -236,6 +247,8 @@ class MapViewFragment : Fragment() {
     }
 
     private fun setupSeekBar() {
+        if (_binding == null) return
+        
         binding.seekRoute.max = (pathPoints.size - 1).coerceAtLeast(0)
         binding.seekRoute.progress = 0
         binding.seekRoute.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -248,7 +261,7 @@ class MapViewFragment : Fragment() {
     }
 
     private fun updateCursor(index: Int) {
-        if (pathPoints.isEmpty()) return
+        if (_binding == null || pathPoints.isEmpty()) return
         sampleIndex = index.coerceIn(0, pathPoints.lastIndex)
         binding.seekRoute.progress = sampleIndex
         val point = pathPoints[sampleIndex]
@@ -265,7 +278,9 @@ class MapViewFragment : Fragment() {
     }
 
     override fun onPause() {
-        binding.mapView.onPause()
+        if (_binding != null) {
+            binding.mapView.onPause()
+        }
         super.onPause()
     }
 
