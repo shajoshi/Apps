@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 /**
  * Attaches a navigation overflow PopupMenu to the given anchor view.
  * Navigates via the main ViewPager2 hosted in MainActivity.
- * Settings navigation is disabled during active trips (RUNNING or PAUSED).
+ * Settings, Trip Summary, and Map View are disabled during active trips.
  */
 fun Fragment.attachNavOverflow(anchor: View) {
     anchor.setOnClickListener {
@@ -25,9 +25,11 @@ fun Fragment.attachNavOverflow(anchor: View) {
         val metricsCalculator = MetricsCalculator.getInstance(requireContext())
         val currentPhase = runBlocking { metricsCalculator.tripPhase.value }
         
-        // Disable Settings menu item during active trips
-        val settingsItem = popup.menu.findItem(R.id.nav_settings)
-        settingsItem.isEnabled = currentPhase == TripPhase.IDLE
+        val isTripActive = currentPhase != TripPhase.IDLE
+
+        // Disable secondary destinations during active trips so users can see what is unavailable.
+        popup.menu.findItem(R.id.nav_trip_summary)?.isEnabled = !isTripActive
+        popup.menu.findItem(R.id.nav_settings)?.isEnabled = !isTripActive
         
         popup.setOnMenuItemClickListener { item ->
             val activity = requireActivity() as? MainActivity
@@ -36,9 +38,19 @@ fun Fragment.attachNavOverflow(anchor: View) {
                 R.id.nav_connect     -> activity?.navigateToPage(MainPagerAdapter.PAGE_CONNECT)
                 R.id.nav_layout_list -> activity?.navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
                 R.id.nav_details     -> activity?.navigateToPage(MainPagerAdapter.PAGE_DETAILS)
-                R.id.nav_trip_summary-> activity?.navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                R.id.nav_trip_summary-> {
+                    if (!isTripActive) {
+                        activity?.navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                    } else {
+                        Toast.makeText(
+                            requireContext(),
+                            "Trip Summary is not accessible during an active trip.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
                 R.id.nav_settings    -> {
-                    if (currentPhase == TripPhase.IDLE) {
+                    if (!isTripActive) {
                         activity?.navigateToPage(MainPagerAdapter.PAGE_SETTINGS)
                     } else {
                         Toast.makeText(

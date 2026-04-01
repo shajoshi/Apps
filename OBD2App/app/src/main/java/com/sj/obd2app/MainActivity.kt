@@ -23,6 +23,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
+import androidx.recyclerview.widget.RecyclerView
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.ActivityMainBinding
 import com.sj.obd2app.gps.GpsDataSource
@@ -34,8 +35,6 @@ import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfileRepository
 import com.sj.obd2app.storage.AppDataDirectory
 import com.sj.obd2app.storage.DataMigration
-import com.sj.obd2app.ui.mapview.MapViewFragment
-import com.sj.obd2app.ui.tripsummary.TripSummaryFragment
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -53,6 +52,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewPager: ViewPager2
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var lastPageItem: Int = MainPagerAdapter.PAGE_CONNECT
+    private var programmaticPageChange = false
+    private var detailsSwipeStartX = 0f
+    private var detailsSwipeStartY = 0f
+    private var blockingDetailsSwipe = false
 
     // Bluetooth enable request launcher
     @SuppressLint("MissingPermission")
@@ -119,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         viewPager = binding.root.findViewById(R.id.main_view_pager)
         viewPager.adapter = MainPagerAdapter(this)
         viewPager.offscreenPageLimit = 3
+        blockSwipeFromDetailsPage()
 
         // Prevent swipe navigation to Settings during active trips and when Dashboard is in edit mode
         viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
@@ -130,35 +134,31 @@ class MainActivity : AppCompatActivity() {
                     val calculator = MetricsCalculator.getInstance(this@MainActivity)
                     
                     android.util.Log.d("MainActivity", "Page changed to: $currentPage (Trip Summary=${currentPage == MainPagerAdapter.PAGE_TRIP_SUMMARY}), trip phase: ${calculator.tripPhase.value}")
-                    
-                    // Block swipe access to Map View; it must be opened from Trip Summary only.
-                    if (currentPage == MainPagerAdapter.PAGE_MAP_VIEW && lastPageItem != MainPagerAdapter.PAGE_TRIP_SUMMARY) {
-                        android.util.Log.w("MainActivity", "Blocking swipe access to Map View")
+
+                    val wasProgrammatic = programmaticPageChange
+                    programmaticPageChange = false
+
+                    val swipeBlockedPage = currentPage == MainPagerAdapter.PAGE_TRIP_SUMMARY ||
+                        currentPage == MainPagerAdapter.PAGE_MAP_VIEW ||
+                        currentPage == MainPagerAdapter.PAGE_SETTINGS
+
+                    if (swipeBlockedPage && !wasProgrammatic) {
+                        android.util.Log.w("MainActivity", "Blocking swipe access to secondary page: $currentPage")
                         viewPager.setCurrentItem(lastPageItem, false)
                         Toast.makeText(
                             this@MainActivity,
-                            "Map View is only accessible when a trip log file is selected in Trip Summary",
+                            "Use the 3-dot menu to open this page.",
                             Toast.LENGTH_SHORT
                         ).show()
                         return
                     }
-                    
-                    // Check if trying to access Settings during active trip
-                    if (currentPage == MainPagerAdapter.PAGE_SETTINGS) {
-                        val currentPhase = calculator.tripPhase.value
-                        if (currentPhase != TripPhase.IDLE) {
-                            android.util.Log.d("MainActivity", "Blocking Settings access during trip, navigating back to Trip")
-                            // Navigate back to Trip page and show message
-                            viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP, false)
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Settings not accessible during active trip. Please stop or complete the trip first.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
 
                     lastPageItem = currentPage
+                    viewPager.isUserInputEnabled = currentPage !in setOf(
+                        MainPagerAdapter.PAGE_TRIP_SUMMARY,
+                        MainPagerAdapter.PAGE_MAP_VIEW,
+                        MainPagerAdapter.PAGE_SETTINGS
+                    )
                 }
             }
         })
@@ -210,11 +210,55 @@ class MainActivity : AppCompatActivity() {
 
         // Default to Connect screen
         viewPager.setCurrentItem(MainPagerAdapter.PAGE_CONNECT, false)
+        viewPager.isUserInputEnabled = true
 
         // Defer BT init until after NavHostFragment has attached its NavController
         val btManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
         bluetoothAdapter = btManager?.adapter
         binding.root.post { requestBluetoothPermissions() }
+    }
+
+    private fun blockSwipeFromDetailsPage() {
+        val recyclerView = viewPager.getChildAt(0) as? RecyclerView ?: return
+        recyclerView.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
+                if (viewPager.currentItem != MainPagerAdapter.PAGE_DETAILS) {
+                    blockingDetailsSwipe = false
+                    return false
+                }
+
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        detailsSwipeStartX = e.x
+                        detailsSwipeStartY = e.y
+                        blockingDetailsSwipe = false
+                    }
+
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val dx = e.x - detailsSwipeStartX
+                        val dy = e.y - detailsSwipeStartY
+                        val horizontalSwipe = kotlin.math.abs(dx) > kotlin.math.abs(dy)
+
+                        // Block leftward swipe from Details toward Trip Summary.
+                        if (horizontalSwipe && dx < 0 && kotlin.math.abs(dx) > 12f) {
+                            blockingDetailsSwipe = true
+                            return true
+                        }
+                    }
+
+                    android.view.MotionEvent.ACTION_UP,
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        blockingDetailsSwipe = false
+                    }
+                }
+
+                return blockingDetailsSwipe
+            }
+
+            override fun onTouchEvent(rv: RecyclerView, e: android.view.MotionEvent) = Unit
+
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) = Unit
+        })
     }
 
     private fun onBluetoothEnabled() {
@@ -236,6 +280,10 @@ class MainActivity : AppCompatActivity() {
         val drawerLayout: DrawerLayout? = binding.root.findViewById(R.id.drawer_layout)
         
         if (navView != null && drawerLayout != null) {
+            val isTripActive = MetricsCalculator.getInstance(this).tripPhase.value != TripPhase.IDLE
+            navView.menu.findItem(R.id.nav_trip_summary)?.isEnabled = !isTripActive
+            navView.menu.findItem(R.id.nav_settings)?.isEnabled = !isTripActive
+
             navView.setNavigationItemSelectedListener { item ->
                 when (item.itemId) {
                     R.id.nav_connect -> {
@@ -254,17 +302,28 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.nav_trip_summary -> {
-                        navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
-                        drawerLayout.closeDrawers()
-                        true
-                    }
-                    R.id.nav_layout_list -> {
-                        navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
+                        if (isTripActive) {
+                            Toast.makeText(
+                                this,
+                                "Trip Summary is not accessible during an active trip.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                        }
                         drawerLayout.closeDrawers()
                         true
                     }
                     R.id.nav_settings -> {
-                        navigateToPage(MainPagerAdapter.PAGE_SETTINGS)
+                        if (isTripActive) {
+                            Toast.makeText(
+                                this,
+                                "Settings is not accessible during an active trip.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            navigateToPage(MainPagerAdapter.PAGE_SETTINGS)
+                        }
                         drawerLayout.closeDrawers()
                         true
                     }
@@ -287,6 +346,22 @@ class MainActivity : AppCompatActivity() {
     fun navigateToPage(pageIndex: Int) {
         Log.d("MainActivity", "navigateToPage: Navigating to page $pageIndex")
 
+        val currentPhase = MetricsCalculator.getInstance(this).tripPhase.value
+        val isTripActive = currentPhase != TripPhase.IDLE
+
+        if (pageIndex == MainPagerAdapter.PAGE_TRIP_SUMMARY ||
+            pageIndex == MainPagerAdapter.PAGE_MAP_VIEW ||
+            pageIndex == MainPagerAdapter.PAGE_SETTINGS) {
+            if (isTripActive) {
+                Toast.makeText(
+                    this,
+                    "This page is not accessible during an active trip.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+        }
+
         // Special handling for Map View - only allow access from Trip Summary
         if (pageIndex == MainPagerAdapter.PAGE_MAP_VIEW && viewPager.currentItem != MainPagerAdapter.PAGE_TRIP_SUMMARY) {
             Log.w("MainActivity", "Map View access denied - not from Trip Summary page")
@@ -298,20 +373,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
-        // Check if trying to access Settings during active trip
-        if (pageIndex == MainPagerAdapter.PAGE_SETTINGS) {
-            val currentPhase = MetricsCalculator.getInstance(this).tripPhase.value
-            if (currentPhase != TripPhase.IDLE) {
-                Toast.makeText(
-                    this,
-                    "Settings not accessible during active trip. Please stop or complete the trip first.",
-                    Toast.LENGTH_LONG
-                ).show()
-                return
-            }
-        }
         Log.d("MainActivity", "navigateToPage: Setting ViewPager to page $pageIndex")
         lastPageItem = viewPager.currentItem
+        programmaticPageChange = true
         viewPager.setCurrentItem(pageIndex, true)
         Log.d("MainActivity", "navigateToPage: ViewPager current item is now ${viewPager.currentItem}")
     }

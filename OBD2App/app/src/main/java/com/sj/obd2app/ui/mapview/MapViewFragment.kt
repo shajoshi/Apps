@@ -116,10 +116,14 @@ class MapViewFragment : Fragment() {
             return
         }
 
-        renderRoute()
-        setupCursor()
-        setupSeekBar()
-        updateCursor(0)
+        binding.mapView.post {
+            if (_binding == null) return@post
+
+            renderRoute()
+            setupCursor()
+            setupSeekBar()
+            updateCursor(0)
+        }
     }
 
     private fun showEmptyState(message: String) {

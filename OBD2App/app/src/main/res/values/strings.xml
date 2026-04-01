@@ -9,6 +9,7 @@
 
     <!-- Menu items -->
     <string name="menu_connect">Connect</string>
+    <string name="menu_dashboards">Dashboards</string>
     <string name="menu_dashboard">Dashboard</string>
     <string name="menu_details">Details</string>
     <string name="menu_settings">Settings</string>

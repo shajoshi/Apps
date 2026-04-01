@@ -5,21 +5,21 @@
         android:icon="@drawable/ic_details"
         android:title="Trip" />
     <item
-        android:id="@+id/nav_trip_summary"
-        android:icon="@drawable/ic_details"
-        android:title="Trip Summary" />
-    <item
         android:id="@+id/nav_connect"
         android:icon="@drawable/ic_bluetooth"
         android:title="@string/menu_connect" />
     <item
         android:id="@+id/nav_layout_list"
         android:icon="@drawable/ic_dashboard"
-        android:title="Saved Dashboards" />
+        android:title="@string/menu_dashboards" />
     <item
         android:id="@+id/nav_details"
         android:icon="@drawable/ic_details"
         android:title="@string/menu_details" />
+    <item
+        android:id="@+id/nav_trip_summary"
+        android:icon="@drawable/ic_details"
+        android:title="Trip Summary" />
     <item
         android:id="@+id/nav_settings"
         android:icon="@drawable/ic_settings_black_24dp"

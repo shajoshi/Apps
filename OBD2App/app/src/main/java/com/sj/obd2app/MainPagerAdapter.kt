@@ -13,7 +13,7 @@ import com.sj.obd2app.ui.tripsummary.TripSummaryFragment
 /**
  * ViewPager2 adapter hosting the 7 main screens:
  * 0 = Connect, 1 = Trip, 2 = Dashboards, 3 = Details, 4 = Trip Summary, 5 = Map View, 6 = Settings
- * Map View is only accessible via Trip Summary when a log file is selected
+ * Trip Summary, Map View, and Settings are accessed from overflow actions only.
  */
 class MainPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {
 
