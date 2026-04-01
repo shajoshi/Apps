@@ -55,6 +55,7 @@ class Step1WidgetTypePage : Fragment() {
             requireContext(), LinearLayoutManager.VERTICAL, false
         )
         val wizardSheet = parentFragment as? AddWidgetWizardSheet
+
         recyclerView.adapter = WidgetTypeAdapter(
             types = widgetTypes,
             labels = typeLabels,

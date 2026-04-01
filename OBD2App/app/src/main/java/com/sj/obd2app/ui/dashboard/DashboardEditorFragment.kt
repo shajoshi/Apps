@@ -899,6 +899,12 @@ class DashboardEditorFragment : Fragment() {
         "DERIVED_CO2"       -> m.avgCo2gPerKm
         "DERIVED_PCT_CITY"  -> m.pctCity
         "DERIVED_PCT_IDLE"  -> m.pctIdle
+        "DERIVED_POWER_ACCEL" -> m.powerAccelKw
+        "DERIVED_POWER_THERMO" -> m.powerThermoKw
+        "DERIVED_POWER_OBD" -> m.powerOBDKw
+        "DERIVED_POWER_ACCEL_BHP" -> m.powerAccelKw?.let { it * 1.34102f } // kW to BHP
+        "DERIVED_POWER_THERMO_BHP" -> m.powerThermoKw?.let { it * 1.34102f } // kW to BHP
+        "DERIVED_POWER_OBD_BHP" -> m.powerOBDKw?.let { it * 1.34102f } // kW to BHP
         else                -> null
     }
 

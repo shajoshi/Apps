@@ -10,6 +10,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.RectF
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -266,8 +269,15 @@ class MapViewFragment : Fragment() {
         binding.seekRoute.progress = sampleIndex
         val point = pathPoints[sampleIndex]
         cursorMarker?.position = point
+        
+        // Extract speed for display in cursor info
+        val track = viewModel.selectedTrack
+        val sample = track?.samples?.getOrNull(sampleIndex)
+        val obdSpeed = sample?.optJSONObject("obd")?.optDouble("speedKmh", 0.0) ?: 0.0
+        val speedText = "${obdSpeed.toInt()} km/h"
+        
         binding.mapView.invalidate()
-        binding.tvCursorInfo.text = "Sample ${sampleIndex + 1} / ${pathPoints.size}"
+        binding.tvCursorInfo.text = "Sample ${sampleIndex + 1} / ${pathPoints.size} • $speedText"
     }
 
     private fun showCurrentSampleDetails() {

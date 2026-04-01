@@ -42,7 +42,7 @@ class AddWidgetWizardSheet : BottomSheetDialogFragment() {
     private lateinit var dot2: View
     private lateinit var dot3: View
 
-    private val stepTitles = listOf("Choose Style", "Choose Metric", "Configure")
+    private val stepTitles = listOf("Choose Widget Style", "Choose Data Source", "Configure & Add")
 
     override fun onStart() {
         super.onStart()
@@ -99,15 +99,21 @@ class AddWidgetWizardSheet : BottomSheetDialogFragment() {
                 }
                 1 -> {
                     if (state.selectedMetric == null) {
-                        Toast.makeText(requireContext(), "Please select a data source", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), "Please select a metric", Toast.LENGTH_SHORT).show()
                         return@setOnClickListener
                     }
                     pager.currentItem = 2
                 }
                 2 -> {
+                    // Add the widget
                     commitAndDismiss()
                 }
             }
+        }
+
+        btnBack.setOnClickListener {
+            val cur = pager.currentItem
+            if (cur > 0) pager.currentItem = cur - 1
         }
 
         btnCancel.setOnClickListener { dismiss() }

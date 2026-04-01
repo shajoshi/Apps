@@ -34,6 +34,8 @@ import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfileRepository
 import com.sj.obd2app.storage.AppDataDirectory
 import com.sj.obd2app.storage.DataMigration
+import com.sj.obd2app.ui.mapview.MapViewFragment
+import com.sj.obd2app.ui.tripsummary.TripSummaryFragment
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -50,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var viewPager: ViewPager2
     private var bluetoothAdapter: BluetoothAdapter? = null
+    private var lastPageItem: Int = MainPagerAdapter.PAGE_CONNECT
 
     // Bluetooth enable request launcher
     @SuppressLint("MissingPermission")
@@ -112,7 +115,7 @@ class MainActivity : AppCompatActivity() {
             Obd2ServiceProvider.initBluetooth(this)
         }
 
-        // Set up ViewPager2 with 6 pages
+        // Set up ViewPager2 with 6 pages (Map View removed from swipeable pages)
         viewPager = binding.root.findViewById(R.id.main_view_pager)
         viewPager.adapter = MainPagerAdapter(this)
         viewPager.offscreenPageLimit = 3
@@ -128,6 +131,18 @@ class MainActivity : AppCompatActivity() {
                     
                     android.util.Log.d("MainActivity", "Page changed to: $currentPage (Trip Summary=${currentPage == MainPagerAdapter.PAGE_TRIP_SUMMARY}), trip phase: ${calculator.tripPhase.value}")
                     
+                    // Block swipe access to Map View; it must be opened from Trip Summary only.
+                    if (currentPage == MainPagerAdapter.PAGE_MAP_VIEW && lastPageItem != MainPagerAdapter.PAGE_TRIP_SUMMARY) {
+                        android.util.Log.w("MainActivity", "Blocking swipe access to Map View")
+                        viewPager.setCurrentItem(lastPageItem, false)
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Map View is only accessible when a trip log file is selected in Trip Summary",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return
+                    }
+                    
                     // Check if trying to access Settings during active trip
                     if (currentPage == MainPagerAdapter.PAGE_SETTINGS) {
                         val currentPhase = calculator.tripPhase.value
@@ -142,6 +157,8 @@ class MainActivity : AppCompatActivity() {
                             ).show()
                         }
                     }
+
+                    lastPageItem = currentPage
                 }
             }
         })
@@ -269,6 +286,18 @@ class MainActivity : AppCompatActivity() {
     /** Navigate to a specific page by index — used by TopBarHelper overflow menu. */
     fun navigateToPage(pageIndex: Int) {
         Log.d("MainActivity", "navigateToPage: Navigating to page $pageIndex")
+
+        // Special handling for Map View - only allow access from Trip Summary
+        if (pageIndex == MainPagerAdapter.PAGE_MAP_VIEW && viewPager.currentItem != MainPagerAdapter.PAGE_TRIP_SUMMARY) {
+            Log.w("MainActivity", "Map View access denied - not from Trip Summary page")
+            Toast.makeText(
+                this,
+                "Map View is only accessible when a trip log file is selected in Trip Summary",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        
         // Check if trying to access Settings during active trip
         if (pageIndex == MainPagerAdapter.PAGE_SETTINGS) {
             val currentPhase = MetricsCalculator.getInstance(this).tripPhase.value
@@ -282,6 +311,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         Log.d("MainActivity", "navigateToPage: Setting ViewPager to page $pageIndex")
+        lastPageItem = viewPager.currentItem
         viewPager.setCurrentItem(pageIndex, true)
         Log.d("MainActivity", "navigateToPage: ViewPager current item is now ${viewPager.currentItem}")
     }

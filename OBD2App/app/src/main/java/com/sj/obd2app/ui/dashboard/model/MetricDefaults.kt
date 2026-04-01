@@ -272,6 +272,44 @@ object MetricDefaults {
             majorTickInterval = 25f, minorTickCount = 4,
             warningThreshold = null, decimalPlaces = 0,
             displayUnit = "%", suggestedWidgetType = WidgetType.BAR_GAUGE_H
+        ),
+
+        // ── Derived — Power ───────────────────────────────────────
+        "DERIVED_POWER_ACCEL" to MetricConfig(
+            rangeMin = 0f, rangeMax = 300f,
+            majorTickInterval = 50f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "kW", suggestedWidgetType = WidgetType.DIAL
+        ),
+        "DERIVED_POWER_THERMO" to MetricConfig(
+            rangeMin = 0f, rangeMax = 300f,
+            majorTickInterval = 50f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "kW", suggestedWidgetType = WidgetType.DIAL
+        ),
+        "DERIVED_POWER_OBD" to MetricConfig(
+            rangeMin = 0f, rangeMax = 300f,
+            majorTickInterval = 50f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "kW", suggestedWidgetType = WidgetType.DIAL
+        ),
+        "DERIVED_POWER_ACCEL_BHP" to MetricConfig(
+            rangeMin = 0f, rangeMax = 400f,
+            majorTickInterval = 50f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "bhp", suggestedWidgetType = WidgetType.DIAL
+        ),
+        "DERIVED_POWER_THERMO_BHP" to MetricConfig(
+            rangeMin = 0f, rangeMax = 400f,
+            majorTickInterval = 50f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "bhp", suggestedWidgetType = WidgetType.DIAL
+        ),
+        "DERIVED_POWER_OBD_BHP" to MetricConfig(
+            rangeMin = 0f, rangeMax = 400f,
+            majorTickInterval = 50f, minorTickCount = 4,
+            warningThreshold = null, decimalPlaces = 1,
+            displayUnit = "bhp", suggestedWidgetType = WidgetType.DIAL
         )
     )
 

@@ -48,6 +48,7 @@ object AppSettings {
     private const val KEY_AUTO_SHARE_LOG            = "auto_share_log"
     private const val KEY_ACCELEROMETER_ENABLED     = "accelerometer_enabled"
     private const val KEY_ACTIVE_PROFILE_ID         = "active_profile_id"
+    private const val KEY_DEFAULT_LAYOUT_NAME       = "default_layout_name"
     const val KEY_AUTO_CONNECT                      = "auto_connect_last_device"
     private const val KEY_OBD_CONNECTION_ENABLED    = "obd_connection_enabled"
     private const val KEY_BT_LOGGING_ENABLED        = "bt_logging_enabled"
@@ -111,7 +112,7 @@ object AppSettings {
         val p = prefs(context)
         return SettingsData(
             activeProfileId = p.getString(KEY_ACTIVE_PROFILE_ID, null),
-            defaultLayoutName = null,
+            defaultLayoutName = p.getString(KEY_DEFAULT_LAYOUT_NAME, null),
             globalPollingDelayMs = p.getLong(KEY_GLOBAL_POLLING_DELAY_MS, DEFAULT_POLLING_DELAY_MS),
             globalCommandDelayMs = p.getLong(KEY_GLOBAL_COMMAND_DELAY_MS, DEFAULT_COMMAND_DELAY_MS),
             loggingEnabled = p.getBoolean(KEY_LOGGING_ENABLED, false),
@@ -176,6 +177,7 @@ object AppSettings {
         prefs(context).edit().apply {
             putBoolean(KEY_BT_LOGGING_ENABLED, settings.btLoggingEnabled)
             settings.activeProfileId?.let { putString(KEY_ACTIVE_PROFILE_ID, it) } ?: remove(KEY_ACTIVE_PROFILE_ID)
+            settings.defaultLayoutName?.let { putString(KEY_DEFAULT_LAYOUT_NAME, it) } ?: remove(KEY_DEFAULT_LAYOUT_NAME)
             putLong(KEY_GLOBAL_POLLING_DELAY_MS, settings.globalPollingDelayMs)
             putLong(KEY_GLOBAL_COMMAND_DELAY_MS, settings.globalCommandDelayMs)
             putBoolean(KEY_LOGGING_ENABLED, settings.loggingEnabled)

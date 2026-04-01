@@ -135,6 +135,14 @@ class Step2MetricPage : Fragment() {
                 DashboardMetric.DerivedMetric("DERIVED_CO2",       "Avg CO₂",               "g/km"),
                 DashboardMetric.DerivedMetric("DERIVED_PCT_CITY",  "% City Driving",        "%"),
                 DashboardMetric.DerivedMetric("DERIVED_PCT_IDLE",  "% Idle",                "%")
+            )),
+            Group("Derived — Power", listOf(
+                DashboardMetric.DerivedMetric("DERIVED_POWER_ACCEL", "Power (Accel)",       "kW"),
+                DashboardMetric.DerivedMetric("DERIVED_POWER_THERMO", "Power (Thermo)",      "kW"),
+                DashboardMetric.DerivedMetric("DERIVED_POWER_OBD",    "Power (OBD)",         "kW"),
+                DashboardMetric.DerivedMetric("DERIVED_POWER_ACCEL_BHP", "Power (Accel)",    "bhp"),
+                DashboardMetric.DerivedMetric("DERIVED_POWER_THERMO_BHP", "Power (Thermo)",   "bhp"),
+                DashboardMetric.DerivedMetric("DERIVED_POWER_OBD_BHP",    "Power (OBD)",      "bhp")
             ))
         )
         for (g in groups) {

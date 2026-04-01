@@ -18,6 +18,8 @@ import com.sj.obd2app.ui.dashboard.data.LayoutRepository
  */
 class DashboardsHostFragment : Fragment() {
 
+    private var hasAutoNavigatedToDefault = false
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -27,17 +29,27 @@ class DashboardsHostFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Only auto-navigate on first creation, not on config changes
         if (savedInstanceState != null) return
 
-        val repo = LayoutRepository(requireContext())
-        val defaultName = repo.getDefaultLayoutName() ?: return  // no default → stay on LayoutList
+        view.post { navigateToDefaultDashboardIfNeeded() }
+    }
 
-        // Get the child NavController and navigate to the editor with the default dashboard
+    override fun onResume() {
+        super.onResume()
+        navigateToDefaultDashboardIfNeeded()
+    }
+
+    private fun navigateToDefaultDashboardIfNeeded() {
+        if (hasAutoNavigatedToDefault) return
+
+        val repo = LayoutRepository(requireContext())
+        val defaultName = repo.getDefaultLayoutName() ?: return
+
         val navHost = childFragmentManager.findFragmentById(R.id.dashboards_nav_host) as? NavHostFragment
             ?: return
         val navController = navHost.navController
 
+        hasAutoNavigatedToDefault = true
         val bundle = Bundle().apply {
             putString("layout_name", defaultName)
             putString("mode", "view")
