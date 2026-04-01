@@ -124,6 +124,16 @@ class TripForegroundService : Service() {
         metrics: com.sj.obd2app.metrics.VehicleMetrics,
         obdState: Obd2Service.ConnectionState
     ) {
+        if (phase == TripPhase.IDLE) {
+            Log.d(TAG, "Trip ended, stopping foreground service")
+            if (isForeground) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                isForeground = false
+            }
+            stopSelf()
+            return
+        }
+
         val statusText = when (phase) {
             TripPhase.RUNNING -> "Trip in progress"
             TripPhase.PAUSED  -> "Trip paused"
