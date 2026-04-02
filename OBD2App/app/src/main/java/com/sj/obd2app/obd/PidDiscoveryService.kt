@@ -77,6 +77,8 @@ class PidDiscoveryService private constructor() {
         this.obdService = obdService
         _discoveredPids.value = emptyList()
         _consoleOutput.value = emptyList()
+
+        (obdService as? BluetoothObd2Service)?.setDiscoveryMode(true)
         
         discoveryJob = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -125,6 +127,9 @@ class PidDiscoveryService private constructor() {
             } catch (e: Exception) {
                 _discoveryState.value = DiscoveryState.ERROR
                 logConsole("\nDiscovery error: ${e.message}")
+            } finally {
+                (obdService as? BluetoothObd2Service)?.setDiscoveryMode(false)
+                discoveryJob = null
             }
         }
     }
@@ -135,6 +140,7 @@ class PidDiscoveryService private constructor() {
     fun stopDiscovery() {
         discoveryJob?.cancel()
         discoveryJob = null
+        (obdService as? BluetoothObd2Service)?.setDiscoveryMode(false)
         _discoveryState.value = DiscoveryState.CANCELLED
         logConsole("Stopping discovery...")
     }
@@ -148,6 +154,7 @@ class PidDiscoveryService private constructor() {
         _discoveredPids.value = emptyList()
         _consoleOutput.value = emptyList()
         _discoveryProgress.value = DiscoveryProgress()
+        obdService = null
     }
     
     /**

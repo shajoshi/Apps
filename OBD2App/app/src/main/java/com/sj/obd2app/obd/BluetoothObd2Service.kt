@@ -81,6 +81,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     // Connection health monitoring
     private var consecutiveFailures = 0
     private val MAX_CONSECUTIVE_FAILURES = 10  // ~2-3 seconds of failures
+    private var discoveryFailureBypassEnabled = false
     
     // Bluetooth connection logger removed - now using logcat only
 
@@ -217,10 +218,22 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         closeTransport()
         supportedPids = emptySet()
         consecutiveFailures = 0
+        discoveryFailureBypassEnabled = false
         _connectedDeviceName.value = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
         _obd2Data.value = emptyList()
         _connectionLog.value = emptyList()
+    }
+
+    /**
+     * Enable or disable discovery mode.
+     *
+     * While discovery is active, consecutive failures are expected and should not
+     * trigger the normal connection-loss cutoff.
+     */
+    fun setDiscoveryMode(enabled: Boolean) {
+        discoveryFailureBypassEnabled = enabled
+        consecutiveFailures = 0
     }
 
     /**
@@ -366,6 +379,10 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
                 // Check if we got any successful reads this cycle
                 if (cycleSuccessCount == 0) {
+                    if (discoveryFailureBypassEnabled) {
+                        continue
+                    }
+
                     consecutiveFailures++
                     android.util.Log.w(TAG, "Polling cycle failed, consecutive failures: $consecutiveFailures")
                     
