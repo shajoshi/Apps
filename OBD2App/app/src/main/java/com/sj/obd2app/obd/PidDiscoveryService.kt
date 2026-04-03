@@ -57,6 +57,7 @@ class PidDiscoveryService private constructor() {
         "2200".."22FF", // Skip some potentially dangerous ranges
         "2300".."23FF"
     )
+    private val discoveryInitCommands = listOf("ATE0", "ATL0", "ATS0")
     
     // Service references
     private var obdService: Obd2Service? = null
@@ -79,10 +80,15 @@ class PidDiscoveryService private constructor() {
         _consoleOutput.value = emptyList()
 
         (obdService as? BluetoothObd2Service)?.setDiscoveryMode(true)
-        
+
         discoveryJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 logConsole("Starting PID discovery...")
+                if (!initializeAdapterForDiscovery()) {
+                    logConsole("Discovery aborted: adapter initialization failed")
+                    _discoveryState.value = DiscoveryState.ERROR
+                    return@launch
+                }
                 logConsole("Headers: ${selectedHeaders.joinToString(", ")}")
                 logConsole("Modes: ${selectedModes.joinToString(", ")}")
                 
@@ -132,6 +138,27 @@ class PidDiscoveryService private constructor() {
                 discoveryJob = null
             }
         }
+    }
+    
+    /**
+     * Put the adapter into a clean discovery mode before scanning.
+     * Echo, linefeeds, and spaces can corrupt NO DATA responses and break parsing.
+     */
+    private suspend fun initializeAdapterForDiscovery(): Boolean {
+        for (command in discoveryInitCommands) {
+            val response = sendCommand(command)
+            if (response.contains("ERROR", ignoreCase = true) ||
+                response.contains("UNABLE", ignoreCase = true) ||
+                response.contains("?")) {
+                logConsole("$command -> FAILED: $response")
+                return false
+            }
+
+            logConsole("$command -> ${response.trim()}")
+            delay(100)
+        }
+
+        return true
     }
     
     /**
