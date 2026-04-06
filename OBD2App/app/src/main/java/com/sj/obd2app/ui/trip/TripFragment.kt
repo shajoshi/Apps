@@ -44,14 +44,8 @@ class TripFragment : Fragment() {
         binding.btnStart.setOnClickListener {
             when (viewModel.uiState.value.tripPhase) {
                 TripPhase.IDLE    -> viewModel.startTrip()
-                TripPhase.PAUSED  -> viewModel.resumeTrip()
                 else               -> { /* ignore */ }
             }
-        }
-        binding.btnPause.setOnClickListener {
-            val phase = viewModel.uiState.value.tripPhase
-            if (phase == TripPhase.RUNNING) viewModel.pauseTrip()
-            else viewModel.resumeTrip()
         }
         binding.btnStop.setOnClickListener {
             viewModel.stopTrip()
@@ -126,7 +120,6 @@ class TripFragment : Fragment() {
         binding.tvTripPhase.setTextColor(
             when (state.tripPhase) {
                 TripPhase.RUNNING -> Color.parseColor("#4CAF50")
-                TripPhase.PAUSED  -> Color.parseColor("#FFC107")
                 TripPhase.IDLE    -> Color.parseColor("#AAAAAA")
             }
         )
@@ -141,14 +134,6 @@ class TripFragment : Fragment() {
             }
             TripPhase.RUNNING -> {
                 binding.btnStart.visibility = View.GONE
-                binding.btnPause.visibility = View.VISIBLE
-                binding.btnPause.text = "Pause"
-                binding.btnStop.visibility = View.VISIBLE
-            }
-            TripPhase.PAUSED -> {
-                binding.btnStart.visibility = View.VISIBLE
-                binding.btnStart.text = "Resume"
-                binding.btnPause.visibility = View.GONE
                 binding.btnStop.visibility = View.VISIBLE
             }
         }

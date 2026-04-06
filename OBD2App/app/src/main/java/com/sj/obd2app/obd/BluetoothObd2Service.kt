@@ -22,6 +22,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
     companion object {
         private const val TAG = "BluetoothObd2Service"
 
+        /** Grace period before first poll cycle to let ECU finish power-on self-test */
+        private const val STARTUP_GRACE_DELAY_MS = 2000L
+
         /** ELM327 initialisation commands */
         private val INIT_COMMANDS = listOf(
             "ATZ",   // Reset
@@ -293,7 +296,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      *  - Fast tier (RPM, speed, MAF, throttle, fuel rate): polled every cycle
      *  - Slow tier (temps, fuel level, etc.): polled every SLOW_TIER_MODULO cycles
      *
-     * No explicit inter-PID delay — ATAT1 adaptive timing handles ECU pacing.
+     * Inter-command delay prevents CAN bus flooding; inter-cycle delay controls
+     * overall polling rate.  Both are read from AppSettings so the user can tune them.
+     * A startup grace period lets the ECU finish power-on self-test before polling.
      */
     private fun startPolling() {
         // Split supported commands into fast and slow tiers
@@ -313,6 +318,13 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             android.util.Log.d(TAG, "Custom PIDs configured: ${customPids.size}")
         }
 
+        // Read delay settings once — avoids repeated file I/O inside the loop
+        val commandDelayMs = context?.let { AppSettings.getGlobalCommandDelayMs(it) }
+            ?: AppSettings.DEFAULT_COMMAND_DELAY_MS
+        val pollingDelayMs = context?.let { AppSettings.getGlobalPollingDelayMs(it) }
+            ?: AppSettings.DEFAULT_POLLING_DELAY_MS
+        android.util.Log.d(TAG, "Polling config: commandDelay=${commandDelayMs}ms, cycleDelay=${pollingDelayMs}ms, startupGrace=${STARTUP_GRACE_DELAY_MS}ms")
+
         // Cached results — slow-tier values persist between cycles
         val cachedResults = mutableMapOf<String, Obd2DataItem>()
         
@@ -320,6 +332,10 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         consecutiveFailures = 0
 
         pollingJob = CoroutineScope(Dispatchers.IO).launch {
+            // Startup grace period — let the ECU finish power-on self-test
+            android.util.Log.d(TAG, "Startup grace period: waiting ${STARTUP_GRACE_DELAY_MS}ms before polling")
+            delay(STARTUP_GRACE_DELAY_MS)
+
             var cycleCount = 0
             // Warm-up: wait until the first slow-tier poll completes before
             // emitting data so the UI sees a stable, complete PID list.
@@ -350,7 +366,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                     } catch (e: Exception) {
                         android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
                     }
-                    // No explicit delay — ATAT1 handles ECU pacing
+                    if (commandDelayMs > 0) delay(commandDelayMs)
                 }
 
                 // Poll slow-tier PIDs every SLOW_TIER_MODULO cycles
@@ -369,10 +385,11 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                         } catch (e: Exception) {
                             android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
                         }
+                        if (commandDelayMs > 0) delay(commandDelayMs)
                     }
 
                     // Poll custom/extended PIDs (same cadence as slow tier)
-                    pollCustomPids(customPids, cachedResults)?.let { count ->
+                    pollCustomPids(customPids, cachedResults, commandDelayMs)?.let { count ->
                         cycleSuccessCount += count
                     }
                 }
@@ -413,8 +430,8 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 }
 
                 cycleCount++
-                // Small yield between cycles to avoid CPU spin and allow BT stack breathing room
-                delay(10L)
+                // Inter-cycle delay — controls overall polling rate and gives ECU breathing room
+                delay(pollingDelayMs)
             }
             
             // Cleanup after polling stops due to error
@@ -492,7 +509,8 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      */
     private suspend fun pollCustomPids(
         customPids: List<CustomPid>,
-        cachedResults: MutableMap<String, Obd2DataItem>
+        cachedResults: MutableMap<String, Obd2DataItem>,
+        commandDelayMs: Long = 0L
     ): Int? {
         if (customPids.isEmpty()) return null
 
@@ -507,6 +525,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             if (currentHeader != header) {
                 try {
                     transport?.sendCommand("ATSH$header")
+                    if (commandDelayMs > 0) delay(commandDelayMs)
                     currentHeader = header
                     android.util.Log.d(TAG, "Custom PID: switched header to $header")
                 } catch (e: Exception) {
@@ -528,6 +547,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 } catch (e: Exception) {
                     android.util.Log.w(TAG, "Custom PID ${cp.name} error: ${e.message}")
                 }
+                if (commandDelayMs > 0) delay(commandDelayMs)
             }
         }
 

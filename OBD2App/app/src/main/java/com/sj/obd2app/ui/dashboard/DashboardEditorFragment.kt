@@ -24,6 +24,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.sj.obd2app.R
 import com.sj.obd2app.gps.GpsDataSource
 import com.sj.obd2app.metrics.MetricsCalculator
+import com.sj.obd2app.metrics.TripLifecycleFacade
 import com.sj.obd2app.metrics.TripPhase
 import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2ServiceProvider
@@ -94,6 +95,8 @@ class DashboardEditorFragment : Fragment() {
 
     // Move/resize mode: only active when user explicitly picks "Move / Resize" from context menu
     private var moveResizeWidgetId: String? = null
+
+    private val tripFacade by lazy { TripLifecycleFacade.getInstance(requireContext()) }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -205,27 +208,16 @@ class DashboardEditorFragment : Fragment() {
             val phase = calculator.tripPhase.value
             when (phase) {
                 com.sj.obd2app.metrics.TripPhase.IDLE -> {
-                    calculator.startTrip()
+                    tripFacade.startTrip()
                     Toast.makeText(context, "Trip started", Toast.LENGTH_SHORT).show()
-                }
-                com.sj.obd2app.metrics.TripPhase.PAUSED -> {
-                    calculator.resumeTrip()
-                    Toast.makeText(context, "Trip resumed", Toast.LENGTH_SHORT).show()
                 }
                 com.sj.obd2app.metrics.TripPhase.RUNNING -> { /* no-op */ }
             }
         }
 
-        btnTripPause.setOnClickListener {
-            if (calculator.tripPhase.value == com.sj.obd2app.metrics.TripPhase.RUNNING) {
-                calculator.pauseTrip()
-                Toast.makeText(context, "Trip paused", Toast.LENGTH_SHORT).show()
-            }
-        }
-
         btnTripStop.setOnClickListener {
             if (calculator.tripPhase.value != com.sj.obd2app.metrics.TripPhase.IDLE) {
-                calculator.stopTrip()
+                tripFacade.stopTrip()
                 Toast.makeText(context, "Trip stopped", Toast.LENGTH_SHORT).show()
                 // Auto-share log if enabled and logging produced a file
                 if (com.sj.obd2app.settings.AppSettings.isAutoShareLogEnabled(requireContext())) {
@@ -282,13 +274,11 @@ class DashboardEditorFragment : Fragment() {
     private fun updateTripControls(phase: com.sj.obd2app.metrics.TripPhase = calculator.tripPhase.value) {
         if (isEditMode) {
             btnTripPlay.visibility  = View.GONE
-            btnTripPause.visibility = View.GONE
             btnTripStop.visibility  = View.GONE
             btnResetMinMax.visibility = View.GONE
             return
         }
         btnTripPlay.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
-        btnTripPause.visibility = if (phase == com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
         btnTripStop.visibility  = if (phase != com.sj.obd2app.metrics.TripPhase.IDLE)    View.VISIBLE else View.GONE
         btnResetMinMax.visibility = if (phase == com.sj.obd2app.metrics.TripPhase.RUNNING) View.VISIBLE else View.GONE
     }

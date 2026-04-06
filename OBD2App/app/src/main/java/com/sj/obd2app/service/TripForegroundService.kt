@@ -136,7 +136,6 @@ class TripForegroundService : Service() {
 
         val statusText = when (phase) {
             TripPhase.RUNNING -> "Trip in progress"
-            TripPhase.PAUSED  -> "Trip paused"
             TripPhase.IDLE    -> "Trip stopped"
         }
 

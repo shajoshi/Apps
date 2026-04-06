@@ -17,9 +17,7 @@ import kotlinx.coroutines.flow.combine
  * Manages OBD connection monitoring and automatic reconnection during active trips.
  * 
  * Features:
- * - Monitors OBD connection state only during RUNNING trips
- * - Pauses reconnection attempts when trip is PAUSED
- * - Resumes reconnection attempts when trip resumes
+ * - Monitors OBD connection state only during active trips
  * - Adaptive backoff reconnection: 5 attempts at 10s intervals, then 60s intervals
  * - Only starts monitoring if OBD was connected before or during the trip
  * - Resets attempt counter on successful reconnection
@@ -55,7 +53,6 @@ class ObdConnectionManager private constructor(private val context: Context) {
     private var attemptCount = 0
     private var manualDisconnect = false
     private var isMonitoring = false
-    private var isPaused = false
     private var hadConnectionBeforeTrip = false
     
     /**
@@ -78,7 +75,6 @@ class ObdConnectionManager private constructor(private val context: Context) {
         }
         
         isMonitoring = true
-        isPaused = false
         attemptCount = 0
         manualDisconnect = false
         lastKnownDeviceMac = AppSettings.getLastDeviceMac(context)
@@ -102,7 +98,6 @@ class ObdConnectionManager private constructor(private val context: Context) {
         Log.d(TAG, "Stopping OBD connection monitoring")
         
         isMonitoring = false
-        isPaused = false
         hadConnectionBeforeTrip = false
         monitoringJob?.cancel()
         monitoringJob = null
@@ -110,40 +105,6 @@ class ObdConnectionManager private constructor(private val context: Context) {
         reconnectionJob = null
         attemptCount = 0
         manualDisconnect = false
-    }
-    
-    /**
-     * Pause reconnection attempts during trip pause.
-     * Monitoring stays active but reconnection loop is suspended.
-     */
-    fun pauseMonitoring() {
-        if (!isMonitoring || isPaused) return
-        
-        isPaused = true
-        reconnectionJob?.cancel()
-        reconnectionJob = null
-        Log.d(TAG, "Paused reconnection attempts (trip paused)")
-    }
-    
-    /**
-     * Resume reconnection attempts when trip resumes.
-     * If OBD is currently disconnected, restarts the reconnection loop.
-     */
-    fun resumeMonitoring() {
-        if (!isMonitoring || !isPaused) return
-        
-        isPaused = false
-        Log.d(TAG, "Resumed reconnection monitoring (trip resumed)")
-        
-        // If currently disconnected, restart reconnection loop
-        val currentState = obdService.connectionState.value
-        if (currentState == Obd2Service.ConnectionState.DISCONNECTED ||
-            currentState == Obd2Service.ConnectionState.ERROR) {
-            if (!manualDisconnect && reconnectionJob == null) {
-                Log.d(TAG, "OBD still disconnected after resume — restarting reconnection")
-                startReconnectionLoop()
-            }
-        }
     }
     
     /**
@@ -183,8 +144,7 @@ class ObdConnectionManager private constructor(private val context: Context) {
                 
                 Obd2Service.ConnectionState.DISCONNECTED,
                 Obd2Service.ConnectionState.ERROR -> {
-                    // Only auto-reconnect during RUNNING phase (not PAUSED)
-                    if (!manualDisconnect && !isPaused && reconnectionJob == null) {
+                    if (!manualDisconnect && reconnectionJob == null) {
                         Log.d(TAG, "OBD disconnected during running trip, starting reconnection")
                         withContext(Dispatchers.Main) {
                             Toast.makeText(

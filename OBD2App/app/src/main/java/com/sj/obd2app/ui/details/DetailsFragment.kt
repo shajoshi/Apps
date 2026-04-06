@@ -160,7 +160,7 @@ class DetailsFragment : Fragment() {
                             isTripActive = true
                         }
                     }
-                    com.sj.obd2app.metrics.TripPhase.IDLE, com.sj.obd2app.metrics.TripPhase.PAUSED -> {
+                    com.sj.obd2app.metrics.TripPhase.IDLE -> {
                         if (isTripActive) {
                             requireActivity().window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                             isTripActive = false

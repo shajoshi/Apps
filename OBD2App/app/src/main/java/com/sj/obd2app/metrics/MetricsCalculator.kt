@@ -68,9 +68,6 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     private val tripState = TripState()
     private val logger = MetricsLogger()
-    @Volatile private var isTripPaused: Boolean = false
-    @Volatile private var pauseStartMs: Long? = null
-    @Volatile private var pausedAccumMs: Long = 0L
 
     // New calculator components
     private val fuelCalculator = FuelCalculator()
@@ -78,20 +75,10 @@ class MetricsCalculator private constructor(private val context: Context) {
     private val tripCalculator = TripCalculator()
     private val dataOrchestrator = DataOrchestrator(context, scope, this)
 
-    /** Accumulated paused ms for current trip (excludes any ongoing pause). */
-    @Volatile var pausedAccumMsPublic: Long = 0L
-        private set
-
-    /** Current pause start ms, non-null while PAUSED. */
-    @Volatile var currentPauseStartMs: Long? = null
-        private set
-
     /** Elapsed active trip seconds, honouring pauses. 0 when IDLE. */
     fun elapsedTripSec(): Long {
         val start = tripState.tripStartMs
-        val now = System.currentTimeMillis()
-        val pauseOngoing = currentPauseStartMs?.let { now - it } ?: 0L
-        return ((now - start - pausedAccumMsPublic - pauseOngoing) / 1000L).coerceAtLeast(0L)
+        return ((System.currentTimeMillis() - start) / 1000L).coerceAtLeast(0L)
     }
 
     private val accelEngine = AccelEngine()
@@ -131,6 +118,11 @@ class MetricsCalculator private constructor(private val context: Context) {
     /** True if logging is currently active. */
     internal val isLoggingActive: Boolean get() = logger.isOpen
 
+    /** Sets the canonical trip phase. Intended to be driven by TripLifecycleFacade. */
+    internal fun setTripPhase(phase: TripPhase) {
+        _tripPhase.value = phase
+    }
+
     // ── Dashboard Edit Mode ───────────────────────────────────────────────────
 
     /** Sets the dashboard edit mode state (called by DashboardEditorFragment). */
@@ -146,14 +138,8 @@ class MetricsCalculator private constructor(private val context: Context) {
 
     // ── Trip control ──────────────────────────────────────────────────────────
 
-    fun startTrip() {
+    internal fun startTripInternal() {
         tripState.reset()
-        isTripPaused = false
-        pauseStartMs = null
-        pausedAccumMs = 0L
-        pausedAccumMsPublic = 0L
-        currentPauseStartMs = null
-        _tripPhase.value = TripPhase.RUNNING
         val accelSource = AccelerometerSource.getInstance(context)
         if (AppSettings.isAccelerometerEnabled(context) && accelSource.isAvailable) {
             accelSource.start()
@@ -175,37 +161,8 @@ class MetricsCalculator private constructor(private val context: Context) {
         connectionManager.startMonitoring(obdWasConnected = obdConnected)
     }
 
-    fun pauseTrip() {
-        isTripPaused = true
-        if (pauseStartMs == null) {
-            pauseStartMs = System.currentTimeMillis()
-        }
-        currentPauseStartMs = pauseStartMs
-        _tripPhase.value = TripPhase.PAUSED
-        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).pauseMonitoring()
-    }
-
-    fun resumeTrip() {
-        isTripPaused = false
-        pauseStartMs?.let { startMs ->
-            val elapsed = System.currentTimeMillis() - startMs
-            pausedAccumMs += elapsed
-            pausedAccumMsPublic += elapsed
-        }
-        pauseStartMs = null
-        currentPauseStartMs = null
-        _tripPhase.value = TripPhase.RUNNING
-        com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).resumeMonitoring()
-    }
-
-    fun stopTrip() {
-        isTripPaused = false
-        pauseStartMs = null
-        pausedAccumMs = 0L
-        pausedAccumMsPublic = 0L
-        currentPauseStartMs = null
+    internal fun stopTripInternal() {
         tripState.reset()
-        _tripPhase.value = TripPhase.IDLE
         AccelerometerSource.getInstance(context).stop()
         vehicleBasis = null
         capturedGravityVector = null
@@ -220,6 +177,10 @@ class MetricsCalculator private constructor(private val context: Context) {
         // Stop OBD connection monitoring when trip ends
         com.sj.obd2app.obd.ObdConnectionManager.getInstance(context).stopMonitoring()
     }
+
+    fun startTrip() = com.sj.obd2app.metrics.TripLifecycleFacade.getInstance(context).startTrip()
+
+    fun stopTrip() = com.sj.obd2app.metrics.TripLifecycleFacade.getInstance(context).stopTrip()
 
     fun getLogShareUri() = logger.getShareUri()
 
@@ -495,8 +456,8 @@ class MetricsCalculator private constructor(private val context: Context) {
         val hasOutliers = outlierList.isNotEmpty()
         val outlierNamesStr = if (hasOutliers) outlierList.joinToString(",") else null
 
-        // Update trip accumulators (skipped when paused or outliers detected)
-        if (!isTripPaused && !hasOutliers) {
+        // Update trip accumulators (skipped when outliers detected)
+        if (!hasOutliers) {
             tripState.update(speedKmh, fuelRateEffective ?: 0f)
         }
 
@@ -519,8 +480,7 @@ class MetricsCalculator private constructor(private val context: Context) {
 
         // Trip time
         val now = System.currentTimeMillis()
-        val pauseOngoingMs = pauseStartMs?.let { now - it } ?: 0L
-        val tripTimeMs = (now - tripState.tripStartMs - pausedAccumMs - pauseOngoingMs).coerceAtLeast(0L)
+        val tripTimeMs = (now - tripState.tripStartMs).coerceAtLeast(0L)
         val tripTimeSec = tripTimeMs / 1000L
 
         // Average speed

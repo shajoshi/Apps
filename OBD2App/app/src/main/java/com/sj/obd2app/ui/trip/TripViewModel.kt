@@ -7,12 +7,12 @@ import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sj.obd2app.metrics.MetricsCalculator
+import com.sj.obd2app.metrics.TripLifecycleFacade
 import com.sj.obd2app.metrics.TripPhase
 import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.sensors.AccelerometerSource
-import com.sj.obd2app.service.TripForegroundService
 import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +59,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
 
     private val ctx = app.applicationContext
     private val calculator = MetricsCalculator.getInstance(ctx)
+    private val tripFacade = TripLifecycleFacade.getInstance(ctx)
 
     // ── Sensor/OBD/phase state (everything except timer fields) ──────────────
     private val _baseState = MutableStateFlow(TripUiState())
@@ -94,9 +95,6 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
                         val d = formatDuration(calculator.elapsedTripSec())
                         val s = calculator.currentSampleNo.toString()
                         _baseState.value = _baseState.value.copy(duration = d, sampleCount = s)
-                    }
-                    TripPhase.PAUSED  -> {
-                        // Do nothing - keep current values
                     }
                     TripPhase.IDLE    -> {
                         _baseState.value = _baseState.value.copy(duration = "00:00", sampleCount = "0")
@@ -177,7 +175,6 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
         val phaseLabel = when (phase) {
             TripPhase.IDLE    -> "IDLE"
             TripPhase.RUNNING -> "RUNNING"
-            TripPhase.PAUSED  -> "PAUSED"
         }
 
         // Trip fields — duration/sampleCount are intentionally NOT set here;
@@ -260,28 +257,13 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun startTrip() {
-        if (_baseState.value.tripPhase != TripPhase.IDLE) {
-            return
-        }
-        calculator.startTrip()
-        TripForegroundService.start(ctx)
+        if (_baseState.value.tripPhase != TripPhase.IDLE) return
+        tripFacade.startTrip()
         Toast.makeText(ctx, "Trip started", Toast.LENGTH_SHORT).show()
     }
 
-    fun pauseTrip() {
-        calculator.pauseTrip()
-    }
-
-    fun resumeTrip() {
-        if (_baseState.value.tripPhase != TripPhase.PAUSED) {
-            return
-        }
-        calculator.resumeTrip()
-    }
-
     fun stopTrip() {
-        calculator.stopTrip()
-        TripForegroundService.stop(ctx)
+        tripFacade.stopTrip()
         Toast.makeText(ctx, "Trip stopped", Toast.LENGTH_SHORT).show()
     }
 

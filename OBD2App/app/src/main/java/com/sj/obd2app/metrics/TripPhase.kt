@@ -7,7 +7,5 @@ enum class TripPhase {
     /** No trip is active */
     IDLE,
     /** Trip is actively recording data */
-    RUNNING,
-    /** Trip is paused (data not accumulating) */
-    PAUSED
+    RUNNING
 }
