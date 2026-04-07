@@ -12,9 +12,12 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentDetailsBinding
 import com.sj.obd2app.metrics.MetricsCalculator
+import com.sj.obd2app.obd.Obd2DataItem
+import com.sj.obd2app.settings.CachedPidEntry
 import com.sj.obd2app.ui.attachNavOverflow
 import kotlinx.coroutines.launch
 
@@ -70,11 +73,11 @@ class DetailsFragment : Fragment() {
                 if (!viewModel.isConnected.value && 
                     cachedPids.isNotEmpty() && 
                     viewModel.lastTripSnapshot.value == null) {
-                    val cachedItems = cachedPids.map { (name, value) ->
+                    val cachedItems = cachedPids.map { (_, entry) ->
                         com.sj.obd2app.obd.Obd2DataItem(
-                            pid = "CACHED",
-                            name = name,
-                            value = value.ifEmpty { "N/A" },
+                            pid = entry.commandString.ifEmpty { entry.rawPidId },
+                            name = entry.displayName,
+                            value = entry.value.ifEmpty { "N/A" },
                             unit = ""
                         )
                     }
@@ -96,11 +99,11 @@ class DetailsFragment : Fragment() {
                         // Try to show cached PIDs if no last trip data
                         val cachedPids = viewModel.cachedPids.value
                         if (cachedPids.isNotEmpty()) {
-                            val cachedItems = cachedPids.map { (name, value) ->
+                            val cachedItems = cachedPids.map { (_, entry) ->
                                 com.sj.obd2app.obd.Obd2DataItem(
-                                    pid = "CACHED",
-                                    name = name,
-                                    value = value.ifEmpty { "N/A" },
+                                    pid = entry.commandString.ifEmpty { entry.rawPidId },
+                                    name = entry.displayName,
+                                    value = entry.value.ifEmpty { "N/A" },
                                     unit = ""
                                 )
                             }

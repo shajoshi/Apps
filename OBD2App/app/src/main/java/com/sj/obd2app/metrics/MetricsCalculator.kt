@@ -405,6 +405,40 @@ class MetricsCalculator private constructor(private val context: Context) {
         val monitorStat     = pidStr("0101")
         val fuelTypeStr     = pidStr("0151")
 
+        // Missing Standard PIDs from Obd2CommandRegistry
+        val freezeDtc               = pidStr("0102")
+        val obdStandard             = pidStr("011C")
+        val obdStandards            = pidStr("011D")
+        val fuelRailPressureVacuum  = pid("0122")
+        val fuelRailPressureDirect  = pid("0123")?.toInt()
+        val commandedEgr            = pid("012C")
+        val egrError                = pid("012D")
+        val commandedEvapPurge      = pid("012E")
+        val warmupsSinceCleared     = pid("0130")?.toInt()
+        val evapSystemVapourPressure = pidStr("0132")
+        val absoluteBarometricPressure = pid("0134")
+        val o2Sensor1               = pidStr("0135")
+        val o2Sensor2               = pidStr("0136")
+        val o2Sensor3               = pidStr("0137")
+        val o2Sensor4               = pidStr("0138")
+        val o2Sensor5               = pidStr("0139")
+        val o2Sensor6               = pidStr("013A")
+        val o2Sensor7               = pidStr("013B")
+        val monitorStatusThisDriveCycle = pidStr("0141")
+        val throttlePositionB       = pid("0147")
+        val throttlePositionC       = pid("0148")
+        val maximumValues           = pidStr("014F")
+        val maximumMaf              = pid("0150")
+        val absoluteEvapSystemVapourPressure = pid("0153")
+        val evapSystemVapourPressure2 = pidStr("0154")
+        val shortTermO2TrimBank13   = pidStr("0155")
+        val longTermO2TrimBank13    = pidStr("0156")
+        val shortTermO2TrimBank24   = pidStr("0157")
+        val longTermO2TrimBank24    = pidStr("0158")
+        val fuelRailAbsolutePressure = pid("0159")
+        val relativeAcceleratorPedalPosition = pid("015A")
+        val emissionRequirements    = pidStr("015F")
+
         // GPS
         val gpsSpeed          = gps?.speedKmh
         val altitude          = gps?.altitudeMsl
@@ -553,6 +587,41 @@ class MetricsCalculator private constructor(private val context: Context) {
             fuelSystemStatus       = fuelSysStatus,
             monitorStatus          = monitorStat,
             fuelTypeStr            = fuelTypeStr,
+            
+            // Missing Standard PIDs from Obd2CommandRegistry
+            freezeDtc              = freezeDtc,
+            obdStandard            = obdStandard,
+            obdStandards           = obdStandards,
+            fuelRailPressureVacuum  = fuelRailPressureVacuum,
+            fuelRailPressureDirect  = fuelRailPressureDirect,
+            commandedEgr            = commandedEgr,
+            egrError                = egrError,
+            commandedEvapPurge      = commandedEvapPurge,
+            warmupsSinceCleared     = warmupsSinceCleared,
+            evapSystemVapourPressure = evapSystemVapourPressure,
+            absoluteBarometricPressure = absoluteBarometricPressure,
+            o2Sensor1               = o2Sensor1,
+            o2Sensor2               = o2Sensor2,
+            o2Sensor3               = o2Sensor3,
+            o2Sensor4               = o2Sensor4,
+            o2Sensor5               = o2Sensor5,
+            o2Sensor6               = o2Sensor6,
+            o2Sensor7               = o2Sensor7,
+            monitorStatusThisDriveCycle = monitorStatusThisDriveCycle,
+            throttlePositionB       = throttlePositionB,
+            throttlePositionC       = throttlePositionC,
+            maximumValues           = maximumValues,
+            maximumMaf              = maximumMaf,
+            absoluteEvapSystemVapourPressure = absoluteEvapSystemVapourPressure,
+            evapSystemVapourPressure2 = evapSystemVapourPressure2,
+            shortTermO2TrimBank13   = shortTermO2TrimBank13,
+            longTermO2TrimBank13    = longTermO2TrimBank13,
+            shortTermO2TrimBank24   = shortTermO2TrimBank24,
+            longTermO2TrimBank24    = longTermO2TrimBank24,
+            fuelRailAbsolutePressure = fuelRailAbsolutePressure,
+            relativeAcceleratorPedalPosition = relativeAcceleratorPedalPosition,
+            emissionRequirements    = emissionRequirements,
+            
             gpsLatitude            = if (gpsLat != null && gpsLat != 0.0) gpsLat else null,
             gpsLongitude           = if (gpsLon != null && gpsLon != 0.0) gpsLon else null,
             gpsSpeedKmh            = gpsSpeed,
@@ -601,7 +670,8 @@ class MetricsCalculator private constructor(private val context: Context) {
             accelLeanAngleDeg      = accelMetrics?.leanAngleDeg,
             accelRawSampleCount    = accelMetrics?.rawAccelSampleCount,
             outlierDetected        = hasOutliers,
-            outlierNames           = outlierNamesStr
+            outlierNames           = outlierNamesStr,
+            rawObdData             = items
         )
     }
 }

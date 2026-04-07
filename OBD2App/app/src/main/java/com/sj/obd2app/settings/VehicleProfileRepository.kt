@@ -6,6 +6,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.sj.obd2app.obd.CustomPid
+import com.sj.obd2app.obd.ManufacturerPidLibrary
 import com.sj.obd2app.storage.AppDataDirectory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -217,6 +218,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
                         })
                     }
                 })
+                put("manufacturer", profile.manufacturer?.name ?: "")
             }.toString(), Charsets.UTF_8)
             
             android.util.Log.d("VehicleProfileRepository", "Internal file write completed for profile: ${profile.name}")
@@ -393,6 +395,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
             }
             put("customPids", arr)
         }
+        put("manufacturer", manufacturer?.name ?: "")
     }
 
     private fun JSONObject.toProfile(): VehicleProfile {
@@ -421,7 +424,11 @@ class VehicleProfileRepository private constructor(private val context: Context)
             engineDisplacementCc = optInt("engineDisplacementCc", 0),
             volumetricEfficiencyPct = optDouble("volumetricEfficiencyPct", 85.0).toFloat(),
             availablePids     = pidsMap,
-            customPids        = deserializeCustomPids(this)
+            customPids        = deserializeCustomPids(this),
+            manufacturer      = optString("manufacturer", "").let { str ->
+                if (str.isBlank()) null
+                else try { ManufacturerPidLibrary.Manufacturer.valueOf(str) } catch (_: Exception) { null }
+            }
         )
     }
 

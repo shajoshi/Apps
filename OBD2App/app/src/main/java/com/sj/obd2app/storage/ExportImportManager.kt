@@ -14,6 +14,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.documentfile.provider.DocumentFile
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfileRepository
+import com.sj.obd2app.settings.PidCache
 import com.sj.obd2app.ui.dashboard.data.LayoutRepository
 import com.google.gson.GsonBuilder
 import com.sj.obd2app.ui.dashboard.model.DashboardMetric
@@ -73,36 +74,83 @@ object ExportImportManager {
                 ?: return false.also {
                     Toast.makeText(context, "Failed to create export file", Toast.LENGTH_LONG).show()
                 }
-            
+
             outputStream.use { stream ->
                 ZipOutputStream(stream).use { zipOut ->
                     // Add metadata
                     addMetadataToZip(zipOut, timestamp, exportSettings, exportProfiles, exportLayouts)
-                    
+
                     // Export settings
                     if (exportSettings) {
                         exportSettingsToZip(context, zipOut)
                     }
-                    
+
                     // Export profiles
                     if (exportProfiles) {
                         exportProfilesToZip(context, zipOut)
                     }
-                    
+
                     // Export layouts
                     if (exportLayouts) {
                         exportLayoutsToZip(context, zipOut)
                     }
                 }
             }
-            
+
             Log.i(TAG, "Export completed successfully: $zipFileName")
             Toast.makeText(context, "Data exported to $zipFileName", Toast.LENGTH_SHORT).show()
             true
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Export failed", e)
             Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            false
+        }
+    }
+
+    /**
+     * Export a debug JSON snapshot to the given Uri.
+     * Includes full PID cache data and related connection metadata.
+     */
+    fun exportDebugJson(context: Context, targetFileUri: Uri): Boolean {
+        return try {
+            val settings = AppSettings.getAllSettings(context)
+            val pidCaches = AppSettings.getAllPidCaches(context)
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+
+            val payload = JSONObject().apply {
+                put("exportType", "debug")
+                put("exportTimestamp", timestamp)
+                put("appVersion", "1.0") // TODO: Get actual version
+                put("connection", JSONObject().apply {
+                    put("lastDeviceMac", settings.lastDeviceMac ?: "")
+                    put("lastDeviceName", settings.lastDeviceName ?: "")
+                    put("autoConnect", settings.autoConnect)
+                    put("obdConnectionEnabled", settings.obdConnectionEnabled)
+                    put("forceBleConnection", settings.forceBleConnection)
+                })
+                put("settings", JSONObject().apply {
+                    put("activeProfileId", settings.activeProfileId ?: "")
+                    put("defaultLayoutName", settings.defaultLayoutName ?: "")
+                    put("globalPollingDelayMs", settings.globalPollingDelayMs)
+                    put("globalCommandDelayMs", settings.globalCommandDelayMs)
+                    put("loggingEnabled", settings.loggingEnabled)
+                    put("autoShareLog", settings.autoShareLog)
+                    put("accelerometerEnabled", settings.accelerometerEnabled)
+                    put("btLoggingEnabled", settings.btLoggingEnabled)
+                })
+                put("pidCacheMap", serializePidCaches(pidCaches))
+            }
+
+            context.contentResolver.openOutputStream(targetFileUri, "wt")?.use { output ->
+                output.write(payload.toString(2).toByteArray(Charsets.UTF_8))
+            } ?: return false
+
+            Toast.makeText(context, "Debug JSON exported", Toast.LENGTH_SHORT).show()
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Debug export failed", e)
+            Toast.makeText(context, "Debug export failed: ${e.message}", Toast.LENGTH_LONG).show()
             false
         }
     }
@@ -535,5 +583,13 @@ object ExportImportManager {
             // Fallback to Toast if notification fails
             Toast.makeText(context, "Import completed: ${result.getDetailedSummary()}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun serializePidCaches(cacheMap: Map<String, PidCache>): JSONObject {
+        val json = JSONObject()
+        cacheMap.forEach { (macAddress, cache) ->
+            json.put(macAddress, cache.toJSON())
+        }
+        return json
     }
 }

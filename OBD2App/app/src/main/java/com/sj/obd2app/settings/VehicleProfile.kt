@@ -1,6 +1,7 @@
 package com.sj.obd2app.settings
 
 import com.sj.obd2app.obd.CustomPid
+import com.sj.obd2app.obd.ManufacturerPidLibrary
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -61,8 +62,22 @@ data class VehicleProfile(
      */
     val availablePids: Map<String, String> = emptyMap(),
     /** User-defined extended/custom PIDs for manufacturer-specific diagnostics */
-    val customPids: List<CustomPid> = emptyList()
+    val customPids: List<CustomPid> = emptyList(),
+    /** Manufacturer profile for Mode 22 preset PIDs. Null = no manufacturer presets. */
+    val manufacturer: ManufacturerPidLibrary.Manufacturer? = null
 ) {
+    /**
+     * Effective custom PIDs: user-defined PIDs merged with manufacturer presets.
+     * Manufacturer presets are appended only if they are not already overridden by
+     * a user-defined PID with the same id.
+     */
+    val effectiveCustomPids: List<CustomPid>
+        get() {
+            val userIds = customPids.map { it.id }.toSet()
+            val presets = manufacturer?.let { ManufacturerPidLibrary.getPresets(it) } ?: emptyList()
+            return customPids + presets.filter { it.id !in userIds }
+        }
+
     /** Filesystem-safe name: spaces → underscores, non-alphanumeric stripped */
     val sanitisedName: String
         get() = name.trim()
@@ -120,7 +135,11 @@ data class VehicleProfile(
                 volumetricEfficiencyPct = json.optDouble("volumetricEfficiencyPct", 85.0).toFloat(),
                 dieselCorrectionFactor = json.optDouble("dieselCorrectionFactor", 0.25).toFloat(),
                 availablePids = availablePids,
-                customPids = customPids
+                customPids = customPids,
+                manufacturer = json.optString("manufacturer", "").let { str ->
+                    if (str.isBlank()) null
+                    else try { ManufacturerPidLibrary.Manufacturer.valueOf(str) } catch (_: Exception) { null }
+                }
             )
         }
     }

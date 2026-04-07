@@ -9,6 +9,7 @@ import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.settings.CachedPidEntry
 import com.sj.obd2app.settings.LastTripSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,8 +38,8 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
     val isConnected: StateFlow<Boolean> = _isConnected
 
     // Cached data for offline viewing
-    private val _cachedPids = MutableStateFlow<Map<String, String>>(emptyMap())
-    val cachedPids: StateFlow<Map<String, String>> = _cachedPids
+    private val _cachedPids = MutableStateFlow<Map<String, CachedPidEntry>>(emptyMap())
+    val cachedPids: StateFlow<Map<String, CachedPidEntry>> = _cachedPids
 
     private val _lastTripSnapshot = MutableStateFlow<LastTripSnapshot?>(null)
     val lastTripSnapshot: StateFlow<LastTripSnapshot?> = _lastTripSnapshot

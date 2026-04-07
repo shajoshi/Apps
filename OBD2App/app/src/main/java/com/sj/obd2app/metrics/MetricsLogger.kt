@@ -292,6 +292,76 @@ class MetricsLogger {
                 fuelSystemStatus?.let     { put("fuelSystemStatus", it) }
                 monitorStatus?.let        { put("monitorStatus", it) }
                 fuelTypeStr?.let          { put("fuelTypeStr", it) }
+                
+                // Missing Standard PIDs from Obd2CommandRegistry
+                freezeDtc?.let              { put("freezeDtc", it) }
+                obdStandard?.let            { put("obdStandard", it) }
+                obdStandards?.let           { put("obdStandards", it) }
+                fuelRailPressureVacuum?.let  { put("fuelRailPressureVacuum", it) }
+                fuelRailPressureDirect?.let  { put("fuelRailPressureDirect", it) }
+                commandedEgr?.let            { put("commandedEgr", it) }
+                egrError?.let                { put("egrError", it) }
+                commandedEvapPurge?.let      { put("commandedEvapPurge", it) }
+                warmupsSinceCleared?.let     { put("warmupsSinceCleared", it) }
+                evapSystemVapourPressure?.let { put("evapSystemVapourPressure", it) }
+                absoluteBarometricPressure?.let { put("absoluteBarometricPressure", it) }
+                o2Sensor1?.let               { put("o2Sensor1", it) }
+                o2Sensor2?.let               { put("o2Sensor2", it) }
+                o2Sensor3?.let               { put("o2Sensor3", it) }
+                o2Sensor4?.let               { put("o2Sensor4", it) }
+                o2Sensor5?.let               { put("o2Sensor5", it) }
+                o2Sensor6?.let               { put("o2Sensor6", it) }
+                o2Sensor7?.let               { put("o2Sensor7", it) }
+                monitorStatusThisDriveCycle?.let { put("monitorStatusThisDriveCycle", it) }
+                throttlePositionB?.let       { put("throttlePositionB", it) }
+                throttlePositionC?.let       { put("throttlePositionC", it) }
+                maximumValues?.let           { put("maximumValues", it) }
+                maximumMaf?.let              { put("maximumMaf", it) }
+                absoluteEvapSystemVapourPressure?.let { put("absoluteEvapSystemVapourPressure", it) }
+                evapSystemVapourPressure2?.let { put("evapSystemVapourPressure2", it) }
+                shortTermO2TrimBank13?.let   { put("shortTermO2TrimBank13", it) }
+                longTermO2TrimBank13?.let    { put("longTermO2TrimBank13", it) }
+                shortTermO2TrimBank24?.let   { put("shortTermO2TrimBank24", it) }
+                longTermO2TrimBank24?.let    { put("longTermO2TrimBank24", it) }
+                fuelRailAbsolutePressure?.let { put("fuelRailAbsolutePressure", it) }
+                relativeAcceleratorPedalPosition?.let { put("relativeAcceleratorPedalPosition", it) }
+                emissionRequirements?.let    { put("emissionRequirements", it) }
+                
+                // Extended PIDs (0x64-0x7F) - Turbo, DPF, EGT, Multi-sensor
+                enginePercentTorqueData?.let { put("enginePercentTorqueData", it) }
+                mafSensorMulti?.let          { put("mafSensorMulti", it) }
+                coolantTempMulti?.let        { put("coolantTempMulti", it) }
+                intakeAirTempMulti?.let      { put("intakeAirTempMulti", it) }
+                egrTemperature?.let          { put("egrTemperature", it) }
+                fuelPressureControl?.let     { put("fuelPressureControl", it) }
+                injectionPressureControl?.let { put("injectionPressureControl", it) }
+                turboCompressorInletPressure?.let { put("turboCompressorInletPressure", it) }
+                boostPressureControl?.let    { put("boostPressureControl", it) }
+                exhaustPressure?.let         { put("exhaustPressure", it) }
+                turbochargerRpm?.let         { put("turbochargerRpm", it) }
+                turbochargerTempA?.let       { put("turbochargerTempA", it) }
+                turbochargerTempB?.let       { put("turbochargerTempB", it) }
+                egtBank1?.let                { put("egtBank1", it) }
+                egtBank2?.let                { put("egtBank2", it) }
+                dpfDifferentialPressure?.let { put("dpfDifferentialPressure", it) }
+                dpfTemperature?.let         { put("dpfTemperature", it) }
+                pmFilterTemp?.let           { put("pmFilterTemp", it) }
+                acceleratorPedalPositionF?.let { put("acceleratorPedalPositionF", it) }
+                emissionRequirements?.let    { put("emissionRequirements", it) }
+            })
+        }
+
+        // rawObdData sub-object - includes all polled PIDs including unknown/manufacturer-specific
+        if (rawObdData.isNotEmpty()) {
+            put("rawObdData", JSONObject().apply {
+                rawObdData.forEach { item ->
+                    // Use PID as key, store name, value, and unit for complete context
+                    put(item.pid, JSONObject().apply {
+                        put("name", item.name)
+                        put("value", item.value)
+                        put("unit", item.unit)
+                    })
+                }
             })
         }
 

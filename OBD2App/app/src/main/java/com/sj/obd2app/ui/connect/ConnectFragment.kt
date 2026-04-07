@@ -2,12 +2,15 @@ package com.sj.obd2app.ui.connect
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.IntentFilter
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -20,7 +23,11 @@ import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.storage.ExportImportManager
 import com.sj.obd2app.ui.attachNavOverflow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
@@ -37,6 +44,14 @@ class ConnectFragment : Fragment() {
     private var sectionedAdapter: SectionedDeviceAdapter? = null
     private var receiverRegistered = false
     private var wasScanning = false
+
+    private val debugExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            ExportImportManager.exportDebugJson(requireContext(), uri)
+        }
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -210,6 +225,22 @@ class ConnectFragment : Fragment() {
                 // Auto-scroll to bottom so latest message is visible
                 binding.scrollLog.post { binding.scrollLog.fullScroll(View.FOCUS_DOWN) }
             }
+        }
+
+        binding.btnCopyLog.setOnClickListener {
+            val logText = binding.textConnectionLog.text?.toString().orEmpty()
+            if (logText.isBlank()) {
+                Toast.makeText(requireContext(), "No connection log to copy", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
+            clipboard?.setPrimaryClip(ClipData.newPlainText("OBD connection log", logText))
+            Toast.makeText(requireContext(), "Connection log copied", Toast.LENGTH_SHORT).show()
+        }
+
+        binding.btnDebugExport.setOnClickListener {
+            val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+            debugExportLauncher.launch("OBD2App_Debug_$timestamp.json")
         }
 
         // Red "FAILED" row when a connection attempt fails

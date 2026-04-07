@@ -7,21 +7,23 @@ import org.json.JSONObject
  */
 data class PidCache(
     val macAddress: String,
-    val discoveredPids: Map<String, String>, // PID name -> last known value
-    val timestamp: Long
+    val discoveredPids: Map<String, CachedPidEntry>,
+    val timestamp: Long,
+    val protocolNumber: String? = null
 ) {
     companion object {
         fun fromJSON(json: JSONObject): PidCache {
             val pidsJson = json.getJSONObject("discoveredPids")
-            val pids = mutableMapOf<String, String>()
+            val pids = mutableMapOf<String, CachedPidEntry>()
             pidsJson.keys().forEach { key ->
-                pids[key] = pidsJson.optString(key, "")
+                pids[key] = CachedPidEntry.fromJSON(pidsJson.getJSONObject(key))
             }
             
             return PidCache(
                 macAddress = json.getString("macAddress"),
                 discoveredPids = pids,
-                timestamp = json.getLong("timestamp")
+                timestamp = json.getLong("timestamp"),
+                protocolNumber = json.optString("protocolNumber", "").takeIf { it.isNotEmpty() }
             )
         }
     }
@@ -29,13 +31,41 @@ data class PidCache(
     fun toJSON(): JSONObject {
         val pidsJson = JSONObject()
         discoveredPids.forEach { (key, value) ->
-            pidsJson.put(key, value)
+            pidsJson.put(key, value.toJSON())
         }
         
         return JSONObject().apply {
             put("macAddress", macAddress)
             put("discoveredPids", pidsJson)
             put("timestamp", timestamp)
+            protocolNumber?.let { put("protocolNumber", it) }
+        }
+    }
+}
+
+data class CachedPidEntry(
+    val rawPidId: String,
+    val commandString: String,
+    val displayName: String,
+    val value: String
+) {
+    companion object {
+        fun fromJSON(json: JSONObject): CachedPidEntry {
+            return CachedPidEntry(
+                rawPidId = json.optString("rawPidId", ""),
+                commandString = json.optString("commandString", ""),
+                displayName = json.optString("displayName", ""),
+                value = json.optString("value", "")
+            )
+        }
+    }
+
+    fun toJSON(): JSONObject {
+        return JSONObject().apply {
+            put("rawPidId", rawPidId)
+            put("commandString", commandString)
+            put("displayName", displayName)
+            put("value", value)
         }
     }
 }

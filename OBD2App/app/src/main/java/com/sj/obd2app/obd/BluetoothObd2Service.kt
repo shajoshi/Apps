@@ -4,11 +4,19 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.widget.Toast
+import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.settings.AppSettings
+import com.sj.obd2app.settings.CachedPidEntry
 import com.sj.obd2app.settings.VehicleProfileRepository
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.io.IOException
 
 /**
@@ -25,16 +33,32 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         /** Grace period before first poll cycle to let ECU finish power-on self-test */
         private const val STARTUP_GRACE_DELAY_MS = 2000L
 
-        /** ELM327 initialisation commands */
-        private val INIT_COMMANDS = listOf(
+        /** ELM327 initialisation commands (without protocol selection) */
+        private val BASE_INIT_COMMANDS = listOf(
             "ATZ",   // Reset
             "ATE0",  // Echo off
             "ATL0",  // Linefeeds off
             "ATS0",  // Spaces off
             "ATH0",  // Headers off
-            "ATAT1", // Adaptive timing — ELM learns ECU latency, tightens timeout
-            "ATSP0"  // Auto-detect protocol
+            "ATAT1"  // Adaptive timing — ELM learns ECU latency, tightens timeout
         )
+
+        /**
+         * Build init commands with protocol selection.
+         * If we have a cached protocol from a previous session, use it directly
+         * (ATSP<N>) to avoid CAN bus probing noise that can trigger U-codes.
+         * Otherwise, set max timeout and auto-detect.
+         */
+        private fun buildInitCommands(cachedProtocol: String?): List<String> {
+            return if (cachedProtocol != null) {
+                BASE_INIT_COMMANDS + "ATSP$cachedProtocol" // Skip probing — use known protocol
+            } else {
+                BASE_INIT_COMMANDS + listOf(
+                    "ATSTFF", // Max timeout (~1s) — gives ECU time during protocol detection
+                    "ATSP0"   // Auto-detect protocol
+                )
+            }
+        }
 
         /**
          * Fast-tier PIDs — polled every cycle (~200ms target).
@@ -132,15 +156,35 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 transport!!.connect()
                 log("✓ Connection established")
 
+                // Look up cached protocol for this device
+                val cachedProto = context?.let {
+                    AppSettings.getCachedProtocol(it, btDevice.address)
+                }
+                if (cachedProto != null) {
+                    log("Using cached protocol: $cachedProto")
+                } else {
+                    log("No cached protocol — will auto-detect")
+                }
+
                 // Initialise ELM327
                 log("Initialising ELM327 adapter…")
                 delay(1000)
-                for (cmd in INIT_COMMANDS) {
+                val initCommands = buildInitCommands(cachedProto)
+                for (cmd in initCommands) {
                     log("  → $cmd")
                     transport!!.sendCommand(cmd)
-                    delay(500)
+                    // ATZ (reset) needs extra time — clones can take up to 2s
+                    val cmdDelay = if (cmd == "ATZ") 2000L else 500L
+                    delay(cmdDelay)
                 }
                 log("✓ ELM327 initialised")
+
+                // Let the CAN bus settle after protocol detection before
+                // sending the first real OBD command (0100).  This avoids
+                // flooding the bus while the ECU is still negotiating,
+                // which can trigger U-codes (e.g. U0009) on some bikes.
+                log("Waiting for CAN bus to settle…")
+                delay(if (cachedProto != null) 500L else 1500L)
 
                 // Discover which PIDs the ECU supports
                 log("Querying supported PIDs from ECU…")
@@ -160,6 +204,14 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
                     transport!!.sendCommand("ATSP$detectedProto")
                     log("✓ Protocol locked: ATSP$detectedProto")
+                    // Cache the protocol so next connection skips ATSP0 probing
+                    if (detectedProto != cachedProto) {
+                        context?.let { ctx ->
+                            val existingPids = AppSettings.getPidCache(ctx, btDevice.address) ?: emptyMap()
+                            AppSettings.savePidCache(ctx, btDevice.address, existingPids, detectedProto)
+                            log("✓ Protocol cached for future connections")
+                        }
+                    }
                 }
 
                 _connectedDeviceName.value = btDevice.name ?: btDevice.address
@@ -309,13 +361,13 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         val fastCommands = allCommands.filter { it.pid in FAST_PIDS }
         val slowCommands = allCommands.filter { it.pid !in FAST_PIDS }
 
-        // Load custom/extended PIDs from active vehicle profile
+        // Load custom/extended PIDs from active vehicle profile (includes manufacturer presets)
         val customPids = context?.let { ctx ->
-            VehicleProfileRepository.getInstance(ctx).activeProfile?.customPids
+            VehicleProfileRepository.getInstance(ctx).activeProfile?.effectiveCustomPids
                 ?.filter { it.enabled }
         } ?: emptyList()
         if (customPids.isNotEmpty()) {
-            android.util.Log.d(TAG, "Custom PIDs configured: ${customPids.size}")
+            android.util.Log.d(TAG, "Custom PIDs configured: ${customPids.size} (incl. manufacturer presets)")
         }
 
         // Read delay settings once — avoids repeated file I/O inside the loop
@@ -615,17 +667,27 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
 
     private fun cacheDiscoveredPids(context: Context, macAddress: String, supportedPids: Set<Int>) {
         try {
-            // Convert supported PIDs to a map of PID names -> empty values
-            val pidMap = mutableMapOf<String, String>()
+            val previousCache = AppSettings.getPidCache(context, macAddress).orEmpty().toMutableMap()
+            val pidMap = previousCache
             
             supportedPids.forEach { pidNumber ->
+                val rawPidId = pidNumber.toString(16).uppercase().padStart(2, '0')
+                val commandString = "01$rawPidId"
+
                 // Find the command with this PID number
                 val command = Obd2CommandRegistry.commands.find { cmd ->
                     cmd.pid.substring(2).toIntOrNull(16) == pidNumber
                 }
-                command?.let {
-                    pidMap[it.name] = "" // Empty value initially
-                }
+
+                val displayName = command?.name ?: "PID $rawPidId"
+                val cachedValue = pidMap[displayName]?.value.orEmpty()
+
+                pidMap[displayName] = CachedPidEntry(
+                    rawPidId = rawPidId,
+                    commandString = command?.pid ?: commandString,
+                    displayName = displayName,
+                    value = cachedValue
+                )
             }
             
             // Save to AppSettings

@@ -1,5 +1,7 @@
 package com.sj.obd2app.metrics
 
+import com.sj.obd2app.obd.Obd2DataItem
+
 /**
  * Immutable snapshot of all primary and derived OBD2/GPS metrics for one calculation cycle.
  * All nullable fields are null when the ECU does not support that PID.
@@ -52,6 +54,64 @@ data class VehicleMetrics(
     val fuelSystemStatus: String? = null,
     val monitorStatus: String? = null,
     val fuelTypeStr: String? = null,
+
+    // Missing Standard PIDs from Obd2CommandRegistry
+    val freezeDtc: String? = null,
+    val obdStandard: String? = null,
+    val obdStandards: String? = null,
+    val fuelRailPressureVacuum: Float? = null,
+    val fuelRailPressureDirect: Int? = null,
+    val commandedEgr: Float? = null,
+    val egrError: Float? = null,
+    val commandedEvapPurge: Float? = null,
+    val warmupsSinceCleared: Int? = null,
+    val evapSystemVapourPressure: String? = null,
+    val absoluteBarometricPressure: Float? = null,
+    val o2Sensor1: String? = null,
+    val o2Sensor2: String? = null,
+    val o2Sensor3: String? = null,
+    val o2Sensor4: String? = null,
+    val o2Sensor5: String? = null,
+    val o2Sensor6: String? = null,
+    val o2Sensor7: String? = null,
+    val monitorStatusThisDriveCycle: String? = null,
+    val throttlePositionB: Float? = null,
+    val throttlePositionC: Float? = null,
+    val maximumValues: String? = null,
+    val maximumMaf: Float? = null,
+    val absoluteEvapSystemVapourPressure: Float? = null,
+    val evapSystemVapourPressure2: String? = null,
+    val shortTermO2TrimBank13: String? = null,
+    val longTermO2TrimBank13: String? = null,
+    val shortTermO2TrimBank24: String? = null,
+    val longTermO2TrimBank24: String? = null,
+    val fuelRailAbsolutePressure: Float? = null,
+    val relativeAcceleratorPedalPosition: Float? = null,
+    val emissionRequirements: String? = null,
+
+    // Extended PIDs (0x64-0x7F) - Turbo, DPF, EGT, Multi-sensor
+    val enginePercentTorqueData: String? = null,
+    val mafSensorMulti: String? = null,
+    val coolantTempMulti: String? = null,
+    val intakeAirTempMulti: String? = null,
+    val egrTemperature: String? = null,
+    val fuelPressureControl: String? = null,
+    val injectionPressureControl: String? = null,
+    val turboCompressorInletPressure: String? = null,
+    val boostPressureControl: String? = null,
+    val exhaustPressure: String? = null,
+    val turbochargerRpm: String? = null,
+    val turbochargerTempA: String? = null,
+    val turbochargerTempB: String? = null,
+    val egtBank1: String? = null,
+    val egtBank2: String? = null,
+    val dpfDifferentialPressure: String? = null,
+    val dpfTemperature: String? = null,
+    val pmFilterTemp: String? = null,
+    val acceleratorPedalPositionF: Float? = null,
+
+    /** Raw OBD data items including unknown and manufacturer-specific PIDs */
+    val rawObdData: List<Obd2DataItem> = emptyList(),
 
     // ── Primary GPS ───────────────────────────────────────────────────────────
 

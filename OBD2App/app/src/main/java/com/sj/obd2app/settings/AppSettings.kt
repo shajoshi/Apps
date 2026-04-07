@@ -395,12 +395,19 @@ object AppSettings {
 
     // ── PID Cache Management ─────────────────────────────────────────────────
 
-    fun savePidCache(context: Context, macAddress: String, discoveredPids: Map<String, String>) {
+    fun savePidCache(context: Context, macAddress: String, discoveredPids: Map<String, CachedPidEntry>, protocolNumber: String? = null) {
         val settings = loadSettings(context)
+        val previousCache = settings.pidCacheMap[macAddress]
+        val mergedPids = when {
+            discoveredPids.isNotEmpty() -> discoveredPids
+            previousCache != null -> previousCache.discoveredPids
+            else -> emptyMap()
+        }
         val newCache = PidCache(
             macAddress = macAddress,
-            discoveredPids = discoveredPids,
-            timestamp = System.currentTimeMillis()
+            discoveredPids = mergedPids,
+            timestamp = System.currentTimeMillis(),
+            protocolNumber = protocolNumber ?: previousCache?.protocolNumber
         )
         
         // Keep only last 10 MAC addresses to prevent unlimited growth
@@ -418,9 +425,14 @@ object AppSettings {
         saveSettings(context, settings)
     }
 
-    fun getPidCache(context: Context, macAddress: String): Map<String, String>? {
+    fun getPidCache(context: Context, macAddress: String): Map<String, CachedPidEntry>? {
         val settings = loadSettings(context)
         return settings.pidCacheMap[macAddress]?.discoveredPids
+    }
+
+    fun getCachedProtocol(context: Context, macAddress: String): String? {
+        val settings = loadSettings(context)
+        return settings.pidCacheMap[macAddress]?.protocolNumber
     }
 
     fun getAllPidCaches(context: Context): Map<String, PidCache> {

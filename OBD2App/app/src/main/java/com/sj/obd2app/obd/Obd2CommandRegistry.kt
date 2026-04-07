@@ -27,6 +27,23 @@ object Obd2CommandRegistry {
         ),
 
         Obd2Command(
+            pid = "0102",
+            name = "Freeze DTC",
+            unit = "",
+            bytesReturned = 2,
+            parse = { d ->
+                val code = d[0] * 256 + d[1]
+                if (code == 0) "No freeze DTC"
+                else {
+                    val prefix = when ((d[0] shr 6) and 0x03) {
+                        0 -> "P"; 1 -> "C"; 2 -> "B"; else -> "U"
+                    }
+                    "$prefix${String.format("%04X", code and 0x3FFF)}"
+                }
+            }
+        ),
+
+        Obd2Command(
             pid = "0103",
             name = "Fuel System Status",
             unit = "",
@@ -142,6 +159,24 @@ object Obd2CommandRegistry {
             unit = "min",
             bytesReturned = 2,
             parse = { d -> "${d[0] * 256 + d[1]}" }
+        ),
+
+        Obd2Command(
+            pid = "014F",
+            name = "Maximum Values (MAF, O2V, O2I, MAP)",
+            unit = "",
+            bytesReturned = 4,
+            parse = { d ->
+                "MAF=${d[0] * 10}g/s, O2V=${d[1]}V, O2I=${d[2]}mA, MAP=${d[3] * 10}kPa"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0150",
+            name = "Maximum MAF",
+            unit = "g/s",
+            bytesReturned = 4,
+            parse = { d -> "${d[0] * 10}" }
         ),
 
         // ── Fuel ─────────────────────────────────────────────────────────────
@@ -263,6 +298,65 @@ object Obd2CommandRegistry {
         ),
 
         Obd2Command(
+            pid = "0154",
+            name = "Evap System Vapour Pressure",
+            unit = "Pa",
+            bytesReturned = 2,
+            parse = { d ->
+                val raw = (d[0] * 256 + d[1]).toShort().toInt()
+                "$raw"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0155",
+            name = "Short-term O2 Trim (Bank 1, Bank 3)",
+            unit = "%",
+            bytesReturned = 2,
+            parse = { d ->
+                val b1 = String.format("%.1f", d[0] * 100.0 / 128.0 - 100.0)
+                val b3 = String.format("%.1f", d[1] * 100.0 / 128.0 - 100.0)
+                "B1=$b1, B3=$b3"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0156",
+            name = "Long-term O2 Trim (Bank 1, Bank 3)",
+            unit = "%",
+            bytesReturned = 2,
+            parse = { d ->
+                val b1 = String.format("%.1f", d[0] * 100.0 / 128.0 - 100.0)
+                val b3 = String.format("%.1f", d[1] * 100.0 / 128.0 - 100.0)
+                "B1=$b1, B3=$b3"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0157",
+            name = "Short-term O2 Trim (Bank 2, Bank 4)",
+            unit = "%",
+            bytesReturned = 2,
+            parse = { d ->
+                val b2 = String.format("%.1f", d[0] * 100.0 / 128.0 - 100.0)
+                val b4 = String.format("%.1f", d[1] * 100.0 / 128.0 - 100.0)
+                "B2=$b2, B4=$b4"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0158",
+            name = "Long-term O2 Trim (Bank 2, Bank 4)",
+            unit = "%",
+            bytesReturned = 2,
+            parse = { d ->
+                val b2 = String.format("%.1f", d[0] * 100.0 / 128.0 - 100.0)
+                val b4 = String.format("%.1f", d[1] * 100.0 / 128.0 - 100.0)
+                "B2=$b2, B4=$b4"
+            }
+        ),
+
+        Obd2Command(
             pid = "0159",
             name = "Fuel Rail Absolute Pressure",
             unit = "kPa",
@@ -350,6 +444,36 @@ object Obd2CommandRegistry {
         ),
 
         Obd2Command(
+            pid = "0113",
+            name = "O2 Sensors Present",
+            unit = "",
+            bytesReturned = 1,
+            parse = { d ->
+                val bits = (0..7).filter { (d[0] shr it) and 1 == 1 }
+                if (bits.isEmpty()) "None" else bits.joinToString(", ") { "S${it + 1}" }
+            }
+        ),
+
+        Obd2Command(
+            pid = "011D",
+            name = "O2 Sensors Present (wide-range)",
+            unit = "",
+            bytesReturned = 1,
+            parse = { d ->
+                val bits = (0..7).filter { (d[0] shr it) and 1 == 1 }
+                if (bits.isEmpty()) "None" else bits.joinToString(", ") { "S${it + 1}" }
+            }
+        ),
+
+        Obd2Command(
+            pid = "011E",
+            name = "Auxiliary Input Status",
+            unit = "",
+            bytesReturned = 1,
+            parse = { d -> if ((d[0] and 0x01) != 0) "PTO Active" else "PTO Inactive" }
+        ),
+
+        Obd2Command(
             pid = "0133",
             name = "Barometric Pressure",
             unit = "kPa",
@@ -392,6 +516,38 @@ object Obd2CommandRegistry {
         ),
 
         Obd2Command(
+            pid = "0118",
+            name = "O2 Sensor Voltage (Bank 2, Sensor 3)",
+            unit = "V",
+            bytesReturned = 2,
+            parse = { d -> String.format("%.3f", d[0] / 200.0) }
+        ),
+
+        Obd2Command(
+            pid = "0119",
+            name = "O2 Sensor Voltage (Bank 2, Sensor 4)",
+            unit = "V",
+            bytesReturned = 2,
+            parse = { d -> String.format("%.3f", d[0] / 200.0) }
+        ),
+
+        Obd2Command(
+            pid = "011A",
+            name = "O2 Sensor Voltage (Bank 3, Sensor 1)",
+            unit = "V",
+            bytesReturned = 2,
+            parse = { d -> String.format("%.3f", d[0] / 200.0) }
+        ),
+
+        Obd2Command(
+            pid = "011B",
+            name = "O2 Sensor Voltage (Bank 3, Sensor 2)",
+            unit = "V",
+            bytesReturned = 2,
+            parse = { d -> String.format("%.3f", d[0] / 200.0) }
+        ),
+
+        Obd2Command(
             pid = "0124",
             name = "O2 Wide-range (Bank 1, Sensor 1)",
             unit = "V",
@@ -421,6 +577,104 @@ object Obd2CommandRegistry {
             unit = "V",
             bytesReturned = 4,
             parse = { d -> String.format("%.3f", (d[2] * 256.0 + d[3]) * 8.0 / 65536.0) }
+        ),
+
+        Obd2Command(
+            pid = "0128",
+            name = "O2 Wide-range (Bank 2, Sensor 3)",
+            unit = "V",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", (d[2] * 256.0 + d[3]) * 8.0 / 65536.0) }
+        ),
+
+        Obd2Command(
+            pid = "0129",
+            name = "O2 Wide-range (Bank 2, Sensor 4)",
+            unit = "V",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", (d[2] * 256.0 + d[3]) * 8.0 / 65536.0) }
+        ),
+
+        Obd2Command(
+            pid = "012A",
+            name = "O2 Wide-range (Bank 3, Sensor 1)",
+            unit = "V",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", (d[2] * 256.0 + d[3]) * 8.0 / 65536.0) }
+        ),
+
+        Obd2Command(
+            pid = "012B",
+            name = "O2 Wide-range (Bank 3, Sensor 2)",
+            unit = "V",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", (d[2] * 256.0 + d[3]) * 8.0 / 65536.0) }
+        ),
+
+        // ── O2 Sensor Current ──────────────────────────────────────────────────
+
+        Obd2Command(
+            pid = "0134",
+            name = "O2 Sensor Current (Bank 1, Sensor 1)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "0135",
+            name = "O2 Sensor Current (Bank 1, Sensor 2)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "0136",
+            name = "O2 Sensor Current (Bank 2, Sensor 1)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "0137",
+            name = "O2 Sensor Current (Bank 2, Sensor 2)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "0138",
+            name = "O2 Sensor Current (Bank 2, Sensor 3)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "0139",
+            name = "O2 Sensor Current (Bank 2, Sensor 4)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "013A",
+            name = "O2 Sensor Current (Bank 3, Sensor 1)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
+        ),
+
+        Obd2Command(
+            pid = "013B",
+            name = "O2 Sensor Current (Bank 3, Sensor 2)",
+            unit = "mA",
+            bytesReturned = 4,
+            parse = { d -> String.format("%.3f", ((d[2] * 256.0 + d[3]) / 256.0) - 128.0) }
         ),
 
         // ── Distance / Status ────────────────────────────────────────────────
@@ -526,6 +780,14 @@ object Obd2CommandRegistry {
         ),
 
         Obd2Command(
+            pid = "0148",
+            name = "Throttle Position C",
+            unit = "%",
+            bytesReturned = 1,
+            parse = { d -> String.format("%.1f", d[0] * 100.0 / 255.0) }
+        ),
+
+        Obd2Command(
             pid = "0149",
             name = "Accelerator Pedal Position D",
             unit = "%",
@@ -621,6 +883,224 @@ object Obd2CommandRegistry {
             unit = "Nm",
             bytesReturned = 2,
             parse = { d -> "${d[0] * 256 + d[1]}" }
+        ),
+
+        // ── Extended Standard PIDs (0x64–0x7F) ─────────────────────────────
+
+        Obd2Command(
+            pid = "0164",
+            name = "Engine Percent Torque Data",
+            unit = "%",
+            bytesReturned = 5,
+            parse = { d ->
+                "Idle=${d[0] - 125}, EP1=${d[1] - 125}, EP2=${d[2] - 125}, EP3=${d[3] - 125}, EP4=${d[4] - 125}"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0166",
+            name = "MAF Sensor (multi)",
+            unit = "g/s",
+            bytesReturned = 5,
+            parse = { d ->
+                val s1 = String.format("%.2f", (d[1] * 256.0 + d[2]) / 32.0)
+                val s2 = String.format("%.2f", (d[3] * 256.0 + d[4]) / 32.0)
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0167",
+            name = "Engine Coolant Temp (multi)",
+            unit = "°C",
+            bytesReturned = 3,
+            parse = { d ->
+                val s1 = d[1] - 40
+                val s2 = d[2] - 40
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0168",
+            name = "Intake Air Temp (multi)",
+            unit = "°C",
+            bytesReturned = 7,
+            parse = { d ->
+                val s1 = d[1] - 40
+                val s2 = d[2] - 40
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "016B",
+            name = "EGR Temperature",
+            unit = "°C",
+            bytesReturned = 5,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                val s2 = String.format("%.1f", (d[3] * 256.0 + d[4]) / 10.0 - 40.0)
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "016D",
+            name = "Fuel Pressure Control",
+            unit = "kPa",
+            bytesReturned = 6,
+            parse = { d ->
+                val target = (d[1] * 256 + d[2]) * 10
+                val actual = (d[3] * 256 + d[4]) * 10
+                "Target=$target, Actual=$actual"
+            }
+        ),
+
+        Obd2Command(
+            pid = "016E",
+            name = "Injection Pressure Control",
+            unit = "kPa",
+            bytesReturned = 5,
+            parse = { d ->
+                val target = (d[1] * 256 + d[2]) * 10
+                val actual = (d[3] * 256 + d[4]) * 10
+                "Target=$target, Actual=$actual"
+            }
+        ),
+
+        Obd2Command(
+            pid = "016F",
+            name = "Turbo Compressor Inlet Pressure",
+            unit = "kPa",
+            bytesReturned = 3,
+            parse = { d ->
+                val s1 = d[1]
+                val s2 = d[2]
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0170",
+            name = "Boost Pressure Control",
+            unit = "kPa",
+            bytesReturned = 9,
+            parse = { d ->
+                val targetA = String.format("%.1f", (d[1] * 256.0 + d[2]) * 0.03125)
+                val actualA = String.format("%.1f", (d[3] * 256.0 + d[4]) * 0.03125)
+                "Target=$targetA, Actual=$actualA"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0173",
+            name = "Exhaust Pressure",
+            unit = "kPa",
+            bytesReturned = 5,
+            parse = { d ->
+                val s1 = String.format("%.2f", (d[1] * 256.0 + d[2]) * 0.01)
+                val s2 = String.format("%.2f", (d[3] * 256.0 + d[4]) * 0.01)
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0174",
+            name = "Turbocharger RPM",
+            unit = "rpm",
+            bytesReturned = 5,
+            parse = { d ->
+                val s1 = (d[1] * 256 + d[2]) * 10
+                val s2 = (d[3] * 256 + d[4]) * 10
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0175",
+            name = "Turbocharger Temp A",
+            unit = "°C",
+            bytesReturned = 7,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                val s2 = String.format("%.1f", (d[3] * 256.0 + d[4]) / 10.0 - 40.0)
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0176",
+            name = "Turbocharger Temp B",
+            unit = "°C",
+            bytesReturned = 7,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                val s2 = String.format("%.1f", (d[3] * 256.0 + d[4]) / 10.0 - 40.0)
+                "S1=$s1, S2=$s2"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0178",
+            name = "EGT Bank 1",
+            unit = "°C",
+            bytesReturned = 9,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                val s2 = String.format("%.1f", (d[3] * 256.0 + d[4]) / 10.0 - 40.0)
+                val s3 = String.format("%.1f", (d[5] * 256.0 + d[6]) / 10.0 - 40.0)
+                val s4 = String.format("%.1f", (d[7] * 256.0 + d[8]) / 10.0 - 40.0)
+                "S1=$s1, S2=$s2, S3=$s3, S4=$s4"
+            }
+        ),
+
+        Obd2Command(
+            pid = "0179",
+            name = "EGT Bank 2",
+            unit = "°C",
+            bytesReturned = 9,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                val s2 = String.format("%.1f", (d[3] * 256.0 + d[4]) / 10.0 - 40.0)
+                val s3 = String.format("%.1f", (d[5] * 256.0 + d[6]) / 10.0 - 40.0)
+                val s4 = String.format("%.1f", (d[7] * 256.0 + d[8]) / 10.0 - 40.0)
+                "S1=$s1, S2=$s2, S3=$s3, S4=$s4"
+            }
+        ),
+
+        Obd2Command(
+            pid = "017A",
+            name = "DPF Differential Pressure",
+            unit = "kPa",
+            bytesReturned = 3,
+            parse = { d ->
+                val s1 = String.format("%.2f", (d[1] * 256.0 + d[2]) * 0.01)
+                "S1=$s1"
+            }
+        ),
+
+        Obd2Command(
+            pid = "017B",
+            name = "DPF Temperature",
+            unit = "°C",
+            bytesReturned = 3,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                "S1=$s1"
+            }
+        ),
+
+        Obd2Command(
+            pid = "017C",
+            name = "PM Filter Temp",
+            unit = "°C",
+            bytesReturned = 9,
+            parse = { d ->
+                val s1 = String.format("%.1f", (d[1] * 256.0 + d[2]) / 10.0 - 40.0)
+                val s2 = String.format("%.1f", (d[3] * 256.0 + d[4]) / 10.0 - 40.0)
+                "S1=$s1, S2=$s2"
+            }
         )
     )
 }
