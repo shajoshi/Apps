@@ -53,6 +53,7 @@ object AppSettings {
     private const val KEY_OBD_CONNECTION_ENABLED    = "obd_connection_enabled"
     private const val KEY_BT_LOGGING_ENABLED        = "bt_logging_enabled"
     private const val KEY_FORCE_BLE_CONNECTION      = "force_ble_connection"
+    private const val KEY_PID_CACHE_MAP             = "pid_cache_map"
 
     val DEFAULT_POLLING_DELAY_MS = 500L
     val DEFAULT_COMMAND_DELAY_MS = 50L
@@ -123,7 +124,8 @@ object AppSettings {
             obdConnectionEnabled = p.getBoolean(KEY_OBD_CONNECTION_ENABLED, true),
             forceBleConnection = p.getBoolean(KEY_FORCE_BLE_CONNECTION, false),
             lastDeviceMac = p.getString("last_device_mac", null),
-            lastDeviceName = p.getString("last_device_name", null)
+            lastDeviceName = p.getString("last_device_name", null),
+            pidCacheMap = parsePidCacheMap(p.getString(KEY_PID_CACHE_MAP, null))
         )
     }
 
@@ -188,6 +190,11 @@ object AppSettings {
             putBoolean(KEY_FORCE_BLE_CONNECTION, settings.forceBleConnection)
             settings.lastDeviceMac?.let { putString("last_device_mac", it) } ?: remove("last_device_mac")
             settings.lastDeviceName?.let { putString("last_device_name", it) } ?: remove("last_device_name")
+            if (settings.pidCacheMap.isNotEmpty()) {
+                putString(KEY_PID_CACHE_MAP, serializePidCacheMap(settings.pidCacheMap).toString())
+            } else {
+                remove(KEY_PID_CACHE_MAP)
+            }
         }.apply()
     }
 
@@ -409,6 +416,11 @@ object AppSettings {
             timestamp = System.currentTimeMillis(),
             protocolNumber = protocolNumber ?: previousCache?.protocolNumber
         )
+
+        android.util.Log.d(
+            "AppSettings",
+            "Saving PID cache for $macAddress; protocol=${newCache.protocolNumber ?: "none"}"
+        )
         
         // Keep only last 10 MAC addresses to prevent unlimited growth
         val updatedCache = settings.pidCacheMap.toMutableMap()
@@ -459,8 +471,19 @@ object AppSettings {
 
     // ── Helper Methods ───────────────────────────────────────────────────────
 
-    private fun parsePidCacheMap(json: JSONObject?): Map<String, PidCache> {
-        if (json == null) return emptyMap()
+    private fun parsePidCacheMap(jsonString: String?): Map<String, PidCache> {
+        if (jsonString.isNullOrBlank()) return emptyMap()
+
+        val json = try {
+            JSONObject(jsonString)
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "AppSettings",
+                "Failed to parse pidCacheMap JSON; ignoring cached PID data",
+                e
+            )
+            return emptyMap()
+        }
         
         val cacheMap = mutableMapOf<String, PidCache>()
         json.keys().forEach { macAddress ->

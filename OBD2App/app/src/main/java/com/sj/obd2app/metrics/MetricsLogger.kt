@@ -229,6 +229,18 @@ class MetricsLogger {
         put("timestampMs", timestampMs)
         put("sampleNo", sampleNo)
 
+        val structuredObdPids = setOf(
+            "0101", "0103", "0104", "0105", "0106", "0107", "0108", "0109",
+            "010A", "010B", "010C", "010D", "010E", "010F", "0110", "0111",
+            "011F", "0121", "0122", "0123", "012C", "012D", "012E", "0130",
+            "0131", "0132", "0133", "0134", "0135", "0136", "0137", "0138",
+            "0139", "013A", "013B", "013C", "013D", "0141", "0142", "0143",
+            "0145", "0146", "0147", "0148", "0149", "014A", "014B", "014C",
+            "014D", "014E", "014F", "0150", "0151", "0152", "0153", "0154",
+            "0155", "0156", "0157", "0158", "0159", "015A", "015B", "015C",
+            "015D", "015E", "015F", "0161", "0162", "0163"
+        )
+
         // gps sub-object — only when any GPS data is available
         val hasGps = gpsLatitude != null || gpsSpeedKmh != null || altitudeMslM != null
         if (hasGps) {
@@ -352,9 +364,10 @@ class MetricsLogger {
         }
 
         // rawObdData sub-object - includes all polled PIDs including unknown/manufacturer-specific
-        if (rawObdData.isNotEmpty()) {
+        val filteredRawObdData = rawObdData.filterNot { it.pid in structuredObdPids }
+        if (filteredRawObdData.isNotEmpty()) {
             put("rawObdData", JSONObject().apply {
-                rawObdData.forEach { item ->
+                filteredRawObdData.forEach { item ->
                     // Use PID as key, store name, value, and unit for complete context
                     put(item.pid, JSONObject().apply {
                         put("name", item.name)
