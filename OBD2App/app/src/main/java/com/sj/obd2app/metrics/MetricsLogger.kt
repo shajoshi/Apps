@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.sj.obd2app.obd.Obd2Command
 import com.sj.obd2app.settings.AppSettings
@@ -36,6 +37,10 @@ import java.util.Locale
  * [repairIfNeeded] can fix a file that was not closed cleanly.
  */
 class MetricsLogger {
+
+    companion object {
+        private const val TAG = "MetricsLogger"
+    }
 
     private var writer: BufferedWriter? = null
     private var firstSample = true
@@ -148,7 +153,10 @@ class MetricsLogger {
                 outputUri = uri
                 val os = context.contentResolver.openOutputStream(uri) ?: return null
                 BufferedWriter(OutputStreamWriter(os, Charsets.UTF_8))
-            } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create MediaStore writer for file: $fileName", e)
+                null
+            }
         } else {
             // Direct file write to Downloads for API < 29
             try {
@@ -158,7 +166,10 @@ class MetricsLogger {
                 outputFile = file
                 outputUri = Uri.fromFile(file)
                 BufferedWriter(FileWriter(file))
-            } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to create direct file writer for: $fileName", e)
+                null
+            }
         }
     }
 

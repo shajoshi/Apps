@@ -15,12 +15,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import android.util.Log
 
 /**
  * ViewModel for the Details screen.
  * Collects OBD-II data from the active service and exposes it as StateFlow.
  */
 class DetailsViewModel(application: android.app.Application) : AndroidViewModel(application) {
+
+    companion object {
+        private const val TAG = "DetailsViewModel"
+    }
 
     private val service = Obd2ServiceProvider.getService()
     private val calculator = MetricsCalculator.getInstance(application.applicationContext)
@@ -97,11 +102,12 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
     
     private fun loadCachedData() {
         viewModelScope.launch {
+            var lastMac: String? = null
             try {
                 val context = getApplication<android.app.Application>()
                 
                 // Load cached PIDs for last connected device
-                val lastMac = AppSettings.getLastDeviceMac(context)
+                lastMac = AppSettings.getLastDeviceMac(context)
                 if (!lastMac.isNullOrEmpty()) {
                     val cachedPids = AppSettings.getPidCache(context, lastMac) ?: emptyMap()
                     _cachedPids.value = cachedPids
@@ -112,6 +118,7 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
                 _lastTripSnapshot.value = lastTrip
                 
             } catch (e: Exception) {
+                Log.e(TAG, "Failed to load cached data. Last device MAC: $lastMac", e)
                 // Handle errors gracefully
                 _cachedPids.value = emptyMap()
                 _lastTripSnapshot.value = null

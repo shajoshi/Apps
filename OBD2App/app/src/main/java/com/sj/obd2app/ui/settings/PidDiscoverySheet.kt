@@ -259,11 +259,12 @@ class PidDiscoverySheet : BottomSheetDialogFragment() {
             return
         }
         
+        var customPids: List<CustomPid> = emptyList()
         try {
             android.util.Log.d("PidDiscoverySheet", "Saving PIDs to profileId=$activeProfileId (from args=${arguments?.getString(ARG_PROFILE_ID)})")
             
             // Convert DiscoveredPid to CustomPid
-            val customPids = selectedPids.map { discovered ->
+            customPids = selectedPids.map { discovered ->
                 CustomPid(
                     name = discovered.suggestedName,
                     header = discovered.header,
@@ -297,6 +298,7 @@ class PidDiscoverySheet : BottomSheetDialogFragment() {
                 com.sj.obd2app.ui.showToast(requireContext(), "Error: profile not found for id=$activeProfileId")
             }
         } catch (e: Exception) {
+            android.util.Log.e("PidDiscoverySheet", "Failed to add ${customPids.size} custom PIDs to profile id=$activeProfileId", e)
             com.sj.obd2app.ui.showToast(
                 requireContext(),
                 "Failed to add PIDs: ${e.message}"

@@ -6,6 +6,7 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.util.AttributeSet
+import android.util.Log
 
 /**
  * A digital 7-segment style display — works for any numeric metric.
@@ -19,10 +20,15 @@ class SevenSegmentView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : DashboardGaugeView(context, attrs, defStyleAttr) {
 
+    companion object {
+        private const val TAG = "SevenSegmentView"
+    }
+
     private val digitTypeface: Typeface by lazy {
         try {
             Typeface.createFromAsset(context.assets, "fonts/digital-7.ttf")
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to load custom font 'fonts/digital-7.ttf', using MONOSPACE fallback", e)
             Typeface.MONOSPACE
         }
     }

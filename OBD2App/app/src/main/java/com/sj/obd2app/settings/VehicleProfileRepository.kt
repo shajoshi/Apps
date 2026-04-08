@@ -437,8 +437,9 @@ class VehicleProfileRepository private constructor(private val context: Context)
         return try {
             val arr = json.getJSONArray("customPids")
             (0 until arr.length()).mapNotNull { i ->
+                var obj: JSONObject? = null
                 try {
-                    val obj = arr.getJSONObject(i)
+                    obj = arr.getJSONObject(i)
                     CustomPid(
                         id            = obj.getString("id"),
                         name          = obj.getString("name"),
@@ -452,12 +453,12 @@ class VehicleProfileRepository private constructor(private val context: Context)
                         enabled       = obj.optBoolean("enabled", true)
                     )
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to deserialize custom PID at index $i", e)
+                    Log.e(TAG, "Failed to deserialize custom PID at index $i. JSONObject: $obj", e)
                     null
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to deserialize customPids array", e)
+            Log.e(TAG, "Failed to deserialize customPids array", e)
             emptyList()
         }
     }
