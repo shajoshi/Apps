@@ -103,105 +103,144 @@
         android:paddingEnd="16dp"
         android:paddingBottom="16dp">
 
-    <!-- Status line -->
-    <TextView
-        android:id="@+id/text_connect_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:text="@string/status_disconnected"
-        android:textColor="#888888"
-        android:textSize="14sp" />
-
-    <!-- Unified device list with section headers -->
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/recyclerview_devices"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingBottom="4dp" />
-
-    <!-- Connection log panel — visible during/after a connection attempt -->
-    <LinearLayout
-        android:id="@+id/panel_connection_log"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:background="#0D0D1A"
-        android:padding="10dp"
-        android:layout_marginTop="8dp"
-        android:visibility="gone">
-
+        <!-- Status line -->
         <TextView
-            android:id="@+id/label_log_header"
-            android:layout_width="match_parent"
+            android:id="@+id/text_connect_status"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="CONNECTION LOG"
-            android:textColor="#666677"
-            android:textSize="10sp"
-            android:letterSpacing="0.08"
-            android:layout_marginBottom="6dp" />
-
-        <ScrollView
-            android:id="@+id/scroll_log"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:maxHeight="160dp"
-            android:fillViewport="false"
-            android:scrollbars="vertical"
-            android:scrollbarStyle="insideOverlay">
-
-            <TextView
-                android:id="@+id/text_connection_log"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:lineSpacingExtra="2dp"
-                android:textColor="#AAAACC"
-                android:textSize="11sp" />
-
-        </ScrollView>
+            android:layout_marginBottom="12dp"
+            android:text="@string/status_disconnected"
+            android:textColor="#888888"
+            android:textSize="14sp" />
 
         <LinearLayout
+            android:id="@+id/panel_device_list_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="3"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/panel_device_list_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Devices"
+                    android:textColor="#AAAACC"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <ImageButton
+                    android:id="@+id/btn_device_list_toggle"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Expand or collapse device list"
+                    android:padding="6dp"
+                    android:src="@drawable/ic_chevron_up"
+                    android:tint="#AAAAAA" />
+            </LinearLayout>
+
+            <!-- Unified device list with section headers -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerview_devices"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false"
+                android:nestedScrollingEnabled="true"
+                android:paddingBottom="4dp"
+                android:scrollbars="vertical" />
+        </LinearLayout>
+
+        <!-- Connection log panel — always visible -->
+        <LinearLayout
+            android:id="@+id/panel_connection_log"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#0D0D1A"
+            android:padding="10dp"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/label_log_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="CONNECTION LOG"
+                android:textColor="#666677"
+                android:textSize="10sp"
+                android:letterSpacing="0.08"
+                android:layout_marginBottom="6dp" />
+
+            <ScrollView
+                android:id="@+id/scroll_log"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:nestedScrollingEnabled="true"
+                android:scrollbars="vertical"
+                android:scrollbarStyle="insideOverlay">
+
+                <TextView
+                    android:id="@+id/text_connection_log"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:lineSpacingExtra="2dp"
+                    android:textColor="#AAAACC"
+                    android:textSize="11sp" />
+
+            </ScrollView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_copy_log"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Copy log"
+                    android:textAllCaps="false" />
+
+                <Space
+                    android:layout_width="8dp"
+                    android:layout_height="1dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_debug_export"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Debug"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Disconnect button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_disconnect"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_copy_log"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Copy log"
-                android:textAllCaps="false" />
-
-            <Space
-                android:layout_width="8dp"
-                android:layout_height="1dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_debug_export"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Debug"
-                android:textAllCaps="false" />
-        </LinearLayout>
-
-    </LinearLayout>
-
-    <!-- Disconnect button -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btn_disconnect"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:backgroundTint="#CF6679"
-        android:text="@string/disconnect"
-        android:textColor="#FFFFFF"
-        android:visibility="gone" />
+            android:backgroundTint="#CF6679"
+            android:text="@string/disconnect"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
 
     </LinearLayout>
 

@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -44,6 +45,7 @@ class ConnectFragment : Fragment() {
     private var sectionedAdapter: SectionedDeviceAdapter? = null
     private var receiverRegistered = false
     private var wasScanning = false
+    private var isDeviceListExpanded = true
 
     private val debugExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -119,11 +121,46 @@ class ConnectFragment : Fragment() {
         setupConnectUI(viewModel.currentMockMode)
         viewModel.loadPairedDevices(requireContext())
     }
+
+    private fun applySectionWeights() {
+        val deviceParams = binding.panelDeviceListContainer.layoutParams as LinearLayout.LayoutParams
+        val logParams = binding.panelConnectionLog.layoutParams as LinearLayout.LayoutParams
+
+        if (isDeviceListExpanded) {
+            deviceParams.weight = 3f
+            logParams.weight = 1f
+        } else {
+            deviceParams.weight = 1f
+            logParams.weight = 6f
+        }
+
+        binding.panelDeviceListContainer.layoutParams = deviceParams
+        binding.panelConnectionLog.layoutParams = logParams
+    }
+
+    private fun updateDeviceListVisibility() {
+        val visible = if (isDeviceListExpanded) View.VISIBLE else View.GONE
+        binding.recyclerviewDevices.visibility = visible
+        binding.btnDeviceListToggle.setImageResource(
+            if (isDeviceListExpanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down
+        )
+        binding.btnDeviceListToggle.contentDescription =
+            if (isDeviceListExpanded) "Collapse device list" else "Expand device list"
+        applySectionWeights()
+    }
     
     private fun setupConnectUI(isMock: Boolean) {
         // Clear existing adapter but keep observers
         binding.recyclerviewDevices.adapter = null
         sectionedAdapter = null
+        isDeviceListExpanded = true
+        applySectionWeights()
+        updateDeviceListVisibility()
+
+        binding.btnDeviceListToggle.setOnClickListener {
+            isDeviceListExpanded = !isDeviceListExpanded
+            updateDeviceListVisibility()
+        }
         
         if (isMock) {
             binding.btnScan.visibility = View.GONE
@@ -215,16 +252,12 @@ class ConnectFragment : Fragment() {
             )
         }
 
-        // Connection log panel — show whenever there are log lines
+        // Connection log panel is always visible; just update the content.
         viewModel.connectionLog.observe(viewLifecycleOwner) { lines ->
-            if (lines.isEmpty()) {
-                binding.panelConnectionLog.visibility = View.GONE
-            } else {
-                binding.panelConnectionLog.visibility = View.VISIBLE
-                binding.textConnectionLog.text = lines.joinToString("\n")
-                // Auto-scroll to bottom so latest message is visible
-                binding.scrollLog.post { binding.scrollLog.fullScroll(View.FOCUS_DOWN) }
-            }
+            binding.panelConnectionLog.visibility = View.VISIBLE
+            binding.textConnectionLog.text = lines.joinToString("\n")
+            // Auto-scroll to bottom so latest message is visible
+            binding.scrollLog.post { binding.scrollLog.fullScroll(View.FOCUS_DOWN) }
         }
 
         binding.btnCopyLog.setOnClickListener {
