@@ -208,6 +208,47 @@ def combine_metrics(metrics_list: List[TripMetrics]) -> TripMetrics:
     return combined
 
 
+def combine_samples_chronologically(samples_dict: dict, track_names: List[str]) -> List[TrackSample]:
+    """Combine samples from multiple tracks in chronological order with no time gaps."""
+    if not track_names:
+        return []
+
+    track_info = []
+    for track_name in track_names:
+        samples = samples_dict.get(track_name, [])
+        if samples:
+            track_info.append((track_name, samples))
+
+    if not track_info:
+        return []
+
+    chronological_samples: List[TrackSample] = []
+    time_offset_ms = 0
+
+    for i, (track_name, samples) in enumerate(track_info):
+        if i == 0:
+            chronological_samples.extend(samples)
+            time_offset_ms = samples[-1].timestamp_ms
+            continue
+
+        track_start_offset = time_offset_ms - samples[0].timestamp_ms
+        adjusted_samples: List[TrackSample] = []
+        for sample in samples:
+            adjusted_samples.append(
+                TrackSample(
+                    timestamp_ms=sample.timestamp_ms + track_start_offset,
+                    sample_no=sample.sample_no,
+                    gps=sample.gps,
+                    obd=sample.obd,
+                )
+            )
+
+        chronological_samples.extend(adjusted_samples)
+        time_offset_ms = adjusted_samples[-1].timestamp_ms
+
+    return chronological_samples
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -359,14 +400,6 @@ Examples:
             # Print track summary
             ReportGenerator.print_track_summary(track_name, metrics, profile)
             
-            # Generate KML files if requested
-            if args.kml:
-                print("  Generating KML files...")
-                KMLGenerator.create_track_kml(samples, metrics, track_name, 'speed', str(output_dir))
-                KMLGenerator.create_track_kml(samples, metrics, track_name, 'fuel_efficiency', str(output_dir))
-                KMLGenerator.create_track_kml(samples, metrics, track_name, 'rpm', str(output_dir))
-                KMLGenerator.create_drive_mode_kml(samples, track_name, str(output_dir))
-            
             # Note: Plots will be generated after all tracks are processed for combined analysis
         
         # Display profile information
@@ -385,7 +418,11 @@ Examples:
         
         # Calculate combined metrics (needed for both single and multiple tracks)
         if len(all_metrics) > 1:
-            combined = combine_metrics(all_metrics)
+            chronological_samples = combine_samples_chronologically(samples_dict, track_names)
+            if chronological_samples:
+                combined = recalculator.recalculate_track(chronological_samples)
+            else:
+                combined = combine_metrics(all_metrics)
             ReportGenerator.print_combined_summary(track_names, combined, profile)
         else:
             combined = all_metrics[0]  # Use single track metrics for plotting
@@ -396,9 +433,7 @@ Examples:
             
             if len(all_metrics) > 1:
                 # Generate combined plots for multiple tracks
-                combined_samples = []
-                for samples in samples_dict.values():
-                    combined_samples.extend(samples)
+                combined_samples = combine_samples_chronologically(samples_dict, track_names)
                 
                 if combined_samples:
                     PlotGenerator.create_distribution_plots(combined_samples, combined, "combined_tracks", str(output_dir), profile)
@@ -409,7 +444,7 @@ Examples:
                     chronological_samples = PlotGenerator.create_chronological_time_series(
                         samples_dict, track_names, str(output_dir), profile
                     )
-                    
+
                     print("✓ Generated combined plots for all tracks")
                 else:
                     print("⚠️  No data available for combined plots")
@@ -428,7 +463,26 @@ Examples:
         if args.csv:
             print(f"\n📊 Exporting CSV data...")
             metrics_dict = {name: metrics for name, metrics in zip(track_names, all_metrics)}
-            CSVExporter.export_all_data(samples_dict, metrics_dict, profile, str(output_dir))
+            combined_samples = combine_samples_chronologically(samples_dict, track_names) if len(track_names) > 1 else None
+            CSVExporter.export_all_data(
+                samples_dict,
+                metrics_dict,
+                profile,
+                str(output_dir),
+                combined_samples=combined_samples,
+                track_order=track_names,
+            )
+
+        # Generate a combined KML if requested
+        if args.kml and len(track_names) > 1:
+            combined_samples = combine_samples_chronologically(samples_dict, track_names)
+            if combined_samples:
+                print(f"\n🗺️ Generating combined chronological KML...")
+                KMLGenerator.create_combined_importable_kml(
+                    combined_samples,
+                    "combined_tracks",
+                    str(output_dir)
+                )
         
         # Validate metrics if requested
         if args.validate:

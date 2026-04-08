@@ -244,6 +244,84 @@ class CSVExporter:
                 writer.writerow(row)
         
         print(f"✓ Exported metrics summary CSV: {output_path}")
+
+    @staticmethod
+    def export_combined_samples_csv(
+        combined_samples: List[TrackSample],
+        output_dir: str = '.',
+        verbose: bool = False
+    ):
+        """
+        Export a single combined CSV containing all samples in chronological order.
+
+        Adds `track_name` and `combined_sample_no` columns while preserving a global
+        sample sequence.
+        """
+        logger = logging.getLogger(__name__) if verbose else None
+
+        if not combined_samples:
+            if verbose and logger:
+                logger.info("No combined samples available for combined CSV export")
+            return
+
+        output_path = Path(output_dir) / "combined_samples.csv"
+
+        # Discover fields from the merged samples
+        gps_fields = set()
+        obd_fields = set()
+        for sample in combined_samples:
+            if sample.gps:
+                gps_fields.update([
+                    attr for attr in dir(sample.gps)
+                    if not attr.startswith('_') and getattr(sample.gps, attr) is not None
+                ])
+            if sample.obd:
+                obd_fields.update([
+                    attr for attr in dir(sample.obd)
+                    if not attr.startswith('_') and getattr(sample.obd, attr) is not None
+                ])
+
+        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['combined_sample_no', 'track_name', 'timestamp_ms', 'sample_no']
+
+            for field in sorted(gps_fields):
+                fieldnames.append(f'gps_{field}')
+
+            for field in sorted(obd_fields):
+                fieldnames.append(f'obd_{field}')
+
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+            sample_index = 1
+            for combined_sample in combined_samples:
+                row = {
+                    'combined_sample_no': sample_index,
+                    'track_name': 'combined',
+                    'timestamp_ms': combined_sample.timestamp_ms,
+                    'sample_no': combined_sample.sample_no,
+                }
+
+                if combined_sample.gps:
+                    for field in gps_fields:
+                        row[f'gps_{field}'] = getattr(combined_sample.gps, field, None)
+                else:
+                    for field in gps_fields:
+                        row[f'gps_{field}'] = None
+
+                if combined_sample.obd:
+                    for field in obd_fields:
+                        row[f'obd_{field}'] = getattr(combined_sample.obd, field, None)
+                else:
+                    for field in obd_fields:
+                        row[f'obd_{field}'] = None
+
+                writer.writerow(row)
+                sample_index += 1
+
+        print(f"✓ Exported combined chronological CSV: {output_path}")
+        if verbose and logger:
+            logger.info(f"Successfully exported {len(combined_samples)} combined samples to {output_path}")
     
     @staticmethod
     def export_calculated_samples_csv(
@@ -573,7 +651,9 @@ class CSVExporter:
         metrics_dict: Dict[str, TripMetrics],
         profile: VehicleProfile,
         output_dir: str = '.',
-        verbose: bool = False
+        verbose: bool = False,
+        combined_samples: List[TrackSample] = None,
+        track_order: List[str] = None
     ):
         """
         Export all data to multiple CSV files.
@@ -601,12 +681,24 @@ class CSVExporter:
         if verbose and logger:
             logger.info("Exported metrics summary")
         
-        # Export data for each track
-        for track_name, samples in samples_dict.items():
+        if combined_samples and track_order and len(track_order) > 1:
             if verbose and logger:
-                logger.info(f"Exporting track: {track_name} with {len(samples)} samples")
-            CSVExporter.export_samples_csv(samples, track_name, output_dir, verbose)
-            CSVExporter.export_calculated_samples_csv(samples, track_name, profile, output_dir)
+                logger.info(f"Exporting combined chronological CSV with {len(combined_samples)} samples")
+            CSVExporter.export_combined_samples_csv(
+                combined_samples=combined_samples,
+                output_dir=output_dir,
+                verbose=verbose,
+            )
+
+        elif track_order:
+            # Single-track fallback: export a combined CSV for consistency instead of separate track CSVs.
+            single_track_samples = samples_dict.get(track_order[0], []) if track_order else []
+            if single_track_samples:
+                CSVExporter.export_combined_samples_csv(
+                    combined_samples=single_track_samples,
+                    output_dir=output_dir,
+                    verbose=verbose,
+                )
         
         print("✓ All CSV exports complete!\n")
         if verbose and logger:

@@ -18,8 +18,8 @@ class FuelType(Enum):
     - energyDensityMJpL: Lower heating value (MJ/L) for thermodynamic power
     """
     PETROL = ("Petrol", 0.09195, 23.1, 34.2)
-    E20 = ("E20 Petrol", 0.0958, 22.3, 27.4)
-    DIESEL = ("Diesel", 0.0827, 26.4, 38.6)
+    E20 = ("E20 Petrol", 0.09166, 22.3, 27.4)
+    DIESEL = ("Diesel", 0.08210, 26.4, 38.6)
     CNG = ("CNG", 0.13740, 16.0, 23.0)
     
     def __init__(self, display_name: str, maf_ml_per_gram: float, 

@@ -52,7 +52,7 @@ class FuelCalculator:
                 )
                 return fuel_rate
             else:
-                return (maf_gs * 3600) / (fuel_type.maf_ml_per_gram * 1000)
+                return maf_gs * fuel_type.maf_ml_per_gram * 3.6
         
         # Tier 3: Speed-Density
         if (map_kpa is not None and iat_c is not None and rpm is not None 

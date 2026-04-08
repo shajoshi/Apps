@@ -747,39 +747,6 @@ class PlotGenerator:
         for sample in samples:
             if sample.obd and sample.obd.maf_gs is not None:
                 maf_values.append(sample.obd.maf_gs)
-        
-        # Debug MAF analysis
-        if maf_values:
-            print(f"\n🔍 MAF Analysis:")
-            print(f"   Raw MAF range: {min(maf_values):.2f} - {max(maf_values):.2f} g/s")
-            print(f"   Raw MAF mean: {np.mean(maf_values):.2f} g/s")
-            print(f"   Raw MAF median: {np.median(maf_values):.2f} g/s")
-            
-            # Test different unit conversions
-            max_maf = max(maf_values)
-            
-            # Test if it's kg/h instead of g/s
-            maf_as_kgh = max_maf * 3.6  # g/s → kg/h
-            print(f"   If kg/h: {maf_as_kgh:.2f} kg/h (should be 50-300 kg/h for diesel)")
-            
-            # Test if it's lb/min instead of g/s
-            maf_as_lbmin = max_maf / 7.56  # g/s → lb/min
-            print(f"   If lb/min: {maf_as_lbmin:.2f} lb/min (should be 0.5-20 lb/min for diesel)")
-            
-            # Test scaling factors
-            print(f"   With 2x scaling: {max_maf * 2:.2f} g/s")
-            print(f"   With 3x scaling: {max_maf * 3:.2f} g/s")
-            print(f"   With 4x scaling: {max_maf * 4:.2f} g/s")
-            print(f"   Expected for 1.3L diesel: 15-50 g/s")
-            
-            # Recommendation
-            if max_maf < 10:
-                print(f"   💡 RECOMMENDATION: MAF values too low, try 3-4x scaling factor")
-            elif max_maf > 100:
-                print(f"   💡 RECOMMENDATION: MAF values too high, might be in kg/h")
-            else:
-                print(f"   💡 MAF range looks reasonable for g/s")
-        
         return maf_values
     
     @staticmethod
