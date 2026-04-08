@@ -630,7 +630,8 @@ class PlotGenerator:
                         timestamp_ms=sample.timestamp_ms + track_start_offset,
                         sample_no=sample.sample_no,
                         gps=sample.gps,
-                        obd=sample.obd
+                        obd=sample.obd,
+                        fuel=sample.fuel
                     )
                     adjusted_samples.append(adjusted_sample)
                 

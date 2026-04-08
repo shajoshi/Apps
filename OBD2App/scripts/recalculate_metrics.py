@@ -240,6 +240,7 @@ def combine_samples_chronologically(samples_dict: dict, track_names: List[str]) 
                     sample_no=sample.sample_no,
                     gps=sample.gps,
                     obd=sample.obd,
+                    fuel=sample.fuel,
                 )
             )
 
@@ -494,15 +495,121 @@ Examples:
                 if track_name in samples_dict:
                     # Extract logged metrics
                     logged_metrics = LoggedDataExtractor.extract_logged_metrics(str(track_path))
+
+                    track_index = track_names.index(track_name)
+                    recalculated_metrics = all_metrics[track_index]
+
+                    # Compare recalculated metrics against logged trip/fuel values when available
+                    metric_checks = {}
+                    comparisons = [
+                        ('distanceKm', recalculated_metrics.distance_km, 'km'),
+                        ('timeSec', recalculated_metrics.total_time_sec, 'sec'),
+                        ('movingTimeSec', recalculated_metrics.moving_time_sec, 'sec'),
+                        ('stoppedTimeSec', recalculated_metrics.stopped_time_sec, 'sec'),
+                        ('avgSpeedKmh', recalculated_metrics.avg_speed_kmh, 'km/h'),
+                        ('maxSpeedKmh', recalculated_metrics.max_speed_kmh, 'km/h'),
+                        ('pctIdle', recalculated_metrics.pct_idle, '%'),
+                        ('pctCity', recalculated_metrics.pct_city, '%'),
+                        ('pctHighway', recalculated_metrics.pct_highway, '%'),
+                        ('tripFuelUsedL', recalculated_metrics.fuel_used_l, 'L'),
+                        ('tripAvgLper100km', recalculated_metrics.avg_fuel_lper100km, 'L/100km'),
+                        ('tripAvgKpl', recalculated_metrics.avg_fuel_kpl, 'km/L'),
+                    ]
+
+                    for key, recalculated_value, unit in comparisons:
+                        logged_value = logged_metrics.get(key)
+                        if logged_value is None:
+                            continue
+                        diff = recalculated_value - logged_value
+                        metric_checks[key] = {
+                            'logged': logged_value,
+                            'recalculated': recalculated_value,
+                            'diff': diff,
+                            'unit': unit,
+                        }
+
+                    fuel_checks = {}
+                    samples = samples_dict.get(track_name, [])
+                    if samples:
+                        last_sample = samples[-1]
+                        if last_sample.fuel:
+                            logged_trip_fuel = last_sample.fuel.get('tripFuelUsedL')
+                            logged_trip_avg_lper100km = last_sample.fuel.get('tripAvgLper100km')
+                            logged_trip_avg_kpl = last_sample.fuel.get('tripAvgKpl')
+                            logged_power_thermo = last_sample.fuel.get('powerThermoKw')
+                            fuel_rate = last_sample.obd.fuel_rate_lh if last_sample.obd else None
+
+                            if logged_trip_fuel is not None:
+                                fuel_checks['tripFuelUsedL'] = {
+                                    'logged': logged_trip_fuel,
+                                    'recalculated': recalculated_metrics.fuel_used_l,
+                                    'diff': recalculated_metrics.fuel_used_l - logged_trip_fuel,
+                                    'unit': 'L',
+                                }
+                            if logged_trip_avg_lper100km is not None:
+                                fuel_checks['tripAvgLper100km'] = {
+                                    'logged': logged_trip_avg_lper100km,
+                                    'recalculated': recalculated_metrics.avg_fuel_lper100km,
+                                    'diff': recalculated_metrics.avg_fuel_lper100km - logged_trip_avg_lper100km,
+                                    'unit': 'L/100km',
+                                }
+                            if logged_trip_avg_kpl is not None:
+                                fuel_checks['tripAvgKpl'] = {
+                                    'logged': logged_trip_avg_kpl,
+                                    'recalculated': recalculated_metrics.avg_fuel_kpl,
+                                    'diff': recalculated_metrics.avg_fuel_kpl - logged_trip_avg_kpl,
+                                    'unit': 'km/L',
+                                }
+                            if logged_power_thermo is not None and fuel_rate is not None:
+                                recalculated_power = recalculator.power_calc.thermodynamic(
+                                    fuel_rate,
+                                    profile.fuel_type.energy_density_mjpl
+                                )
+                                if recalculated_power is not None:
+                                    fuel_checks['powerThermoKw'] = {
+                                        'logged': logged_power_thermo,
+                                        'recalculated': recalculated_power,
+                                        'diff': recalculated_power - logged_power_thermo,
+                                        'unit': 'kW',
+                                    }
                     
                     # Create validation result (simplified version)
                     validation_results[track_name] = {
                         'track_name': track_name,
                         'logged_metrics_available': bool(logged_metrics),
+                        'metric_checks': metric_checks,
+                        'fuel_checks': fuel_checks,
                         'summary': {
                             'overall_status': 'PASS' if logged_metrics else 'NO_LOGGED_DATA'
                         }
                     }
+
+                    if metric_checks or fuel_checks:
+                        print(f"\n  📋 {track_name} validation diff table:")
+                        print(f"  {'Metric':<22} {'Logged':>14} {'Recalc':>14} {'Diff':>14} {'Unit':>10}")
+                        print(f"  {'-' * 22} {'-' * 14} {'-' * 14} {'-' * 14} {'-' * 10}")
+
+                        def _print_check_row(metric_name: str, check: dict):
+                            logged = check.get('logged')
+                            recalculated = check.get('recalculated')
+                            diff = check.get('diff')
+                            unit = check.get('unit', '')
+                            print(
+                                f"  {metric_name:<22} "
+                                f"{logged:>14.3f} "
+                                f"{recalculated:>14.3f} "
+                                f"{diff:>14.3f} "
+                                f"{unit:>10}"
+                            )
+
+                        for key in [
+                            'distanceKm', 'timeSec', 'movingTimeSec', 'stoppedTimeSec',
+                            'avgSpeedKmh', 'maxSpeedKmh', 'pctIdle', 'pctCity', 'pctHighway',
+                            'tripFuelUsedL', 'tripAvgLper100km', 'tripAvgKpl', 'powerThermoKw'
+                        ]:
+                            check = metric_checks.get(key) or fuel_checks.get(key)
+                            if check is not None:
+                                _print_check_row(key, check)
             
             # Print validation summary
             print(f"  Validation complete for {len(validation_results)} tracks")
@@ -515,15 +622,15 @@ Examples:
             print(f"\n⚡ Power Calculation Summary:")
             for track_name, samples in samples_dict.items():
                 # Calculate power for a few representative samples
-                power_samples = [s for s in samples if s.obd and s.obd.fuel_rate_lh][:10]
+                power_samples = [
+                    s for s in samples
+                    if s.fuel and s.fuel.get('powerThermoKw') is not None
+                ][:10]
                 if power_samples:
                     avg_thermo_power = 0
                     count = 0
                     for sample in power_samples:
-                        power = recalculator.power_calc.thermodynamic(
-                            sample.obd.fuel_rate_lh,
-                            profile.fuel_type.energy_density_mjpl
-                        )
+                        power = sample.fuel.get('powerThermoKw')
                         if power:
                             avg_thermo_power += power
                             count += 1

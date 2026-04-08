@@ -221,7 +221,8 @@ class TrackLoader:
                 timestamp_ms=timestamp_ms,
                 sample_no=sample_no,
                 gps=gps_data,
-                obd=obd_data
+                obd=obd_data,
+                fuel=sample_data.get('fuel')
             )
         
         except Exception as e:

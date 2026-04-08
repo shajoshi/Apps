@@ -109,6 +109,7 @@ class TrackSample:
     sample_no: int
     gps: Optional[GpsData] = None
     obd: Optional[ObdData] = None
+    fuel: Optional[Dict[str, float]] = None
 
 
 @dataclass
