@@ -101,7 +101,7 @@ object AppSettings {
                 forceBleConnection = json.optBoolean("forceBleConnection", false),
                 lastDeviceMac = json.optString("lastDeviceMac", "").takeIf { it.isNotEmpty() },
                 lastDeviceName = json.optString("lastDeviceName", "").takeIf { it.isNotEmpty() },
-                pidCacheMap = parsePidCacheMap(json.optJSONObject("pidCacheMap")),
+                pidCacheMap = parsePidCacheMap(json.optJSONObject("pidCacheMap")?.toString()),
                 lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) }
             )
         } catch (e: Exception) {

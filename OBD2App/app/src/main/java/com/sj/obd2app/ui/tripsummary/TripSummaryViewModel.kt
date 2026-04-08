@@ -207,7 +207,7 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
                 distanceKm = trip.optDouble("distanceKm", 0.0).toFloat(),
                 timeSec = trip.optLong("timeSec", 0L),
                 movingTimeSec = trip.optLong("movingTimeSec", 0L),
-                stoppedTimeSec = trip.optLong("stoppedTimeSec", 0L),
+                stoppedTimeSec = trip.optLong("stoppedTimeSec", trip.optLong("idleTimeSec", 0L)),
                 avgSpeedKmh = trip.optDouble("avgSpeedKmh", 0.0).toFloat(),
                 maxSpeedKmh = trip.optDouble("maxSpeedKmh", 0.0).toFloat(),
                 pctCity = trip.optDouble("pctCity", 0.0).toFloat(),

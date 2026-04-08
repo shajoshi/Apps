@@ -75,7 +75,7 @@ class MetricsCalculator private constructor(private val context: Context) {
     private val tripCalculator = TripCalculator()
     private val dataOrchestrator = DataOrchestrator(context, scope, this)
 
-    /** Elapsed active trip seconds, honouring pauses. 0 when IDLE. */
+    /** Elapsed trip seconds. 0 when IDLE. */
     fun elapsedTripSec(): Long {
         val start = tripState.tripStartMs
         return ((System.currentTimeMillis() - start) / 1000L).coerceAtLeast(0L)
@@ -317,7 +317,7 @@ class MetricsCalculator private constructor(private val context: Context) {
                 avgCo2gPerKm = null,
                 tripDistanceKm = tripState.tripDistanceKm,
                 tripTimeSec = (System.currentTimeMillis() - tripState.tripStartMs) / 1000L,
-                movingTimeSec = tripState.movingTimeSec,
+                movingTimeSec = 0L,
                 stoppedTimeSec = tripState.stoppedTimeSec,
                 tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, (System.currentTimeMillis() - tripState.tripStartMs) / 1000L),
                 tripMaxSpeedKmh = tripState.maxSpeedKmh,
@@ -514,8 +514,10 @@ class MetricsCalculator private constructor(private val context: Context) {
 
         // Trip time
         val now = System.currentTimeMillis()
-        val tripTimeMs = (now - tripState.tripStartMs).coerceAtLeast(0L)
-        val tripTimeSec = tripTimeMs / 1000L
+        val tripTimeSec = ((now - tripState.tripStartMs) / 1000L).coerceAtLeast(0L)
+
+        // Moving time reflects total trip time minus stopped time.
+        val movingTimeSec = (tripTimeSec - tripState.stoppedTimeSec).coerceAtLeast(0L)
 
         // Average speed
         val avgSpeed: Float = tripCalculator.averageSpeed(tripDist, tripTimeSec)
@@ -644,7 +646,7 @@ class MetricsCalculator private constructor(private val context: Context) {
             avgCo2gPerKm           = co2,
             tripDistanceKm         = tripDist,
             tripTimeSec            = tripTimeSec,
-            movingTimeSec          = tripState.movingTimeSec,
+            movingTimeSec          = movingTimeSec,
             stoppedTimeSec         = tripState.stoppedTimeSec,
             tripAvgSpeedKmh        = avgSpeed,
             tripMaxSpeedKmh        = tripState.maxSpeedKmh,

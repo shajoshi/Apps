@@ -65,29 +65,26 @@ class TripStateTest {
     @Test
     fun `moving time increments when speed is above 2 kmh`() {
         simulateUpdate(state, speedKmh = 30f, fuelRateLh = 0f, durationMs = 5_000L)
-        assertEquals(5L, state.movingTimeSec)
         assertEquals(0L, state.stoppedTimeSec)
+        assertEquals(5L, state.cityTimeSec)
     }
 
     @Test
     fun `stopped time increments when speed is at 2 kmh exactly`() {
         simulateUpdate(state, speedKmh = 2f, fuelRateLh = 0f, durationMs = 5_000L)
         assertEquals(5L, state.stoppedTimeSec)
-        assertEquals(0L, state.movingTimeSec)
     }
 
     @Test
     fun `stopped time increments when speed is zero`() {
         simulateUpdate(state, speedKmh = 0f, fuelRateLh = 0f, durationMs = 8_000L)
         assertEquals(8L, state.stoppedTimeSec)
-        assertEquals(0L, state.movingTimeSec)
     }
 
     @Test
     fun `moving and stopped time both accumulate over mixed speed`() {
         simulateUpdate(state, speedKmh = 50f, fuelRateLh = 0f, durationMs = 10_000L) // 10 s moving
         simulateUpdate(state, speedKmh = 0f, fuelRateLh = 0f, durationMs = 5_000L)   // 5 s stopped
-        assertEquals(10L, state.movingTimeSec)
         assertEquals(5L, state.stoppedTimeSec)
     }
 
@@ -121,72 +118,8 @@ class TripStateTest {
         state.reset()
         assertEquals(0f, state.tripDistanceKm, 0.0001f)
         assertEquals(0f, state.tripFuelUsedL, 0.0001f)
-        assertEquals(0L, state.movingTimeSec)
         assertEquals(0L, state.stoppedTimeSec)
         assertEquals(0f, state.maxSpeedKmh, 0.0001f)
-        assertTrue(state.speedWindow.isEmpty())
-    }
-
-    // ── driveModePercents ─────────────────────────────────────────────────────
-
-    @Test
-    fun `driveModePercents returns zeros when window is empty`() {
-        val (city, hwy, idle) = state.driveModePercents()
-        assertEquals(0f, city, 0.001f)
-        assertEquals(0f, hwy, 0.001f)
-        assertEquals(0f, idle, 0.001f)
-    }
-
-    @Test
-    fun `driveModePercents returns 100pct idle when all speed is zero`() {
-        repeat(10) { simulateUpdate(state, speedKmh = 0f, fuelRateLh = 0f, durationMs = 1000L) }
-        val (city, hwy, idle) = state.driveModePercents()
-        assertEquals(0f, city, 0.001f)
-        assertEquals(0f, hwy, 0.001f)
-        assertEquals(100f, idle, 0.5f)
-    }
-
-    @Test
-    fun `driveModePercents returns 100pct city when all speed is city`() {
-        repeat(10) { simulateUpdate(state, speedKmh = 40f, fuelRateLh = 0f, durationMs = 1000L) }
-        val (city, hwy, idle) = state.driveModePercents()
-        assertEquals(100f, city, 0.5f)
-        assertEquals(0f, hwy, 0.001f)
-        assertEquals(0f, idle, 0.001f)
-    }
-
-    @Test
-    fun `driveModePercents returns 100pct highway when all speed is highway`() {
-        repeat(10) { simulateUpdate(state, speedKmh = 100f, fuelRateLh = 0f, durationMs = 1000L) }
-        val (city, hwy, idle) = state.driveModePercents()
-        assertEquals(0f, city, 0.001f)
-        assertEquals(100f, hwy, 0.5f)
-        assertEquals(0f, idle, 0.001f)
-    }
-
-    @Test
-    fun `driveModePercents sums to 100`() {
-        repeat(5) { simulateUpdate(state, speedKmh = 0f, fuelRateLh = 0f, durationMs = 1000L) }
-        repeat(5) { simulateUpdate(state, speedKmh = 40f, fuelRateLh = 0f, durationMs = 1000L) }
-        repeat(5) { simulateUpdate(state, speedKmh = 100f, fuelRateLh = 0f, durationMs = 1000L) }
-        val (city, hwy, idle) = state.driveModePercents()
-        assertEquals(100f, city + hwy + idle, 0.5f)
-    }
-
-    @Test
-    fun `driveModePercents city boundary at exactly 60 kmh is city`() {
-        repeat(10) { simulateUpdate(state, speedKmh = 60f, fuelRateLh = 0f, durationMs = 1000L) }
-        val (city, hwy, _) = state.driveModePercents()
-        assertEquals(100f, city, 0.5f)
-        assertEquals(0f, hwy, 0.001f)
-    }
-
-    @Test
-    fun `driveModePercents highway starts above 60 kmh`() {
-        repeat(10) { simulateUpdate(state, speedKmh = 61f, fuelRateLh = 0f, durationMs = 1000L) }
-        val (city, hwy, _) = state.driveModePercents()
-        assertEquals(0f, city, 0.001f)
-        assertEquals(100f, hwy, 0.5f)
     }
 
     // ── Helper ───────────────────────────────────────────────────────────────

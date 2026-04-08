@@ -241,7 +241,8 @@ class TripSummaryFragment : Fragment() {
         // Trip Summary
         binding.tvDistance.text = String.format(Locale.US, "%.2f km", summary.distanceKm)
         binding.tvDuration.text = formatTime(summary.timeSec)
-        binding.tvMovingTime.text = formatTime(summary.movingTimeSec)
+        val derivedMovingTimeSec = (summary.timeSec - summary.stoppedTimeSec).coerceAtLeast(0L)
+        binding.tvMovingTime.text = formatTime(derivedMovingTimeSec)
         binding.tvStoppedTime.text = formatTime(summary.stoppedTimeSec)
         binding.tvAvgSpeed.text = if (summary.avgSpeedKmh > 0) 
             String.format(Locale.US, "%.1f km/h", summary.avgSpeedKmh) else "-"
