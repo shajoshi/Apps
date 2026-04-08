@@ -73,8 +73,8 @@ class DialView @JvmOverloads constructor(
 
         val cx = width / 2f
         val cy = height / 2f
-        val radius = min(width, height) / 2f * 0.93f
-        val strokeW = radius * 0.09f
+        val radius = min(width, height) / 2f * 0.90f
+        val strokeW = radius * 0.08f
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius)
 
@@ -82,9 +82,9 @@ class DialView @JvmOverloads constructor(
         trackPaint.strokeWidth = strokeW
         accentArcPaint.strokeWidth = strokeW
         warningArcPaint.strokeWidth = strokeW
-        majorTickPaint.strokeWidth = strokeW * 0.25f
-        minorTickPaint.strokeWidth = strokeW * 0.12f
-        needlePaint.strokeWidth = strokeW * 0.45f
+        majorTickPaint.strokeWidth = strokeW * 0.20f
+        minorTickPaint.strokeWidth = strokeW * 0.08f
+        needlePaint.strokeWidth = strokeW * 0.36f
 
         val range = (rangeMax - rangeMin).takeIf { it > 0f } ?: 1f
 
@@ -120,9 +120,9 @@ class DialView @JvmOverloads constructor(
         val labelR = majorInnerR - radius * 0.1f
 
         majorTickPaint.color = colorScheme.text
-        minorTickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x77000000.toInt()
+        minorTickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x55000000.toInt()
         tickLabelPaint.color = colorScheme.text
-        tickLabelPaint.textSize = radius * 0.10f
+        tickLabelPaint.textSize = radius * 0.085f
 
         val totalMinorSteps = ((range / majorTickInterval) * (minorTickCount + 1)).toInt()
         val minorStepValue = range / totalMinorSteps
@@ -219,45 +219,46 @@ class DialView @JvmOverloads constructor(
         )
 
         // ── Pivot circle ──────────────────────────────────────────
-        pivotPaint.color = colorScheme.accent
-        canvas.drawCircle(cx, cy, strokeW * 0.7f, pivotPaint)
+        pivotPaint.color = (colorScheme.accent and 0x00FFFFFF) or 0xCC000000.toInt()
+        canvas.drawCircle(cx, cy, strokeW * 0.52f, pivotPaint)
 
         // ── Metric name (in upper half of dial) ────────────────────
-        val nameSize = radius * 0.15f
+        val nameSize = radius * 0.11f
         labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB0000000.toInt()
         labelPaint.textSize = nameSize
-        val nameBaseline = cy - radius * 0.25f
+        val nameBaseline = cy - radius * 0.28f
         canvas.drawText(metricName.uppercase(), cx, nameBaseline, labelPaint)
 
         // ── Value readout (in lower half of dial) ─────────────────────
-        val valueSize = radius * 0.52f
+        val valueSize = radius * 0.44f
         valuePaint.color = if (isWarning) colorScheme.warning else colorScheme.accent
         valuePaint.textSize = valueSize
-        val fmt = "%.${decimalPlaces}f"
+        val safeDecimals = decimalPlaces.coerceIn(0, 4)
+        val fmt = "%.${safeDecimals}f"
         val valueStr = String.format(fmt, currentValue)
-        val valueBaseline = cy + radius * 0.55f
+        val valueBaseline = cy + radius * 0.50f
 
         // Dark pill behind value for separation from ticks/needle
         val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = (colorScheme.background and 0x00FFFFFF) or 0xAA000000.toInt()
+            color = (colorScheme.background and 0x00FFFFFF) or 0x88000000.toInt()
         }
-        val pillHalfW = valuePaint.measureText(valueStr) / 2f + valueSize * 0.15f
-        val pillTop = valueBaseline + valuePaint.ascent() - valueSize * 0.1f
-        val pillBot = valueBaseline + valuePaint.descent() + valueSize * 0.05f
+        val pillHalfW = valuePaint.measureText(valueStr) / 2f + valueSize * 0.12f
+        val pillTop = valueBaseline + valuePaint.ascent() - valueSize * 0.08f
+        val pillBot = valueBaseline + valuePaint.descent() + valueSize * 0.04f
         canvas.drawRoundRect(
             cx - pillHalfW, pillTop, cx + pillHalfW, pillBot,
-            valueSize * 0.15f, valueSize * 0.15f, pillPaint
+            valueSize * 0.18f, valueSize * 0.18f, pillPaint
         )
         drawTextWithGlow(canvas, valueStr, cx, valueBaseline, valuePaint)
 
         // ── Unit superscript (top-right of value block) ───────────────
-        val unitSize = valueSize * 0.38f
+        val unitSize = valueSize * 0.32f
         if (metricUnit.isNotEmpty()) {
             val valueBlockW = valuePaint.measureText(valueStr)
-            val unitX = cx + valueBlockW / 2f + unitSize * 0.2f
-            val unitBaseline = valueBaseline - valueSize * 0.60f
+            val unitX = cx + valueBlockW / 2f + unitSize * 0.18f
+            val unitBaseline = valueBaseline - valueSize * 0.50f
             labelPaint.textAlign = Paint.Align.LEFT
             labelPaint.color = colorScheme.text
             labelPaint.textSize = unitSize

@@ -74,16 +74,19 @@ class TemperatureGaugeView @JvmOverloads constructor(
 
         // Arc centre optimized - minimal padding
         val cx = width / 2f
-        val cy = height * 0.52f  // Adjusted from 0.55f for better centering
-        val radius = min(width / 2f, cy) * 0.95f
-        val strokeW = radius * 0.10f
+        val cy = height * 0.50f
+        val radius = min(width / 2f, cy) * 0.92f
+        val strokeW = radius * 0.09f
 
         arcRect.set(cx - radius, cy - radius, cx + radius, cy + radius)
 
         trackPaint.strokeWidth = strokeW
         zonePaint.strokeWidth = strokeW
-        needlePaint.strokeWidth = strokeW * 0.4f
-        tickPaint.strokeWidth = strokeW * 0.15f
+        needlePaint.strokeWidth = strokeW * 0.32f
+        tickPaint.strokeWidth = strokeW * 0.12f
+
+        val trackTint = (colorScheme.text and 0x00FFFFFF) or 0x22000000.toInt()
+        val labelTint = (colorScheme.text and 0x00FFFFFF) or 0xB0000000.toInt()
 
         // ── Background track ──────────────────────────────────────
         trackPaint.color = colorScheme.surface
@@ -98,11 +101,11 @@ class TemperatureGaugeView @JvmOverloads constructor(
         val normalEnd = warnFrac
 
         // Cold zone (blue)
-        zonePaint.color = coldColor
+        zonePaint.color = (coldColor and 0x00FFFFFF) or 0xCC000000.toInt()
         canvas.drawArc(arcRect, startAngleDeg, sweepAngleDeg * coldEnd, false, zonePaint)
 
         // Normal zone (green)
-        zonePaint.color = normalColor
+        zonePaint.color = (normalColor and 0x00FFFFFF) or 0xC0000000.toInt()
         canvas.drawArc(
             arcRect,
             startAngleDeg + sweepAngleDeg * coldEnd,
@@ -111,7 +114,7 @@ class TemperatureGaugeView @JvmOverloads constructor(
         )
 
         // Hot zone (red)
-        zonePaint.color = hotColor
+        zonePaint.color = (hotColor and 0x00FFFFFF) or 0xCC000000.toInt()
         canvas.drawArc(
             arcRect,
             startAngleDeg + sweepAngleDeg * normalEnd,
@@ -127,9 +130,9 @@ class TemperatureGaugeView @JvmOverloads constructor(
         val minorInnerR  = tickOuterR - minorTickLen
         val labelR       = majorInnerR - radius * 0.12f
 
-        tickPaint.color = colorScheme.text
-        tickLabelPaint.color = colorScheme.text
-        tickLabelPaint.textSize = radius * 0.14f
+        tickPaint.color = trackTint
+        tickLabelPaint.color = labelTint
+        tickLabelPaint.textSize = radius * 0.11f
 
         val totalMinorSteps = ((range / majorTickInterval) * (minorTickCount + 1)).toInt()
             .coerceAtLeast(1)
@@ -174,7 +177,7 @@ class TemperatureGaugeView @JvmOverloads constructor(
         val nSin = sin(needleRad).toFloat()
         val isHot = warningThreshold?.let { currentValue >= it } ?: (valueFrac >= 2f / 3f)
         needlePaint.color = if (isHot) hotColor else colorScheme.accent
-        val needleLen = radius * 0.70f
+        val needleLen = radius * 0.68f
         val oppRad = Math.toRadians((needleAngleDeg + 180.0))
         canvas.drawLine(
             cx + radius * 0.12f * cos(oppRad).toFloat(),
@@ -185,35 +188,36 @@ class TemperatureGaugeView @JvmOverloads constructor(
         )
 
         // ── Pivot ─────────────────────────────────────────────────
-        pivotPaint.color = colorScheme.accent
-        canvas.drawCircle(cx, cy, strokeW * 0.65f, pivotPaint)
+        pivotPaint.color = (colorScheme.accent and 0x00FFFFFF) or 0xCC000000.toInt()
+        canvas.drawCircle(cx, cy, strokeW * 0.52f, pivotPaint)
 
         // ── Value readout ─────────────────────────────────────────
-        val valueSize = radius * 0.44f
+        val valueSize = radius * 0.38f
         valuePaint.color = if (isHot) hotColor else colorScheme.accent
         valuePaint.textSize = valueSize
-        val fmt = "%.${decimalPlaces}f"
+        val safeDecimals = decimalPlaces.coerceIn(0, 4)
+        val fmt = "%.${safeDecimals}f"
         val valueStr = String.format(fmt, currentValue)
-        val valueBaseline = cy + radius * 0.28f
+        val valueBaseline = cy + radius * 0.20f
         drawTextWithGlow(canvas, valueStr, cx, valueBaseline, valuePaint)
 
         // ── Unit superscript (top-right of value block) ─────────────
-        val unitSize = valueSize * 0.38f
+        val unitSize = valueSize * 0.32f
         if (metricUnit.isNotEmpty()) {
             val valueBlockW = valuePaint.measureText(valueStr)
-            val unitX = cx + valueBlockW / 2f + unitSize * 0.2f
-            val unitBaseline = valueBaseline - valueSize * 0.60f
+            val unitX = cx + valueBlockW / 2f + unitSize * 0.18f
+            val unitBaseline = valueBaseline - valueSize * 0.50f
             labelPaint.textAlign = Paint.Align.LEFT
-            labelPaint.color = colorScheme.text
+            labelPaint.color = labelTint
             labelPaint.textSize = unitSize
             canvas.drawText(metricUnit, unitX, unitBaseline, labelPaint)
         }
 
         // ── Metric name (compact, below value) ───────────────────
-        val nameSize = radius * 0.14f
+        val nameSize = radius * 0.11f
         labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
+        labelPaint.color = labelTint
         labelPaint.textSize = nameSize
-        canvas.drawText(metricName.uppercase(), cx, valueBaseline + nameSize * 1.6f, labelPaint)
+        canvas.drawText(metricName.uppercase(), cx, valueBaseline + nameSize * 1.45f, labelPaint)
     }
 }

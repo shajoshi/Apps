@@ -49,7 +49,8 @@ class NumericDisplayView @JvmOverloads constructor(
         canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), 8f, 8f, bgPaint)
 
         val isWarning = warningThreshold?.let { currentValue >= it } ?: false
-        val fmt = "%.${decimalPlaces}f"
+        val safeDecimals = decimalPlaces.coerceIn(0, 4)
+        val fmt = "%.${safeDecimals}f"
         val valueStr = String.format(fmt, currentValue)
 
         // ── Compact layout ──────────────────────────────────────

@@ -72,7 +72,8 @@ class SevenSegmentView @JvmOverloads constructor(
         val totalChars = if (decimalPlaces > 0) intDigits + 1 + decimalPlaces else intDigits
         val ghostStr = "8".repeat(totalChars)
 
-        val fmt = "%.${decimalPlaces}f"
+        val safeDecimals = decimalPlaces.coerceIn(0, 4)
+        val fmt = "%.${safeDecimals}f"
         val valueStr = String.format(fmt, currentValue)
 
         // ── Optimized Layout - compact ──────────────────────────────────────

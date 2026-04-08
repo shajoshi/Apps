@@ -50,8 +50,8 @@ class BarGaugeView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        val pad = minOf(width, height) * 0.02f
-        val cornerR = minOf(width, height) * 0.04f
+        val pad = minOf(width, height) * 0.03f
+        val cornerR = minOf(width, height) * 0.05f
 
         val range = (rangeMax - rangeMin).let { 
             if (it > 0f) it else {
@@ -67,7 +67,7 @@ class BarGaugeView @JvmOverloads constructor(
         } ?: false
 
         // ── Track area bounds - compact layout ─────────────────────────────────────
-        val labelH = if (isVertical) height * 0.10f else height * 0.15f
+        val labelH = if (isVertical) height * 0.11f else height * 0.16f
         val trackL = pad
         val trackT = if (isVertical) pad else height - labelH - pad - (height * 0.40f)
         val trackR = width - pad
@@ -91,7 +91,7 @@ class BarGaugeView @JvmOverloads constructor(
             if (fillH > 0f) {
                 val gradient = LinearGradient(
                     trackRect.left, fillRect.top, trackRect.left, fillRect.bottom,
-                    intArrayOf(fillColor, (fillColor and 0x00FFFFFF) or 0xAA000000.toInt()),
+                    intArrayOf(fillColor, (fillColor and 0x00FFFFFF) or 0xA0000000.toInt()),
                     null, Shader.TileMode.CLAMP
                 )
                 fillPaint.shader = gradient
@@ -104,7 +104,7 @@ class BarGaugeView @JvmOverloads constructor(
             if (fillW > 0f) {
                 val gradient = LinearGradient(
                     fillRect.left, trackRect.top, fillRect.right, trackRect.top,
-                    intArrayOf((fillColor and 0x00FFFFFF) or 0xAA000000.toInt(), fillColor),
+                    intArrayOf((fillColor and 0x00FFFFFF) or 0xA0000000.toInt(), fillColor),
                     null, Shader.TileMode.CLAMP
                 )
                 fillPaint.shader = gradient
@@ -114,8 +114,8 @@ class BarGaugeView @JvmOverloads constructor(
         }
 
         // ── Tick marks ────────────────────────────────────────────
-        val majorTickW = minOf(width, height) * 0.03f
-        val minorTickW = minOf(width, height) * 0.015f
+        val majorTickW = minOf(width, height) * 0.024f
+        val minorTickW = minOf(width, height) * 0.010f
         
         // Override: Use consistent 50% major ticks with 4 minor ticks between them
         val majorTickCount = 2  // 0%, 50%, 100%
@@ -123,7 +123,7 @@ class BarGaugeView @JvmOverloads constructor(
         val totalTickCount = majorTickCount * (minorTicksPerMajor + 1)
         val stepValue = range / totalTickCount
 
-        tickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x77000000.toInt()
+        tickPaint.color = (colorScheme.text and 0x00FFFFFF) or 0x50000000.toInt()
 
         var tickIndex = 0
         while (tickIndex <= totalTickCount) {
@@ -150,7 +150,7 @@ class BarGaugeView @JvmOverloads constructor(
         val maxMinTickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
-            strokeWidth = majorTickW * 2f  // Bold tick
+            strokeWidth = majorTickW * 1.4f
         }
         
         // Draw red tick at max value
@@ -187,21 +187,22 @@ class BarGaugeView @JvmOverloads constructor(
             }
         }
 
-        val fmt = "%.${decimalPlaces}f"
+        val safeDecimals = decimalPlaces.coerceIn(0, 4)
+        val fmt = "%.${safeDecimals}f"
         val valueStr = String.format(fmt, currentValue)
         val trackCy = (trackRect.top + trackRect.bottom) / 2f
         val minDim = minOf(width, height).toFloat()
 
         // ── Metric name — compact, positioned closer to bar ───────────────
-        val nameSize = minDim * 0.14f
+        val nameSize = minDim * 0.11f
         labelPaint.textAlign = Paint.Align.CENTER
-        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xCC000000.toInt()
+        labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB0000000.toInt()
         labelPaint.textSize = nameSize
-        val nameY = if (isVertical) trackT - nameSize * 0.2f else trackT - nameSize * 0.3f
+        val nameY = if (isVertical) trackT - nameSize * 0.25f else trackT - nameSize * 0.32f
         canvas.drawText(metricName.uppercase(), width / 2f, nameY, labelPaint)
 
         // ── Value text (centred in track) ─────────────────────────
-        val valueSize = if (isVertical) minDim * 0.22f else trackRect.height() * 0.70f
+        val valueSize = if (isVertical) minDim * 0.18f else trackRect.height() * 0.62f
         textPaint.color = if (isWarning) colorScheme.warning else colorScheme.accent
         textPaint.textSize = valueSize
         val valueOffset = (textPaint.descent() + textPaint.ascent()) / 2
@@ -210,26 +211,26 @@ class BarGaugeView @JvmOverloads constructor(
         // Draw dark pill background behind value for visibility
         val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
-            color = (colorScheme.background and 0x00FFFFFF) or 0xAA000000.toInt()
+            color = (colorScheme.background and 0x00FFFFFF) or 0x88000000.toInt()
         }
-        val pillHalfW = textPaint.measureText(valueStr) / 2f + valueSize * 0.15f
-        val pillHalfH = valueSize * 0.55f
+        val pillHalfW = textPaint.measureText(valueStr) / 2f + valueSize * 0.12f
+        val pillHalfH = valueSize * 0.48f
         val pillRect = RectF(
             valueCx - pillHalfW, trackCy - valueOffset - pillHalfH,
             valueCx + pillHalfW, trackCy - valueOffset + pillHalfH
         )
-        canvas.drawRoundRect(pillRect, pillHalfH * 0.3f, pillHalfH * 0.3f, pillPaint)
+        canvas.drawRoundRect(pillRect, pillHalfH * 0.35f, pillHalfH * 0.35f, pillPaint)
         
         drawTextWithGlow(canvas, valueStr, valueCx, trackCy - valueOffset, textPaint)
 
         // ── Unit superscript (top-right of value block) ───────────
         if (metricUnit.isNotEmpty()) {
-            val unitSize = valueSize * 0.45f
-            val valueBlockW = textPaint.measureText(valueStr)
-            val unitX = valueCx + valueBlockW / 2f + unitSize * 0.2f
-            val unitBaseline = trackCy - valueOffset - valueSize * 0.60f
+            val unitSize = valueSize * 0.36f
+            val valueBlockW = textPaint.measureText(valueStr) / 2f
+            val unitX = valueCx + valueBlockW / 2f + unitSize * 0.18f
+            val unitBaseline = trackCy - valueOffset - valueSize * 0.50f
             labelPaint.textAlign = Paint.Align.LEFT
-            labelPaint.color = colorScheme.text
+            labelPaint.color = (colorScheme.text and 0x00FFFFFF) or 0xB0000000.toInt()
             labelPaint.textSize = unitSize
             canvas.drawText(metricUnit, unitX, unitBaseline, labelPaint)
         }
@@ -237,7 +238,7 @@ class BarGaugeView @JvmOverloads constructor(
         // ── Max value display at 87.5% position ───────────────────
         tripMaxValue?.let { maxVal ->
             val maxValueStr = String.format(fmt, maxVal)
-            val maxValueSize = valueSize * 0.60f
+            val maxValueSize = valueSize * 0.52f
             val maxValuePaint = Paint(textPaint).apply {
                 textSize = maxValueSize
                 color = 0xFFFF0000.toInt()  // Red
@@ -255,13 +256,13 @@ class BarGaugeView @JvmOverloads constructor(
                 style = Paint.Style.FILL
                 color = (colorScheme.background and 0x00FFFFFF) or 0xAA000000.toInt()
             }
-            val maxPillHalfW = maxValuePaint.measureText(maxValueStr) / 2f + maxValueSize * 0.15f
-            val maxPillHalfH = maxValueSize * 0.55f
+            val maxPillHalfW = maxValuePaint.measureText(maxValueStr) / 2f + maxValueSize * 0.12f
+            val maxPillHalfH = maxValueSize * 0.48f
             val maxPillRect = RectF(
                 maxX - maxPillHalfW, maxY - maxValueOffset - maxPillHalfH,
                 maxX + maxPillHalfW, maxY - maxValueOffset + maxPillHalfH
             )
-            canvas.drawRoundRect(maxPillRect, maxPillHalfH * 0.3f, maxPillHalfH * 0.3f, maxPillPaint)
+            canvas.drawRoundRect(maxPillRect, maxPillHalfH * 0.35f, maxPillHalfH * 0.35f, maxPillPaint)
             
             // Draw max value text
             drawTextWithGlow(canvas, maxValueStr, maxX, maxY - maxValueOffset, maxValuePaint)
