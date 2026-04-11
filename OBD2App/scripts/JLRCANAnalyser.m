@@ -14,6 +14,7 @@ filename = fullfile(path, file);
 % --- 2. MODULAR SENSOR DICTIONARY (CALIBRATED) ---
 sensorDict = struct('Name', {}, 'ID', {}, 'Formula', {}, 'Unit', {});
 
+% === CHASSIS DYNAMICS ===
 % CALIBRATED STEERING ANGLE: True Zero = 7941, Scale Factor = 10
 sensorDict(end+1) = struct('Name', 'Steering_Angle', 'ID', '280', ...
     'Formula', @(b) (((b(:,7) * 256) + b(:,8)) - 7941) / 10, 'Unit', 'deg');
@@ -26,14 +27,51 @@ sensorDict(end+1) = struct('Name', 'Steering_Velocity', 'ID', '280', ...
 sensorDict(end+1) = struct('Name', 'Yaw_Rate', 'ID', '3D3', ...
     'Formula', @(b) ((b(:,7) * 256) + b(:,8)) - 1438, 'Unit', 'raw');
 
-% SENSOR: Brake Master Cylinder Pressure
+% === BRAKING SYSTEM ===
+% Brake Master Cylinder Pressure
 sensorDict(end+1) = struct('Name', 'Brake_Pressure', 'ID', '3EB', ...
     'Formula', @(b) (b(:,5) * 256) + b(:,6), 'Unit', 'raw_pressure');
 
-% SENSOR: Brake Pedal Switch (Boolean 0 or 1)
-% We use bitand to isolate the specific bit that flips when you press the pedal
+% Brake Pedal Switch (Boolean 0 or 1)
 sensorDict(end+1) = struct('Name', 'Brake_Switch', 'ID', '295', ...
     'Formula', @(b) bitand(b(:,7), 32) / 32, 'Unit', 'on/off');
+
+% === STANDARD OBD POWERTRAIN CHANNELS ===
+% Engine RPM (Masks out the brake switch data sharing the same byte)
+sensorDict(end+1) = struct('Name', 'Engine_RPM', 'ID', '295', ...
+    'Formula', @(b) ((bitand(b(:,7), 31) * 256) + b(:,8)) / 4, 'Unit', 'RPM');
+
+% Vehicle Speed
+sensorDict(end+1) = struct('Name', 'Vehicle_Speed', 'ID', '29B', ...
+    'Formula', @(b) ((b(:,7) * 256) + b(:,8)) / 100, 'Unit', 'km/h');
+
+% Engine Coolant Temperature
+sensorDict(end+1) = struct('Name', 'Coolant_Temp', 'ID', '355', ...
+    'Formula', @(b) b(:,6), 'Unit', 'raw_temp');
+
+% Fuel Level
+sensorDict(end+1) = struct('Name', 'Fuel_Level', 'ID', '477', ...
+    'Formula', @(b) (b(:,1) * 256) + b(:,2), 'Unit', 'raw_fuel');
+
+% === PROPRIETARY BODY & MAINTENANCE SENSORS ===
+% DSC Drive Mode (1 = DSC On, 2 = TracDSC, 3 = DSC Off)
+sensorDict(end+1) = struct('Name', 'DSC_Drive_Mode', 'ID', '3EB', ...
+    'Formula', @(b) b(:,2), 'Unit', 'mode_id');
+
+% Door Matrix (Binary Bitmasks)
+sensorDict(end+1) = struct('Name', 'Door_FrontLeft', 'ID', '337', ...
+    'Formula', @(b) bitand(b(:,3), 1), 'Unit', 'bool');
+sensorDict(end+1) = struct('Name', 'Door_FrontRight', 'ID', '337', ...
+    'Formula', @(b) bitand(b(:,3), 2) / 2, 'Unit', 'bool');
+sensorDict(end+1) = struct('Name', 'Trunk_Open', 'ID', '337', ...
+    'Formula', @(b) bitand(b(:,3), 16) / 16, 'Unit', 'bool');
+
+% MS-CAN Sensors (Tire Pressure & Wear)
+sensorDict(end+1) = struct('Name', 'Tire_Pressure_1', 'ID', '4E8', ...
+    'Formula', @(b) b(:,2), 'Unit', 'raw');
+sensorDict(end+1) = struct('Name', 'Brake_Pads_Worn', 'ID', '4E3', ...
+    'Formula', @(b) bitand(b(:,7), 2) / 2, 'Unit', 'bool');
+
 
 % --- 3. PARSE HTML & LINEARIZE ---
 disp('Loading log file...');
@@ -85,10 +123,25 @@ DecodedData.Properties.VariableUnits = tableUnits;
 
 % --- 4. PLOT ---
 sensorNames = DecodedData.Properties.VariableNames(2:end);
-figure('Name', 'JLR Master Telemetry', 'Position', [100, 100, 1000, 250 * length(sensorNames)]);
-for p = 1:length(sensorNames)
-    subplot(length(sensorNames), 1, p);
+
+% Calculate a clean figure height based on the number of sensors actually found
+numPlots = length(sensorNames);
+figHeight = min(1000, 200 * numPlots); % Caps height so it doesn't run off screen
+
+figure('Name', 'JLR Master Telemetry', 'Position', [100, 100, 1000, figHeight]);
+for p = 1:numPlots
+    subplot(numPlots, 1, p);
     plot(DecodedData.Linearized_Time, DecodedData.(sensorNames{p}), 'LineWidth', 1.5);
-    title(strrep(sensorNames{p}, '_', ' ')); xlabel('Time (s)'); ylabel(tableUnits{p+1}); grid on;
+    
+    title(strrep(sensorNames{p}, '_', ' ')); 
+    xlabel('Time (s)'); 
+    ylabel(tableUnits{p+1}); 
+    grid on;
+    
+    % Format Boolean plots nicely
+    if strcmp(tableUnits{p+1}, 'bool') || strcmp(tableUnits{p+1}, 'on/off')
+        ylim([-0.1 1.5]);
+        yticks([0 1]);
+    end
 end
-disp('Telemetry loaded successfully.');
+disp('Telemetry loaded successfully. Check workspace for DecodedData table.');
