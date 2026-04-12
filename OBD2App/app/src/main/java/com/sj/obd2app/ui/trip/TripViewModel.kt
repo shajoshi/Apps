@@ -177,53 +177,26 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             TripPhase.RUNNING -> "RUNNING"
         }
 
-        // Trip fields — duration/sampleCount are intentionally NOT set here;
-        // they are merged back in the collect lambda and owned by the 1-s ticker.
-        val distance: String
-        val avgSpeed: String
-        val altitude: String
-        val coolantTemp: String
-        val avgFuelKmpl: String
-        val fuelCost: String
-        val cityPercent: String
-        val highwayPercent: String
-        val idlePercent: String
-        val powerThermoBhp: String
-        val instantKmpl: String
+        // Trip fields are always rendered from the latest live metrics so the
+        // screen keeps showing calculations even when the trip is idle.
+        val distance    = "%.1f km".format(metrics.tripDistanceKm)
+        val avgSpeed    = "%.1f km/h".format(metrics.tripAvgSpeedKmh)
+        val altitude    = metrics.altitudeMslM?.let { "%.0f m".format(it) } ?: "— m"
+        val coolantTemp = metrics.coolantTempC?.let { "%.0f °C".format(it) } ?: "— °C"
+        val avgFuelKmpl = metrics.tripAvgKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
+        val fuelCost    = metrics.fuelCostEstimate?.let { "₹%.2f".format(it) } ?: "— ₹"
+        val cityPercent = "%.1f %%".format(metrics.pctCity)
+        val highwayPercent = "%.1f %%".format(metrics.pctHighway)
+        val idlePercent = "%.1f %%".format(metrics.pctIdle)
 
-        if (phase == TripPhase.IDLE) {
-            // Show empty values when trip is stopped
-            distance    = "0.0 km"
-            avgSpeed    = "— km/h"
-            altitude    = "— m"
-            coolantTemp = "— °C"
-            avgFuelKmpl = "— kmpl"
-            fuelCost    = "— ₹"
-            cityPercent = "— %"
-            highwayPercent = "— %"
-            idlePercent = "— %"
-            powerThermoBhp = "— BHP"
-            instantKmpl = "— kmpl"
-        } else {
-            distance    = "%.1f km".format(metrics.tripDistanceKm)
-            avgSpeed    = "%.1f km/h".format(metrics.tripAvgSpeedKmh)
-            altitude    = metrics.altitudeMslM?.let { "%.0f m".format(it) } ?: "— m"
-            coolantTemp = metrics.coolantTempC?.let { "%.0f °C".format(it) } ?: "— °C"
-            avgFuelKmpl = metrics.tripAvgKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
-            fuelCost    = metrics.fuelCostEstimate?.let { "₹%.2f".format(it) } ?: "— ₹"
-            cityPercent = "%.1f %%".format(metrics.pctCity)
-            highwayPercent = "%.1f %%".format(metrics.pctHighway)
-            idlePercent = "%.1f %%".format(metrics.pctIdle)
-            
-            // Power metrics in BHP
-            powerThermoBhp = metrics.powerThermoKw?.let { 
-                val bhp = it * 1.341f  // Convert kW to BHP
-                "%.1f BHP".format(bhp)
-            } ?: "— BHP"
-            
-            // Instantaneous fuel economy
-            instantKmpl = metrics.instantKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
-        }
+        // Power metrics in BHP
+        val powerThermoBhp = metrics.powerThermoKw?.let {
+            val bhp = it * 1.341f  // Convert kW to BHP
+            "%.1f BHP".format(bhp)
+        } ?: "— BHP"
+
+        // Instantaneous fuel economy
+        val instantKmpl = metrics.instantKpl?.let { "%.1f kmpl".format(it) } ?: "— kmpl"
 
         return TripUiState(
             obdStatus       = obdStatus,
@@ -236,7 +209,7 @@ class TripViewModel(app: Application) : AndroidViewModel(app) {
             accelStatus     = accelStatus,
             accelPower      = accelPowerStr,
             accelIndicator  = accelColor,
-            showGravityCard = accelEnabled,
+            showGravityCard = accelEnabled || !accelAvail,
             gravityValues   = gravityStr,
             gravityMagnitude = gravityMagnitudeStr,
             gravityLabel    = gravityLabel,

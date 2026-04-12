@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.sj.obd2app.databinding.FragmentDashboardBinding
+import com.sj.obd2app.ui.attachNavOverflow
 
 /**
  * Dashboard screen — shows key OBD-II gauges (RPM, Speed, Coolant Temp,
@@ -26,6 +27,9 @@ class DashboardFragment : Fragment() {
     ): View {
         viewModel = ViewModelProvider(this)[DashboardViewModel::class.java]
         _binding = FragmentDashboardBinding.inflate(inflater, container, false)
+
+        binding.topBarInclude.txtTopBarTitle.text = getString(com.sj.obd2app.R.string.dashboard_title)
+        attachNavOverflow(binding.topBarInclude.btnTopOverflow)
 
         viewModel.rpm.observe(viewLifecycleOwner) { binding.textGaugeRpm.text = it }
         viewModel.speed.observe(viewLifecycleOwner) { binding.textGaugeSpeed.text = it }

@@ -31,7 +31,19 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         private const val TAG = "BluetoothObd2Service"
 
         /** Grace period before first poll cycle to let ECU finish power-on self-test */
-        private const val STARTUP_GRACE_DELAY_MS = 2000L
+        private const val STARTUP_GRACE_DELAY_MS = 3000L
+
+        /** Extra delay after ATZ because some adapters/vehicles need a longer reset settle time. */
+        private const val ATZ_SETTLE_DELAY_MS = 3000L
+
+        /** Standard delay between non-reset init commands. */
+        private const val INIT_COMMAND_DELAY_MS = 750L
+
+        /** Extra delay after protocol selection before querying supported PIDs. */
+        private const val PROTOCOL_SETTLE_DELAY_MS = 2000L
+
+        /** Delay between supported PID discovery queries to reduce bus pressure. */
+        private const val DISCOVERY_QUERY_DELAY_MS = 50L
 
         /** ELM327 initialisation commands (without protocol selection) */
         private val BASE_INIT_COMMANDS = listOf(
@@ -173,8 +185,8 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 for (cmd in initCommands) {
                     log("  → $cmd")
                     transport!!.sendCommand(cmd)
-                    // ATZ (reset) needs extra time — clones can take up to 2s
-                    val cmdDelay = if (cmd == "ATZ") 2000L else 500L
+                    // ATZ (reset) needs extra time — clones can take a few seconds
+                    val cmdDelay = if (cmd == "ATZ") ATZ_SETTLE_DELAY_MS else INIT_COMMAND_DELAY_MS
                     delay(cmdDelay)
                 }
                 log("✓ ELM327 initialised")
@@ -184,7 +196,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 // flooding the bus while the ECU is still negotiating,
                 // which can trigger U-codes (e.g. U0009) on some bikes.
                 log("Waiting for CAN bus to settle…")
-                delay(if (cachedProto != null) 500L else 1500L)
+                delay(if (cachedProto != null) 1000L else 2000L)
 
                 // Discover which PIDs the ECU supports
                 log("Querying supported PIDs from ECU…")
@@ -204,6 +216,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
                     transport!!.sendCommand("ATSP$detectedProto")
                     log("✓ Protocol locked: ATSP$detectedProto")
+                    delay(PROTOCOL_SETTLE_DELAY_MS)
                     // Cache the protocol so next connection skips ATSP0 probing
                     if (detectedProto != cachedProto) {
                         context?.let { ctx ->
@@ -276,7 +289,6 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         discoveryFailureBypassEnabled = false
         _connectedDeviceName.value = null
         _connectionState.value = Obd2Service.ConnectionState.DISCONNECTED
-        _obd2Data.value = emptyList()
         _connectionLog.value = emptyList()
     }
 
@@ -333,8 +345,12 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 // If bit 31 (the "next range available" flag) is NOT set, stop
                 if (mask and 1L == 0L) break
 
-            } catch (_: Exception) {
-                break
+                // Give the ECU a little breathing room before the next discovery query.
+                delay(DISCOVERY_QUERY_DELAY_MS)
+
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "Supported PID discovery failed for $query: ${e.message}", e)
+                throw IOException("Supported PID discovery failed for $query", e)
             }
         }
 

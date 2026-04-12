@@ -297,7 +297,8 @@ class PidDiscoveryService private constructor() {
                 else -> "NO SERVICE"
             }
         } catch (e: Exception) {
-            "EXCEPTION: ${e.message}"
+            logConsole("[CMD $command] EXCEPTION: ${e.message}")
+            "EXCEPTION[$command]: ${e.message}"
         }
     }
     

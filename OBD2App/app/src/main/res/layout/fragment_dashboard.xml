@@ -12,22 +12,20 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingBottom="16dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            android:text="@string/dashboard_title"
-            android:textColor="#FFFFFF"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+        <include
+            android:id="@+id/top_bar_include"
+            layout="@layout/include_top_bar"
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
 
         <!-- Row 1: RPM and Speed -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:layout_marginHorizontal="8dp">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="0dp"
@@ -68,7 +66,7 @@
                             android:textSize="11sp"
                             android:textStyle="bold" />
 
-                    </LinearLayout>
+                        </LinearLayout>
 
                     <!-- Value row -->
                     <LinearLayout
@@ -178,7 +176,8 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:layout_marginHorizontal="8dp">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="0dp"
@@ -329,7 +328,8 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:layout_marginHorizontal="8dp">
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="0dp"
@@ -482,6 +482,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:layout_marginHorizontal="16dp"
             android:gravity="center"
             android:text="@string/status_disconnected"
             android:textColor="#888888"

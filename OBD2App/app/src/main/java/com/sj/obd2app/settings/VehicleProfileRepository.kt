@@ -47,11 +47,15 @@ class VehicleProfileRepository private constructor(private val context: Context)
         }
     }
 
+    @Volatile
+    private var cachedProfiles: List<VehicleProfile>? = null
+
     // ── Read ──────────────────────────────────────────────────────────────────
 
     fun getAll(): List<VehicleProfile> {
+        cachedProfiles?.let { return it }
         // Always use internal storage for performance
-        return getAllFromInternalFiles()
+        return getAllFromInternalFiles().also { cachedProfiles = it }
     }
 
     private fun getAllFromInternalFiles(): List<VehicleProfile> {
@@ -176,6 +180,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
         // Always use internal storage for performance
         android.util.Log.d("VehicleProfileRepository", "Using internal storage for profile save")
         saveToInternalFile(profile)
+        cachedProfiles = null
         
         android.util.Log.d("VehicleProfileRepository", "Profile save completed: ${profile.name}")
         
@@ -274,6 +279,7 @@ class VehicleProfileRepository private constructor(private val context: Context)
             if (profileFile.exists()) {
                 profileFile.delete()
                 android.util.Log.d("VehicleProfileRepository", "Deleted internal profile file: $fileName")
+                cachedProfiles = null
             }
         } catch (e: Exception) {
             android.util.Log.e("VehicleProfileRepository", "Failed to delete internal profile file: $fileName", e)

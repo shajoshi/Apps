@@ -90,6 +90,20 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    private val importZipLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val result = ExportImportManager.importZip(requireContext(), uri)
+
+            if (result.success) {
+                profileAdapter.refresh()
+                loadCurrentSettings()
+                AppSettings.invalidateCache()
+            }
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -117,12 +131,13 @@ class SettingsFragment : Fragment() {
         setupDataLogging()
         setupDebugSettings()
         setupExportImport()
+        
+        profileAdapter.refresh()
+        loadCurrentSettings()
     }
 
     override fun onResume() {
         super.onResume()
-        profileAdapter.refresh()
-        loadCurrentSettings()
     }
 
     // ── Save/Discard ─────────────────────────────────────────────────────────
@@ -252,7 +267,7 @@ class SettingsFragment : Fragment() {
 
         val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
         if (!accelAvailable) {
-            binding.switchAccelerometerEnabled.isEnabled = false
+            binding.switchAccelerometerEnabled.isChecked = false
             binding.tvAccelerometerLabel.text = "Log accelerometer data (no sensor)"
             binding.tvAccelerometerLabel.setTextColor(android.graphics.Color.parseColor("#888888"))
         } else {
@@ -367,6 +382,10 @@ class SettingsFragment : Fragment() {
         // Import button
         binding.btnImportData.setOnClickListener {
             importFolderLauncher.launch(null)
+        }
+
+        binding.btnImportZip.setOnClickListener {
+            importZipLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
         }
     }
     

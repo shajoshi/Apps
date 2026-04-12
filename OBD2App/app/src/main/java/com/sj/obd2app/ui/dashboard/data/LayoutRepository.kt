@@ -38,6 +38,9 @@ class LayoutRepository(private val context: Context) {
         }
     }
 
+    @Volatile
+    private var cachedLayouts: List<DashboardLayout>? = null
+
     // Gson requires a custom adapter for the sealed class [DashboardMetric]
     private val gson = GsonBuilder()
         .registerTypeAdapter(DashboardMetric::class.java, DashboardMetricAdapter())
@@ -53,6 +56,7 @@ class LayoutRepository(private val context: Context) {
             
             // Always use internal storage for performance
             saveToAppStorage(layout.name, json)
+            cachedLayouts = null
             
             Result.success(File("")) // Return dummy file for compatibility
         } catch (e: Exception) {
@@ -82,7 +86,8 @@ class LayoutRepository(private val context: Context) {
      */
     fun getSavedLayouts(): List<DashboardLayout> {
         Log.d(TAG, "getSavedLayouts: using internal storage")
-        return getLayoutsFromAppStorage()
+        cachedLayouts?.let { return it }
+        return getLayoutsFromAppStorage().also { cachedLayouts = it }
     }
 
     private fun getLayoutsFromExternalStorage(): List<DashboardLayout> {
@@ -172,6 +177,7 @@ class LayoutRepository(private val context: Context) {
                 saveLayout(layout)
                 Log.i(TAG, "Seeded dashboard: ${layout.name}")
             }
+            cachedLayouts = null
         } catch (e: Exception) {
             Log.e(TAG, "Failed to seed default dashboards", e)
         }
@@ -184,6 +190,7 @@ class LayoutRepository(private val context: Context) {
         if (file.exists()) {
             file.delete()
             Log.d(TAG, "Deleted layout from internal storage: $fileName")
+            cachedLayouts = null
         }
         
         if (getDefaultLayoutName() == name) clearDefaultLayout()

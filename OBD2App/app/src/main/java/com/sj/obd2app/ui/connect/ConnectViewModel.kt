@@ -18,6 +18,7 @@ import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -159,6 +160,21 @@ class ConnectViewModel : ViewModel() {
             }
         }
         viewModelScope.launch {
+            combine(
+                service.connectionState,
+                service.connectedDeviceName
+            ) { state, deviceName -> state to deviceName }
+                .collect { (state, deviceName) ->
+                    val normalizedState = when (state) {
+                        Obd2Service.ConnectionState.CONNECTED -> ObdStateManager.ConnectionState.CONNECTED
+                        Obd2Service.ConnectionState.CONNECTING -> ObdStateManager.ConnectionState.CONNECTING
+                        Obd2Service.ConnectionState.ERROR -> ObdStateManager.ConnectionState.ERROR
+                        else -> ObdStateManager.ConnectionState.DISCONNECTED
+                    }
+                    ObdStateManager.updateConnectionState(normalizedState, deviceName)
+                }
+        }
+        viewModelScope.launch {
             service.connectionLog.collect { lines ->
                 _connectionLog.postValue(lines)
             }
@@ -221,15 +237,18 @@ class ConnectViewModel : ViewModel() {
         _errorDeviceMac.value = null
         _connectingDeviceMac.value = deviceInfo.device.address
         val forceBle = AppSettings.isForceBleConnection(context)
+        ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTING, deviceInfo.device.name)
         service.connect(deviceInfo.device, forceBle)
     }
 
     /** Connect via mock (no real BluetoothDevice needed). */
     fun connectMock() {
+        ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTING)
         service.connect(null)
     }
 
     fun disconnect() {
+        ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.DISCONNECTED)
         service.disconnect()
     }
 

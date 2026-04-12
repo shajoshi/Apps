@@ -13,14 +13,15 @@ import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.drawerlayout.widget.DrawerLayout
-import com.google.android.material.navigation.NavigationView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.drawerlayout.widget.DrawerLayout
+import com.google.android.material.navigation.NavigationView
 import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
 import androidx.recyclerview.widget.RecyclerView
@@ -92,12 +93,19 @@ class MainActivity : AppCompatActivity() {
         // This fixes permission loss after cold start
         AppDataDirectory.ensureUriPermissions(this)
 
-        // Pad content below the system status bar and above the navigation bar.
-        // Required because targetSdk 35+ enforces edge-to-edge rendering.
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(top = systemBars.top, bottom = systemBars.bottom)
-            insets
+        // On Android 15+ edge-to-edge is forced and cannot be disabled.
+        // On older Android (car players run Android 10-12) we opt out so the
+        // system draws the status bar and our content starts cleanly below it.
+        if (Build.VERSION.SDK_INT >= 35) {
+            // Android 15+: edge-to-edge is mandatory — apply padding from insets
+            ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updatePadding(top = bars.top, bottom = bars.bottom)
+                insets
+            }
+        } else {
+            // Android < 15: disable edge-to-edge so system handles status/nav bars
+            WindowCompat.setDecorFitsSystemWindows(window, true)
         }
 
         // Check for existing data in .obd directory

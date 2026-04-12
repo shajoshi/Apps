@@ -318,7 +318,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Import data from a folder or ZIP file. Existing items with the same name will be overwritten."
+                            android:text="Import data from a folder. Existing items with the same name will be overwritten."
                             android:textColor="#888888"
                             android:textSize="12sp"
                             android:layout_marginBottom="8dp" />
@@ -328,6 +328,15 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Import Data"
+                            android:textColor="#4FC3F7"
+                            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+                        <Button
+                            android:id="@+id/btn_import_zip"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Import ZIP"
                             android:textColor="#4FC3F7"
                             style="@style/Widget.MaterialComponents.Button.TextButton" />
 

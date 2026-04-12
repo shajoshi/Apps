@@ -157,6 +157,9 @@ object ExportImportManager {
     
     /**
      * Import data from selected folder with smart merge behavior.
+     *
+     * Folder import only looks for loose files and subfolders. ZIP archives are
+     * handled exclusively by [importZip].
      */
     fun importData(context: Context, sourceFolderUri: Uri): ImportResult {
         return try {
@@ -164,19 +167,9 @@ object ExportImportManager {
                 ?: return ImportResult(false, "Could not access source folder")
             
             val result = ImportResult()
-            
-            // Check for ZIP file first
-            val zipFiles = sourceFolder.listFiles()?.filter { 
-                it.name?.endsWith(".zip") == true && it.name?.startsWith("OBD2App_Export_") == true 
-            }?.sortedByDescending { it.name }
-            
-            if (zipFiles?.isNotEmpty() == true) {
-                // Import from ZIP
-                importFromZip(context, zipFiles.first(), result)
-            } else {
-                // Import from individual files/folders
-                importFromFolder(context, sourceFolder, result)
-            }
+
+            // Import from individual files/folders only.
+            importFromFolder(context, sourceFolder, result)
             
             // Set success status and message based on what was imported
             if (result.totalItemsImported > 0) {
@@ -202,6 +195,46 @@ object ExportImportManager {
             
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
+            val result = ImportResult(false, "Import failed: ${e.message}")
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+            result
+        }
+    }
+
+    /**
+     * Import data directly from a ZIP file exported by the app.
+     */
+    fun importZip(context: Context, zipFileUri: Uri): ImportResult {
+        return try {
+            val zipFile = DocumentFile.fromSingleUri(context, zipFileUri)
+                ?: return ImportResult(false, "Could not access ZIP file")
+
+            if (zipFile.name?.endsWith(".zip", ignoreCase = true) != true) {
+                return ImportResult(false, "Selected file is not a ZIP archive")
+            }
+
+            val result = ImportResult()
+            importFromZip(context, zipFile, result)
+
+            if (result.totalItemsImported > 0) {
+                result.success = true
+                if (result.message.isEmpty()) {
+                    result.message = "Import completed successfully"
+                }
+            } else if (result.message.isEmpty()) {
+                result.message = "No data found to import"
+            }
+
+            if (result.success) {
+                Toast.makeText(context, "Import completed successfully", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show()
+            }
+
+            showImportNotification(context, result)
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "ZIP import failed", e)
             val result = ImportResult(false, "Import failed: ${e.message}")
             Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
             result

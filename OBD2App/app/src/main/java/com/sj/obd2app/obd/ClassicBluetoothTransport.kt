@@ -20,6 +20,7 @@ class ClassicBluetoothTransport(private val device: BluetoothDevice) : Elm327Tra
     
     companion object {
         private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+        private const val READ_WAIT_MS = 5L
     }
     
     private var socket: BluetoothSocket? = null
@@ -51,7 +52,7 @@ class ClassicBluetoothTransport(private val device: BluetoothDevice) : Elm327Tra
             
             while (System.currentTimeMillis() - startTime < timeout) {
                 if (!reader.ready()) {
-                    Thread.sleep(1)
+                    Thread.sleep(READ_WAIT_MS)
                     continue
                 }
                 val c = reader.read()

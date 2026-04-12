@@ -62,6 +62,7 @@ class BleTransport(
         
         // Max response buffer size to prevent memory exhaustion
         private const val MAX_RESPONSE_BUFFER_SIZE = 4096
+        private const val RESPONSE_POLL_DELAY_MS = 20L
     }
     
     private var gatt: BluetoothGatt? = null
@@ -491,7 +492,7 @@ class BleTransport(
                 try {
                     withTimeout(5000L) {
                         while (!responseComplete) {
-                            delay(10)
+                            delay(RESPONSE_POLL_DELAY_MS)
                         }
                     }
                 } catch (e: Exception) {

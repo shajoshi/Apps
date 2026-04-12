@@ -240,6 +240,9 @@ object AppSettings {
             pendingSettings?.let { pending ->
                 saveSettings(context, pending)
                 pendingSettings = null
+                // Force a fresh reload on the next access so dependent UI/components
+                // observe the exact persisted state instead of any stale in-memory copy.
+                cachedSettings = null
             }
         }
     }

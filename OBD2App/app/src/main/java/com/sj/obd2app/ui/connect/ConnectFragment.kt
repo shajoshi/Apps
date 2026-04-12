@@ -83,27 +83,22 @@ class ConnectFragment : Fragment() {
         // Observe connection state from centralized state manager
         viewLifecycleOwner.lifecycleScope.launch {
             ObdStateManager.connectionState.collect { state ->
-                // Update UI based on connection state
-                when (state) {
-                    ObdStateManager.ConnectionState.CONNECTING -> {
-                        binding.textConnectStatus.text = "Connecting…"
-                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#FFC107"))
-                    }
-                    ObdStateManager.ConnectionState.CONNECTED -> {
-                        binding.textConnectStatus.text = "Connected"
-                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
-                        binding.btnDisconnect.visibility = View.VISIBLE
-                    }
-                    ObdStateManager.ConnectionState.DISCONNECTED -> {
-                        binding.textConnectStatus.text = "Disconnected"
-                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#888888"))
-                        binding.btnDisconnect.visibility = View.GONE
-                    }
-                    ObdStateManager.ConnectionState.ERROR -> {
-                        binding.textConnectStatus.text = "Error"
-                        binding.textConnectStatus.setTextColor(android.graphics.Color.parseColor("#CF6679"))
-                    }
+                val statusText = when (state) {
+                    ObdStateManager.ConnectionState.CONNECTING -> "Connecting…"
+                    ObdStateManager.ConnectionState.CONNECTED -> "Connected"
+                    ObdStateManager.ConnectionState.DISCONNECTED -> "Disconnected"
+                    ObdStateManager.ConnectionState.ERROR -> "Error"
                 }
+                binding.textConnectStatus.text = statusText
+                binding.textConnectStatus.setTextColor(
+                    when (state) {
+                        ObdStateManager.ConnectionState.CONNECTING -> android.graphics.Color.parseColor("#FFC107")
+                        ObdStateManager.ConnectionState.CONNECTED -> android.graphics.Color.parseColor("#4CAF50")
+                        ObdStateManager.ConnectionState.DISCONNECTED -> android.graphics.Color.parseColor("#888888")
+                        ObdStateManager.ConnectionState.ERROR -> android.graphics.Color.parseColor("#CF6679")
+                    }
+                )
+                binding.btnDisconnect.visibility = if (state == ObdStateManager.ConnectionState.CONNECTED) View.VISIBLE else View.GONE
             }
         }
         
@@ -236,20 +231,6 @@ class ConnectFragment : Fragment() {
             if (AppSettings.isAutoConnect(requireContext())) {
                 viewModel.tryAutoConnect(requireContext())
             }
-        }
-
-        viewModel.connectionStatus.observe(viewLifecycleOwner) { status ->
-            binding.textConnectStatus.text = status
-            // Colour the status label by state
-            val service = Obd2ServiceProvider.getService()
-            binding.textConnectStatus.setTextColor(
-                when (service.connectionState.value) {
-                    Obd2Service.ConnectionState.CONNECTING   -> android.graphics.Color.parseColor("#FFC107")
-                    Obd2Service.ConnectionState.CONNECTED    -> android.graphics.Color.parseColor("#4CAF50")
-                    Obd2Service.ConnectionState.ERROR        -> android.graphics.Color.parseColor("#CF6679")
-                    else                                     -> android.graphics.Color.parseColor("#888888")
-                }
-            )
         }
 
         // Connection log panel is always visible; just update the content.
