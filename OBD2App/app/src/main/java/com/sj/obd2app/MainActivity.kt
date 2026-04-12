@@ -20,7 +20,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.navigation.NavigationView
 import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
@@ -283,60 +282,52 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupNavigationDrawer() {
-        // Check if navigation drawer exists in this layout
         val navView: NavigationView? = binding.root.findViewById(R.id.nav_view)
-        val drawerLayout: DrawerLayout? = binding.root.findViewById(R.id.drawer_layout)
-        
-        if (navView != null && drawerLayout != null) {
-            val isTripActive = MetricsCalculator.getInstance(this).tripPhase.value != TripPhase.IDLE
-            navView.menu.findItem(R.id.nav_trip_summary)?.isEnabled = !isTripActive
-            navView.menu.findItem(R.id.nav_settings)?.isEnabled = !isTripActive
+        if (navView == null) return
 
-            navView.setNavigationItemSelectedListener { item ->
-                when (item.itemId) {
-                    R.id.nav_connect -> {
-                        navigateToPage(MainPagerAdapter.PAGE_CONNECT)
-                        drawerLayout.closeDrawers()
-                        true
-                    }
-                    R.id.nav_dashboard -> {
-                        navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
-                        drawerLayout.closeDrawers()
-                        true
-                    }
-                    R.id.nav_details -> {
-                        navigateToPage(MainPagerAdapter.PAGE_DETAILS)
-                        drawerLayout.closeDrawers()
-                        true
-                    }
-                    R.id.nav_trip_summary -> {
-                        if (isTripActive) {
-                            Toast.makeText(
-                                this,
-                                "Trip Summary is not accessible during an active trip.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
-                        }
-                        drawerLayout.closeDrawers()
-                        true
-                    }
-                    R.id.nav_settings -> {
-                        if (isTripActive) {
-                            Toast.makeText(
-                                this,
-                                "Settings is not accessible during an active trip.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            navigateToPage(MainPagerAdapter.PAGE_SETTINGS)
-                        }
-                        drawerLayout.closeDrawers()
-                        true
-                    }
-                    else -> false
+        val isTripActive = MetricsCalculator.getInstance(this).tripPhase.value != TripPhase.IDLE
+        navView.menu.findItem(R.id.nav_trip_summary)?.isEnabled = !isTripActive
+        navView.menu.findItem(R.id.nav_settings)?.isEnabled = !isTripActive
+
+        navView.setNavigationItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_connect -> {
+                    navigateToPage(MainPagerAdapter.PAGE_CONNECT)
+                    true
                 }
+                R.id.nav_dashboard -> {
+                    navigateToPage(MainPagerAdapter.PAGE_DASHBOARDS)
+                    true
+                }
+                R.id.nav_details -> {
+                    navigateToPage(MainPagerAdapter.PAGE_DETAILS)
+                    true
+                }
+                R.id.nav_trip_summary -> {
+                    if (isTripActive) {
+                        Toast.makeText(
+                            this,
+                            "Trip Summary is not accessible during an active trip.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                    }
+                    true
+                }
+                R.id.nav_settings -> {
+                    if (isTripActive) {
+                        Toast.makeText(
+                            this,
+                            "Settings is not accessible during an active trip.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        navigateToPage(MainPagerAdapter.PAGE_SETTINGS)
+                    }
+                    true
+                }
+                else -> false
             }
         }
     }

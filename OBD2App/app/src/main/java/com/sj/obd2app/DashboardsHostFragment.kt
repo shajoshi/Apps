@@ -1,12 +1,15 @@
 package com.sj.obd2app
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.NavHostFragment
 import com.sj.obd2app.ui.dashboard.data.LayoutRepository
+import com.sj.obd2app.ui.dashboard.model.DashboardOrientation
 
 /**
  * Host fragment for the Dashboards page inside the main ViewPager2.
@@ -44,6 +47,22 @@ class DashboardsHostFragment : Fragment() {
 
         val repo = LayoutRepository(requireContext())
         val defaultName = repo.getDefaultLayoutName() ?: return
+
+        val layout = repo.getSavedLayouts().find { it.name == defaultName }
+        if (layout != null) {
+            val currentOrientation = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+                DashboardOrientation.LANDSCAPE else DashboardOrientation.PORTRAIT
+            if (layout.orientation != currentOrientation) {
+                val required = layout.orientation.name.lowercase().replaceFirstChar { it.uppercase() }
+                Toast.makeText(
+                    requireContext(),
+                    "\"$defaultName\" requires $required mode. Opening dashboard list.",
+                    Toast.LENGTH_LONG
+                ).show()
+                hasAutoNavigatedToDefault = true
+                return
+            }
+        }
 
         val navHost = childFragmentManager.findFragmentById(R.id.dashboards_nav_host) as? NavHostFragment
             ?: return
