@@ -202,27 +202,51 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 log("Querying supported PIDs from ECU…")
                 supportedPids = discoverSupportedPids()
                 log("✓ ${supportedPids.size} PIDs supported — starting data polling")
-                
-                // Cache discovered PIDs for this MAC address
-                context?.let { ctx ->
-                    cacheDiscoveredPids(ctx, btDevice.address, supportedPids)
-                    CoroutineScope(Dispatchers.Main).launch {
-                        Toast.makeText(ctx, "${supportedPids.size} PIDs supported", Toast.LENGTH_SHORT).show()
-                    }
-                }
 
-                // Lock protocol after auto-detection to skip negotiation on each send
-                val detectedProto = transport!!.sendCommand("ATDPN").trim()
-                if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
-                    transport!!.sendCommand("ATSP$detectedProto")
-                    log("✓ Protocol locked: ATSP$detectedProto")
-                    delay(PROTOCOL_SETTLE_DELAY_MS)
-                    // Cache the protocol so next connection skips ATSP0 probing
-                    if (detectedProto != cachedProto) {
-                        context?.let { ctx ->
-                            val existingPids = AppSettings.getPidCache(ctx, btDevice.address) ?: emptyMap()
-                            AppSettings.savePidCache(ctx, btDevice.address, existingPids, detectedProto)
-                            log("✓ Protocol cached for future connections")
+                if (supportedPids.isEmpty()) {
+                    // ELM returned no PIDs — adapter may not be properly powered or connected to ECU.
+                    // Restore supportedPids from the last good cache so polling can still run.
+                    context?.let { ctx ->
+                        val cachedEntries = AppSettings.getPidCache(ctx, btDevice.address).orEmpty()
+                        if (cachedEntries.isNotEmpty()) {
+                            supportedPids = cachedEntries.values
+                                .mapNotNull { it.rawPidId.toIntOrNull(16) }
+                                .toSet()
+                            log("⚠ 0 PIDs from ECU — restored ${supportedPids.size} PIDs from cache")
+                        } else {
+                            log("⚠ 0 PIDs from ECU and no cached PIDs available")
+                        }
+                        CoroutineScope(Dispatchers.Main).launch {
+                            Toast.makeText(
+                                ctx,
+                                "ELM returned 0 PIDs — check adapter power. Using cached PIDs.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                    // Skip cache and protocol writes — do not overwrite a good cache with bad data
+                } else {
+                    // Cache discovered PIDs for this MAC address
+                    context?.let { ctx ->
+                        cacheDiscoveredPids(ctx, btDevice.address, supportedPids)
+                        CoroutineScope(Dispatchers.Main).launch {
+                            Toast.makeText(ctx, "${supportedPids.size} PIDs supported", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    // Lock protocol after auto-detection to skip negotiation on each send
+                    val detectedProto = transport!!.sendCommand("ATDPN").trim()
+                    if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
+                        transport!!.sendCommand("ATSP$detectedProto")
+                        log("✓ Protocol locked: ATSP$detectedProto")
+                        delay(PROTOCOL_SETTLE_DELAY_MS)
+                        // Cache the protocol so next connection skips ATSP0 probing
+                        if (detectedProto != cachedProto) {
+                            context?.let { ctx ->
+                                val existingPids = AppSettings.getPidCache(ctx, btDevice.address) ?: emptyMap()
+                                AppSettings.savePidCache(ctx, btDevice.address, existingPids, detectedProto)
+                                log("✓ Protocol cached for future connections")
+                            }
                         }
                     }
                 }
