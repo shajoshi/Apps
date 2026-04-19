@@ -61,10 +61,19 @@ class MapViewFragment : Fragment() {
         binding.topBarInclude.btnTopOverflow.visibility = View.GONE
 
         binding.btnDetails.setOnClickListener { showCurrentSampleDetails() }
+        binding.btnFirst.setOnClickListener { updateCursor(0) }
+        binding.btnPrev.setOnClickListener  { updateCursor(sampleIndex - 1) }
+        binding.btnNext.setOnClickListener  { updateCursor(sampleIndex + 1) }
+        binding.btnLast.setOnClickListener  { updateCursor(pathPoints.lastIndex) }
         
         val callback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                (activity as? MainActivity)?.navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                if (childFragmentManager.backStackEntryCount > 0) {
+                    childFragmentManager.popBackStack()
+                    binding.sampleDetailsContainer.visibility = View.GONE
+                } else {
+                    (activity as? MainActivity)?.navigateToPage(MainPagerAdapter.PAGE_TRIP_SUMMARY)
+                }
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, callback)
@@ -279,16 +288,27 @@ class MapViewFragment : Fragment() {
         val sample = track?.samples?.getOrNull(sampleIndex)
         val obdSpeed = sample?.optJSONObject("obd")?.optDouble("speedKmh", 0.0) ?: 0.0
         val speedText = "${obdSpeed.toInt()} km/h"
+        val altMsl = sample?.optJSONObject("gps")?.optDouble("altMsl", Double.NaN) ?: Double.NaN
+        val altText = if (!altMsl.isNaN()) " • ${altMsl.toInt()} m" else ""
         
         binding.mapView.invalidate()
-        binding.tvCursorInfo.text = "Sample ${sampleIndex + 1} / ${pathPoints.size} • $speedText"
+        binding.tvCursorInfo.text = "Sample ${sampleIndex + 1} / ${pathPoints.size} • $speedText$altText"
     }
 
     private fun showCurrentSampleDetails() {
         val track = viewModel.selectedTrack ?: return
-        val sample = track.samples.getOrNull(sampleIndex) ?: return
-        SampleDetailsBottomSheet.newInstance(sample.toString(), sampleIndex + 1, track.samples.size)
-            .show(parentFragmentManager, "sample_details")
+        if (track.samples.isEmpty()) return
+        binding.sampleDetailsContainer.visibility = View.VISIBLE
+        val fragment = SampleDetailsFragment.newInstance(sampleIndex)
+        childFragmentManager.beginTransaction()
+            .replace(R.id.sample_details_container, fragment, "sample_details")
+            .addToBackStack("sample_details")
+            .commit()
+        childFragmentManager.addOnBackStackChangedListener {
+            if (childFragmentManager.backStackEntryCount == 0) {
+                binding.sampleDetailsContainer.visibility = View.GONE
+            }
+        }
     }
 
     override fun onPause() {

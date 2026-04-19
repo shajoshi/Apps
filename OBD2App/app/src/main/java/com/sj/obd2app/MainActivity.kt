@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
             onBluetoothEnabled()
         } else {
             Toast.makeText(this, "Bluetooth is required for OBD2 communication", Toast.LENGTH_LONG).show()
-            navigateToLayoutList()
+            navigateToTripSummary()
         }
     }
 
@@ -79,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             ensureBluetoothEnabled()
         } else {
             Toast.makeText(this, getString(R.string.bt_permission_rationale), Toast.LENGTH_LONG).show()
-            navigateToLayoutList()
+            navigateToTripSummary()
         }
     }
 
@@ -277,8 +277,10 @@ class MainActivity : AppCompatActivity() {
         viewPager.setCurrentItem(MainPagerAdapter.PAGE_CONNECT, true)
     }
 
-    private fun navigateToLayoutList() {
-        viewPager.setCurrentItem(MainPagerAdapter.PAGE_DASHBOARDS, true)
+    private fun navigateToTripSummary() {
+        lastPageItem = viewPager.currentItem
+        programmaticPageChange = true
+        viewPager.setCurrentItem(MainPagerAdapter.PAGE_TRIP_SUMMARY, false)
     }
     
     private fun setupNavigationDrawer() {
@@ -403,7 +405,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     private fun ensureBluetoothEnabled() {
-        val adapter = bluetoothAdapter ?: run { navigateToLayoutList(); return }
+        val adapter = bluetoothAdapter ?: run { navigateToTripSummary(); return }
         if (!adapter.isEnabled) {
             enableBtLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
         } else {

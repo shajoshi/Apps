@@ -36,19 +36,19 @@
                 android:padding="12dp">
 
                 <Button
-                    android:id="@+id/btn_select_folder"
+                    android:id="@+id/btn_reload_folder"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Select Folder"
+                    android:text="Reload Track Files"
                     android:textColor="#FFFFFF"
-                    android:backgroundTint="#4CAF50" />
+                    android:backgroundTint="#1565C0" />
 
                 <TextView
                     android:id="@+id/tv_current_folder"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="No folder selected"
+                    android:text="Track files are loaded from the Log Folder set in Settings."
                     android:textColor="#AAAAAA"
                     android:textSize="12sp"
                     android:gravity="center" />

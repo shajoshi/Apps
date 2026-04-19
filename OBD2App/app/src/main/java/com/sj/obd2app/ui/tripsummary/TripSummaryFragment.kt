@@ -1,7 +1,5 @@
 package com.sj.obd2app.ui.tripsummary
 
-import android.app.Activity
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -10,7 +8,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -39,19 +36,6 @@ class TripSummaryFragment : Fragment() {
 
     private lateinit var viewModel: TripSummaryViewModel
     private lateinit var fileAdapter: TrackFileAdapter
-
-    private val directoryPicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri: Uri? ->
-        uri?.let {
-            // Persist permissions
-            requireContext().contentResolver.takePersistableUriPermission(
-                it,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            viewModel.listTrackFiles(it)
-        }
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -128,8 +112,13 @@ class TripSummaryFragment : Fragment() {
     }
 
     private fun setupListeners() {
-        binding.btnSelectFolder.setOnClickListener {
-            directoryPicker.launch(null)
+        binding.btnReloadFolder.setOnClickListener {
+            val uri = AppSettings.getLogFolderUri(requireContext())
+            if (uri != null) {
+                viewModel.listTrackFiles(Uri.parse(uri))
+            } else {
+                Toast.makeText(requireContext(), "No folder selected yet", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -208,11 +197,6 @@ class TripSummaryFragment : Fragment() {
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.selectedDirectory.collect { dirName ->
-                binding.tvCurrentFolder.text = dirName ?: "No folder selected"
-            }
-        }
     }
 
     private fun displaySummary(summary: TripSummaryData) {
