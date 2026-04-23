@@ -85,6 +85,18 @@ Trip logs are still written as JSON files and shared/exported through the storag
 - `MetricsCalculator`, `MetricsLogger`, `TripState`, and related flow/collection classes were expanded.
 - `TripStateTest` was updated alongside the metrics refactor.
 
+### 6. 0-PID cache guard and Bluetooth rejection navigation
+- `BluetoothObd2Service.connect()` now guards against 0-PID discovery (unpowered adapter) by restoring supported PIDs from cache and skipping cache/protocol writes. Shows user warning Toast.
+- `MainActivity.navigateToTripSummary()` (refactored from `navigateToLayoutList()`) now navigates to Trip Summary when Bluetooth is off or permissions denied instead of Dashboards.
+- Fixed navigation bounce by setting `programmaticPageChange = true` and using `smoothScroll = false` for direct page transitions.
+
+### 7. Trip Summary and Map View screens
+- **Trip Summary** (PAGE_TRIP_SUMMARY): Lists recorded track files from configured log folder, displays trip summary metrics (fuel, speed, distance), and provides GPS track visualization via Map View button.
+- Log folder selection centralized in Settings (`AppSettings.getLogFolderUri`/`setLogFolderUri`). Trip Summary reuses this folder and provides a Reload button to refresh the file list.
+- **Map View** (PAGE_MAP_VIEW): GPS track visualization on OpenStreetMap with `|<`, `<`, `>`, `>|` navigation buttons to step through samples, cursor marker, seekbar, and speed/altitude display in cursor info.
+- **Sample Details**: Full-screen fragment (`SampleDetailsFragment`) with scrollable monospace JSON view, in-place navigation buttons, and Copy JSON button. Reads samples directly from `TripSelectionStore` to avoid Bundle size limits.
+- `TripSelectionStore.selectedTrack` holds the currently selected track with samples list, shared between Trip Summary and Map View.
+
 ## OBD2 Communication Rules
 
 ### Safe read-only modes
@@ -120,6 +132,7 @@ Trip logs are still written as JSON files and shared/exported through the storag
 - `PidCache.kt` - cached PIDs + protocol number
 - `VehicleProfile.kt` - profile model and merged custom PIDs
 - `VehicleProfileRepository.kt` - profile storage and JSON handling
+- `TripSelectionStore.kt` - shared selected track state between Trip Summary and Map View
 
 ### Metrics / trips
 - `MetricsCalculator.kt`
@@ -131,7 +144,9 @@ Trip logs are still written as JSON files and shared/exported through the storag
 ### UI
 - `ConnectFragment.kt`
 - `DetailsFragment.kt`
-- `TripSummaryFragment.kt`
+- `TripSummaryFragment.kt` - Trip log listing with GPS track visualization and sample inspection
+- `MapViewFragment.kt` - GPS track on OpenStreetMap with cursor navigation and sample details overlay
+- `SampleDetailsFragment.kt` - Full-screen sample JSON viewer with in-place navigation
 - dashboard widget views such as `DialView`, `BarGaugeView`, `TemperatureGaugeView`, `SevenSegmentView`
 
 ## Key Workflows
@@ -151,6 +166,13 @@ Trip logs are still written as JSON files and shared/exported through the storag
 1. Profiles persist as JSON.
 2. The `manufacturer` field is optional and backward compatible.
 3. `effectiveCustomPids` is the list used by polling, not just `customPids`.
+
+### Navigation and screen access
+1. Trip Summary and Map View are accessed via overflow menu from the top bar.
+2. Map View can only be accessed from Trip Summary (enforced in `MainActivity.navigateToPage`).
+3. Bluetooth rejection or permission denial navigates to Trip Summary instead of Dashboards.
+4. Map View back button navigates to Trip Summary.
+5. Sample Details is a child fragment of Map View, uses back stack for navigation.
 
 ## Safety / Stability Notes
 

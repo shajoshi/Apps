@@ -6,6 +6,7 @@ A responsive Kotlin Android app that connects to an ELM327-compatible OBD-II Blu
 
 - **Bluetooth Connection** — Scan paired devices, tap to connect via RFCOMM/SPP
 - **PID Auto-Discovery** — Queries standard bitmask PIDs (0100/0120/0140/0160) to determine which parameters the ECU supports before polling
+- **0-PID Cache Guard** — If adapter returns 0 PIDs (unpowered), restores from cache and shows warning instead of overwriting good cache
 - **Live Data Table** — Scrollable table showing all supported OBD-II values with parameter name, live value, and unit
 - **Dashboard Gauges** — At-a-glance cards for RPM, Speed, Coolant Temp, Throttle, Engine Load, and Fuel Level
 - **Trip Recording** — Start/pause/stop trips with comprehensive logging to JSON format including OBD-II data, GPS coordinates, and accelerometer readings
@@ -15,7 +16,7 @@ A responsive Kotlin Android app that connects to an ELM327-compatible OBD-II Blu
 - **Screen Wake Lock** — Automatically keeps screen on during active trips
 - **Runtime Permissions** — Requests Bluetooth and location permissions at app start; prompts to enable Bluetooth if off
 - **Responsive Layout** — Adapts between bottom navigation (phone) and navigation drawer (tablet)
-- **5-Screen Navigation** — ViewPager2-based navigation with Trip, Connect, Dashboards, Details, and Settings screens
+- **7-Screen Navigation** — ViewPager2-based navigation with Trip, Connect, Dashboards, Details, Trip Summary, Map View, and Settings screens
 
 ## Screens
 
@@ -25,7 +26,9 @@ A responsive Kotlin Android app that connects to an ELM327-compatible OBD-II Blu
 | **Connect** | Lists paired Bluetooth devices. Tap a device to connect to the OBD-II adapter. |
 | **Dashboards** | Customizable dashboard layouts with gauge cards showing key metrics with color-coded values. |
 | **Details** | Full table of all supported OBD-II parameters with columns: Parameter, Value, Unit. |
-| **Settings** | Configuration for vehicle profiles, units, and app preferences. |
+| **Trip Summary** | View and analyze recorded trip logs with GPS track visualization, sample-by-sample JSON inspection, and fuel summary metrics. |
+| **Map View** | GPS track visualization on OpenStreetMap with cursor navigation (|<, <, >, >|) to step through samples, speed/altitude display, and full-screen sample details. |
+| **Settings** | Configuration for vehicle profiles, units, log folder selection, and app preferences. |
 
 ## Supported OBD-II Parameters
 
@@ -83,6 +86,8 @@ com.sj.obd2app
 │   ├── connect/                    # Connect screen (paired BT devices list)
 │   ├── dashboard/                  # Customizable dashboard layouts
 │   ├── details/                    # Details screen (full data table)
+│   ├── tripsummary/                # Trip Summary screen with track file listing
+│   ├── mapview/                    # Map View with GPS track visualization
 │   └── settings/                   # Settings screen (vehicle profiles, preferences)
 └── MainActivity.kt                 # ViewPager2 navigation, permissions, BT enable
 ```
@@ -97,6 +102,7 @@ com.sj.obd2app
 - **Async**: Kotlin Coroutines
 - **Bluetooth**: Classic BT (RFCOMM/SPP) — no third-party OBD library
 - **GPS**: FusedLocationProviderClient for location tracking
+- **Maps**: OSMDroid for GPS track visualization on OpenStreetMap
 - **Sensors**: Accelerometer integration for road quality analysis
 - **Storage**: MediaStore API for JSON trip log sharing
 - **Services**: Foreground service for background trip recording
@@ -124,13 +130,15 @@ The app records comprehensive trip data to JSON files with the following structu
 
 ## Navigation
 
-The app uses ViewPager2 with 5 main screens:
+The app uses ViewPager2 with 7 main screens:
 
 1. **Trip** (index 0) - Main recording interface with live indicators
 2. **Connect** (index 1) - Bluetooth device pairing and connection
 3. **Dashboards** (index 2) - Customizable gauge layouts
 4. **Details** (index 3) - Complete OBD-II parameter table
-5. **Settings** (index 4) - Vehicle profiles and app configuration
+5. **Trip Summary** (index 4) - View and analyze recorded trip logs
+6. **Map View** (index 5) - GPS track visualization with sample navigation
+7. **Settings** (index 6) - Vehicle profiles and app configuration
 
 Navigation between screens is handled through:
 - Bottom navigation bar on phones
