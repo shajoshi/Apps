@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentConnectBinding
 import com.sj.obd2app.databinding.ItemDeviceBinding
+import com.sj.obd2app.can.RawCanTraceRecorder
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
@@ -166,7 +167,14 @@ class ConnectFragment : Fragment() {
             isDeviceListExpanded = !isDeviceListExpanded
             updateDeviceListVisibility()
         }
-        
+
+        // Show/hide CAN trace recording panel based on CAN Bus logging setting
+        val canBusEnabled = AppSettings.isCanBusLoggingEnabled(requireContext())
+        binding.panelCanTrace?.visibility = if (canBusEnabled) View.VISIBLE else View.GONE
+
+        // Setup CAN trace recording
+        setupCanTraceRecording()
+
         if (isMock) {
             binding.btnScan.visibility = View.GONE
             binding.panelForceBle.visibility = View.GONE
@@ -340,6 +348,32 @@ class ConnectFragment : Fragment() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun setupCanTraceRecording() {
+        // Observe recording state
+        viewLifecycleOwner.lifecycleScope.launch {
+            RawCanTraceRecorder.isRecording.collect { isRecording ->
+                binding.btnRecordCanTrace?.text = if (isRecording) "Stop" else "Record CAN Trace"
+            }
+        }
+
+        // Observe line count
+        viewLifecycleOwner.lifecycleScope.launch {
+            RawCanTraceRecorder.lineCount.collect { count ->
+                binding.tvTraceLineCount?.text = "$count lines"
+            }
+        }
+
+        // Button click handler
+        binding.btnRecordCanTrace?.setOnClickListener {
+            val isRecording = RawCanTraceRecorder.isRecording.value
+            if (isRecording) {
+                RawCanTraceRecorder.stopRecording()
+            } else {
+                RawCanTraceRecorder.startRecording(requireContext())
+            }
+        }
     }
 
     private fun registerDiscoveryReceiver() {
