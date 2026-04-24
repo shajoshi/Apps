@@ -145,7 +145,11 @@ class Step2MetricPage : Fragment() {
                 DashboardMetric.DerivedMetric("DERIVED_POWER_OBD_BHP",    "Power (OBD)",      "bhp")
             ))
         )
-        for (g in groups) {
+        // CAN Bus signals from the starred CanProfile (skipped when none is configured).
+        val canGroups = com.sj.obd2app.ui.dashboard.model.CanMetricSource.buildGroups(requireContext())
+            .map { Group(it.header, it.metrics) }
+
+        for (g in groups + canGroups) {
             items.add(MetricListItem.Header(g.header))
             g.metrics.forEach { items.add(MetricListItem.Entry(it)) }
         }
@@ -232,6 +236,13 @@ class Step2MetricPage : Fragment() {
                         listOf("GPS Altitude (MSL)", "m", true, "m")
                     is DashboardMetric.DerivedMetric ->
                         listOf(metric.name, metric.unit, true, metric.unit)
+                    is DashboardMetric.CanSignal -> {
+                        val sub = buildString {
+                            append("0x${Integer.toHexString(metric.messageId).uppercase()}")
+                            if (metric.unit.isNotEmpty()) append(" · ").append(metric.unit)
+                        }
+                        listOf(metric.name, metric.unit, true, sub)
+                    }
                 }
                 @Suppress("UNCHECKED_CAST")
                 val isSupported = supported as Boolean

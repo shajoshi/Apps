@@ -814,6 +814,7 @@ class DashboardEditorFragment : Fragment() {
             DashboardMetric.GpsSpeed         -> view.metricName = "GPS Speed"
             DashboardMetric.GpsAltitude      -> view.metricName = "Altitude"
             is DashboardMetric.DerivedMetric -> view.metricName = m.name
+            is DashboardMetric.CanSignal     -> view.metricName = m.name
         }
         view.metricUnit       = widget.displayUnit
         view.colorScheme      = colorScheme
@@ -868,6 +869,22 @@ class DashboardEditorFragment : Fragment() {
                         val value = derivedMetricValue(metric.key, m) ?: return@collect
                         if (view is NumericDisplayView) view.updateValue(value)
                         else view.setValue(value)
+                    }
+                }
+                is DashboardMetric.CanSignal -> {
+                    // Bind to CanBusScanner.latest — the scanner keeps a per-signal rolling
+                    // latest map keyed by SignalRef.key() ("HEXID:signalName"). We re-emit
+                    // whenever that map changes, guarding against spurious emissions by
+                    // comparing the per-signal value before pushing to the gauge.
+                    val key = metric.latestKey()
+                    var lastEmitted: Double? = null
+                    com.sj.obd2app.can.CanBusScanner.latest.collect { map ->
+                        val sample = map[key] ?: return@collect
+                        if (sample.value == lastEmitted) return@collect
+                        lastEmitted = sample.value
+                        val floatVal = sample.value.toFloat()
+                        if (view is NumericDisplayView) view.updateValue(floatVal)
+                        else view.setValue(floatVal)
                     }
                 }
             }

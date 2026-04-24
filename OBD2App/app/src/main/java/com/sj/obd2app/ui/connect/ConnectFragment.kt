@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -52,6 +53,15 @@ class ConnectFragment : Fragment() {
     ) { uri ->
         if (uri != null) {
             ExportImportManager.exportDebugJson(requireContext(), uri)
+        }
+    }
+
+    private val canCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // User selected a capture file - proceed with mock connection
+            viewModel.connectMock()
         }
     }
 
@@ -161,8 +171,14 @@ class ConnectFragment : Fragment() {
             binding.btnScan.visibility = View.GONE
             binding.panelForceBle.visibility = View.GONE
 
-            val mockAdapter = MockDeviceAdapter { 
-                viewModel.connectMock() 
+            val mockAdapter = MockDeviceAdapter { deviceName ->
+                if (deviceName == "Simulated CAN Adapter") {
+                    // Open file picker for CAN capture file
+                    canCaptureLauncher.launch(arrayOf("application/json", "application/jsonl", "text/plain", "*/*"))
+                } else {
+                    // Regular Mock OBD2 Adapter - connect immediately
+                    viewModel.connectMock()
+                }
             }
             binding.recyclerviewDevices.adapter = mockAdapter
             // Set initial data immediately
@@ -356,7 +372,7 @@ class ConnectFragment : Fragment() {
     }
 
     private class MockDeviceAdapter(
-        private val onClick: () -> Unit
+        private val onClick: (String) -> Unit
     ) : RecyclerView.Adapter<MockDeviceAdapter.MockVH>() {
 
         private val items = mutableListOf<String>()
@@ -372,7 +388,7 @@ class ConnectFragment : Fragment() {
         override fun onBindViewHolder(holder: MockVH, position: Int) {
             holder.binding.textDeviceName.text = items[position]
             holder.binding.textDeviceAddress.text = "00:00:00:00:00:00"
-            holder.itemView.setOnClickListener { onClick() }
+            holder.itemView.setOnClickListener { onClick(items[position]) }
         }
 
         override fun getItemCount() = items.size

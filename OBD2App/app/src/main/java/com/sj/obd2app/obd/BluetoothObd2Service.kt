@@ -393,6 +393,14 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      * A startup grace period lets the ECU finish power-on self-test before polling.
      */
     private fun startPolling() {
+        // If CAN Bus logging is enabled, trips are driven by the CAN scanner and OBD polling
+        // must stay off (see Settings → "Use CAN Bus instead of OBD polling"). We leave the
+        // socket connected so the scanner can borrow the transport without re-pairing.
+        if (context?.let { AppSettings.isCanBusLoggingEnabled(it) } == true) {
+            android.util.Log.i(TAG, "OBD polling suppressed — CAN Bus logging mode is enabled")
+            return
+        }
+
         // Split supported commands into fast and slow tiers
         val allCommands = Obd2CommandRegistry.commands.filter { cmd ->
             val pidNumber = cmd.pid.substring(2).toIntOrNull(16) ?: return@filter false
@@ -539,6 +547,37 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
      */
     suspend fun sendCommandForDiscovery(command: String): String {
         return transport?.sendCommand(command) ?: throw IOException("Not connected")
+    }
+
+    // ── CAN Bus Reader hooks ──────────────────────────────────────────────────
+
+    /**
+     * Lend the active [Elm327Transport] to an external consumer (e.g. CAN monitor).
+     * Cancels the polling loop but keeps the socket open. Returns `null` if no transport
+     * is currently connected. Call [restorePolling] to resume OBD polling afterwards.
+     */
+    fun borrowTransport(): Elm327Transport? {
+        if (_connectionState.value != Obd2Service.ConnectionState.CONNECTED) return null
+        pollingJob?.cancel()
+        pollingJob = null
+        android.util.Log.d(TAG, "Transport borrowed for raw CAN use — polling suspended")
+        return transport
+    }
+
+    /**
+     * Restart the polling loop after the transport has been released by the CAN monitor.
+     * Safe no-op if no supported PIDs have been discovered or connection was lost.
+     */
+    fun restorePolling() {
+        if (transport != null && supportedPids.isNotEmpty() &&
+            _connectionState.value == Obd2Service.ConnectionState.CONNECTED
+        ) {
+            android.util.Log.d(TAG, "Restoring OBD polling after CAN monitor")
+            startPolling()
+        } else {
+            android.util.Log.w(TAG, "Cannot restore polling — transport=${transport != null}, " +
+                "supported=${supportedPids.size}, state=${_connectionState.value}")
+        }
     }
 
     /**

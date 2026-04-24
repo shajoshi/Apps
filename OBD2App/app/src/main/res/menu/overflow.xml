@@ -21,6 +21,11 @@
         android:icon="@drawable/ic_details"
         android:title="Trip Summary" />
     <item
+        android:id="@+id/nav_can_reader"
+        android:icon="@drawable/ic_details"
+        android:title="CAN Bus Reader"
+        android:visible="false" />
+    <item
         android:id="@+id/nav_settings"
         android:icon="@drawable/ic_settings_black_24dp"
         android:title="@string/menu_settings" />

@@ -332,5 +332,59 @@ object MetricDefaults {
         DashboardMetric.GpsSpeed        -> get("GPS_SPEED")
         DashboardMetric.GpsAltitude     -> get("GPS_ALTITUDE")
         is DashboardMetric.DerivedMetric -> get(metric.key)
+        is DashboardMetric.CanSignal    -> canSignalDefault(metric)
+    }
+
+    /**
+     * Heuristic defaults for a CAN signal when we don't have a per-signal override table.
+     * Picks a widget type and numeric scale based on the declared engineering unit.
+     */
+    private fun canSignalDefault(metric: DashboardMetric.CanSignal): MetricConfig {
+        val u = metric.unit.trim()
+        val upper = u.uppercase()
+        return when {
+            upper.contains("RPM") -> MetricConfig(
+                rangeMin = 0f, rangeMax = 8000f,
+                majorTickInterval = 1000f, minorTickCount = 4,
+                warningThreshold = 6000f, decimalPlaces = 0,
+                displayUnit = u, suggestedWidgetType = WidgetType.DIAL
+            )
+            upper == "KPH" || upper == "KM/H" || upper == "MPH" -> MetricConfig(
+                rangeMin = 0f, rangeMax = 220f,
+                majorTickInterval = 20f, minorTickCount = 4,
+                warningThreshold = 180f, decimalPlaces = 0,
+                displayUnit = u.ifEmpty { "km/h" }, suggestedWidgetType = WidgetType.SEVEN_SEGMENT
+            )
+            u == "%" -> MetricConfig(
+                rangeMin = 0f, rangeMax = 100f,
+                majorTickInterval = 25f, minorTickCount = 4,
+                warningThreshold = null, decimalPlaces = 1,
+                displayUnit = "%", suggestedWidgetType = WidgetType.BAR_GAUGE_H
+            )
+            upper.contains("°C") || upper == "C" || upper.contains("DEGC") -> MetricConfig(
+                rangeMin = -40f, rangeMax = 180f,
+                majorTickInterval = 20f, minorTickCount = 4,
+                warningThreshold = 130f, decimalPlaces = 0,
+                displayUnit = "°C", suggestedWidgetType = WidgetType.TEMPERATURE_ARC
+            )
+            upper == "V" -> MetricConfig(
+                rangeMin = 0f, rangeMax = 16f,
+                majorTickInterval = 2f, minorTickCount = 4,
+                warningThreshold = null, decimalPlaces = 2,
+                displayUnit = "V", suggestedWidgetType = WidgetType.DIAL
+            )
+            upper.contains("NM") -> MetricConfig(
+                rangeMin = -200f, rangeMax = 1024f,
+                majorTickInterval = 200f, minorTickCount = 4,
+                warningThreshold = null, decimalPlaces = 0,
+                displayUnit = u, suggestedWidgetType = WidgetType.DIAL
+            )
+            else -> MetricConfig(
+                rangeMin = 0f, rangeMax = 100f,
+                majorTickInterval = 10f, minorTickCount = 4,
+                warningThreshold = null, decimalPlaces = 1,
+                displayUnit = u, suggestedWidgetType = WidgetType.NUMERIC_DISPLAY
+            )
+        }
     }
 }

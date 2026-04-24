@@ -30,7 +30,9 @@ object AppSettings {
         var lastDeviceMac: String? = null,
         var lastDeviceName: String? = null,
         var pidCacheMap: Map<String, PidCache> = emptyMap(),
-        var lastTripSnapshot: LastTripSnapshot? = null
+        var lastTripSnapshot: LastTripSnapshot? = null,
+        var useCanBusLogging: Boolean = false,
+        var defaultCanProfileId: String? = null
     )
 
     @Volatile
@@ -54,6 +56,8 @@ object AppSettings {
     private const val KEY_BT_LOGGING_ENABLED        = "bt_logging_enabled"
     private const val KEY_FORCE_BLE_CONNECTION      = "force_ble_connection"
     private const val KEY_PID_CACHE_MAP             = "pid_cache_map"
+    private const val KEY_USE_CAN_BUS_LOGGING       = "use_can_bus_logging"
+    private const val KEY_DEFAULT_CAN_PROFILE_ID    = "default_can_profile_id"
 
     val DEFAULT_POLLING_DELAY_MS = 500L
     val DEFAULT_COMMAND_DELAY_MS = 50L
@@ -102,7 +106,9 @@ object AppSettings {
                 lastDeviceMac = json.optString("lastDeviceMac", "").takeIf { it.isNotEmpty() },
                 lastDeviceName = json.optString("lastDeviceName", "").takeIf { it.isNotEmpty() },
                 pidCacheMap = parsePidCacheMap(json.optJSONObject("pidCacheMap")?.toString()),
-                lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) }
+                lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) },
+                useCanBusLogging = json.optBoolean("useCanBusLogging", false),
+                defaultCanProfileId = json.optString("defaultCanProfileId", "").takeIf { it.isNotEmpty() }
             )
         } catch (e: Exception) {
             SettingsData()
@@ -125,7 +131,9 @@ object AppSettings {
             forceBleConnection = p.getBoolean(KEY_FORCE_BLE_CONNECTION, false),
             lastDeviceMac = p.getString("last_device_mac", null),
             lastDeviceName = p.getString("last_device_name", null),
-            pidCacheMap = parsePidCacheMap(p.getString(KEY_PID_CACHE_MAP, null))
+            pidCacheMap = parsePidCacheMap(p.getString(KEY_PID_CACHE_MAP, null)),
+            useCanBusLogging = p.getBoolean(KEY_USE_CAN_BUS_LOGGING, false),
+            defaultCanProfileId = p.getString(KEY_DEFAULT_CAN_PROFILE_ID, null)
         )
     }
 
@@ -162,6 +170,8 @@ object AppSettings {
             
             // Serialize last trip snapshot
             settings.lastTripSnapshot?.let { put("lastTripSnapshot", it.toJSON()) }
+            put("useCanBusLogging", settings.useCanBusLogging)
+            settings.defaultCanProfileId?.let { put("defaultCanProfileId", it) }
         }
 
         try {
@@ -195,6 +205,8 @@ object AppSettings {
             } else {
                 remove(KEY_PID_CACHE_MAP)
             }
+            putBoolean(KEY_USE_CAN_BUS_LOGGING, settings.useCanBusLogging)
+            settings.defaultCanProfileId?.let { putString(KEY_DEFAULT_CAN_PROFILE_ID, it) } ?: remove(KEY_DEFAULT_CAN_PROFILE_ID)
         }.apply()
     }
 
@@ -452,6 +464,26 @@ object AppSettings {
 
     fun getAllPidCaches(context: Context): Map<String, PidCache> {
         return loadSettings(context).pidCacheMap
+    }
+
+    // ── CAN Bus Logging ───────────────────────────────────────────────────────
+
+    fun isCanBusLoggingEnabled(context: Context): Boolean =
+        loadSettings(context).useCanBusLogging
+
+    fun setCanBusLoggingEnabled(context: Context, value: Boolean) {
+        val settings = loadSettings(context)
+        settings.useCanBusLogging = value
+        saveSettings(context, settings)
+    }
+
+    fun getDefaultCanProfileId(context: Context): String? =
+        loadSettings(context).defaultCanProfileId
+
+    fun setDefaultCanProfileId(context: Context, id: String?) {
+        val settings = loadSettings(context)
+        settings.defaultCanProfileId = id
+        saveSettings(context, settings)
     }
 
     // ── Last Trip Snapshot Management ─────────────────────────────────────────

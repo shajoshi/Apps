@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#16213E"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="12dp">
+
+        <TextView
+            android:id="@+id/tv_sheet_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="New CAN Profile"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_can_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="Cancel"
+            android:textColor="#AAAAAA"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+        <Button
+            android:id="@+id/btn_can_save"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save"
+            android:textColor="#4FC3F7"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/et_can_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Profile name"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#666666"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:autofillHints="none" />
+
+    <EditText
+        android:id="@+id/et_can_objective"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="Objective (short description)"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#666666"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:autofillHints="none" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sampling (ms)"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/et_sampling_ms"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:hint="500"
+            android:inputType="number"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#666666"
+            android:importantForAutofill="no"
+            android:autofillHints="none" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Record raw CAN frames during scan"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/sw_record_raw"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/tv_dbc_file_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="No DBC file loaded"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btn_pick_dbc"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Load DBC…"
+            android:textColor="#4FC3F7"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+    </LinearLayout>
+
+    <!-- Playback capture (used only in mock mode to replay a recorded session) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/tv_capture_file_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="middle"
+            android:singleLine="true"
+            android:text="Playback: none (mock uses synthetic frames)"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btn_clear_capture"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clear"
+            android:textColor="#E57373"
+            android:visibility="gone"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+        <Button
+            android:id="@+id/btn_pick_capture"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Load capture…"
+            android:textColor="#4FC3F7"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+    </LinearLayout>
+
+    <EditText
+        android:id="@+id/et_signal_filter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="Filter signals…"
+        android:textColor="#FFFFFF"
+        android:textColorHint="#666666"
+        android:inputType="text"
+        android:importantForAutofill="no"
+        android:autofillHints="none" />
+
+    <TextView
+        android:id="@+id/tv_selection_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="0 signals selected"
+        android:textColor="#4FC3F7"
+        android:textSize="12sp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_signals"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="6dp"
+        android:background="#1A1A2E"
+        android:scrollbars="vertical"
+        android:scrollbarStyle="insideOverlay"
+        android:scrollbarThumbVertical="@drawable/scrollbar_thumb_cyan"
+        android:scrollbarSize="4dp"
+        android:fadeScrollbars="false"
+        tools:listitem="@layout/item_can_signal" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="horizontal"
+        android:gravity="start">
+
+        <Button
+            android:id="@+id/btn_can_delete"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Delete"
+            android:textColor="#E57373"
+            android:visibility="gone"
+            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -184,7 +184,13 @@ class ConnectViewModel : ViewModel() {
     @SuppressLint("MissingPermission")
     fun loadPairedDevices(context: Context) {
         if (Obd2ServiceProvider.useMock) {
-            _mockDeviceNames.value = listOf("Mock OBD2 Adapter (DEMO)")
+            // Show Simulated CAN Adapter when CAN Bus logging is enabled, otherwise Mock OBD2 Adapter
+            val deviceName = if (AppSettings.isCanBusLoggingEnabled(context)) {
+                "Simulated CAN Adapter"
+            } else {
+                "Mock OBD2 Adapter (DEMO)"
+            }
+            _mockDeviceNames.value = listOf(deviceName)
             return
         }
         val btManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager

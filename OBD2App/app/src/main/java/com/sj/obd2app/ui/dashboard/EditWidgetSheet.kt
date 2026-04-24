@@ -273,6 +273,7 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                 is DashboardMetric.GpsSpeed -> "GPS Speed"
                 is DashboardMetric.GpsAltitude -> "GPS Altitude"
                 is DashboardMetric.DerivedMetric -> metric.name
+                is DashboardMetric.CanSignal -> "${metric.name} · 0x${Integer.toHexString(metric.messageId).uppercase()}"
             }
         }
     }
@@ -414,12 +415,17 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                 DashboardMetric.DerivedMetric("DERIVED_POWER_OBD_BHP",    "Power (OBD)",      "bhp")
             ))
         )
-        
-        for (group in groups) {
+
+        // Dynamically-sourced CAN groups (from the starred CanProfile + its DBC); empty when
+        // no default profile or the DBC cannot be loaded.
+        val canGroups = com.sj.obd2app.ui.dashboard.model.CanMetricSource.buildGroups(requireContext())
+            .map { Group(it.header, it.metrics) }
+
+        for (group in groups + canGroups) {
             items.add(MetricListItem.Header(group.header))
             items.addAll(group.metrics.map { MetricListItem.Entry(it) })
         }
-        
+
         return items
     }
     

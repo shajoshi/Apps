@@ -90,4 +90,57 @@ class ClassicBluetoothTransport(private val device: BluetoothDevice) : Elm327Tra
     }
     
     override fun getTransportType(): String = "Classic Bluetooth (SPP)"
+
+    // ── Streaming support (CAN monitor mode) ──────────────────────────────────
+
+    override suspend fun sendRaw(command: String) {
+        withContext(Dispatchers.IO) {
+            val os = outputStream ?: throw IOException("Not connected")
+            os.write("$command\r".toByteArray(Charsets.ISO_8859_1))
+            os.flush()
+        }
+    }
+
+    override suspend fun readStreamLine(timeoutMs: Long): String? {
+        return withContext(Dispatchers.IO) {
+            val reader = bufferedReader ?: throw IOException("Not connected")
+            val sb = StringBuilder()
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                if (!reader.ready()) {
+                    Thread.sleep(READ_WAIT_MS)
+                    continue
+                }
+                val c = reader.read()
+                if (c < 0) break
+                val ch = c.toChar()
+                // In monitor mode '>' means the adapter has exited streaming.
+                if (ch == '>') {
+                    return@withContext if (sb.isEmpty()) null else sb.toString().trim()
+                }
+                if (ch == '\r' || ch == '\n') {
+                    if (sb.isNotEmpty()) return@withContext sb.toString().trim()
+                    // swallow blank EOLs
+                    continue
+                }
+                sb.append(ch)
+            }
+            if (sb.isEmpty()) null else sb.toString().trim()
+        }
+    }
+
+    override suspend fun drainInput(timeoutMs: Long) {
+        withContext(Dispatchers.IO) {
+            val reader = bufferedReader ?: return@withContext
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (System.currentTimeMillis() < deadline) {
+                if (!reader.ready()) {
+                    Thread.sleep(READ_WAIT_MS)
+                    continue
+                }
+                val c = reader.read()
+                if (c < 0) break
+            }
+        }
+    }
 }

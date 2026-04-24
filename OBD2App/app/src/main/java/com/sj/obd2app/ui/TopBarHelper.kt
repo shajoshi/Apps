@@ -9,6 +9,7 @@ import com.sj.obd2app.MainPagerAdapter
 import com.sj.obd2app.R
 import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.metrics.TripPhase
+import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -30,6 +31,13 @@ fun Fragment.attachNavOverflow(anchor: View) {
         // Disable secondary destinations during active trips so users can see what is unavailable.
         popup.menu.findItem(R.id.nav_trip_summary)?.isEnabled = !isTripActive
         popup.menu.findItem(R.id.nav_settings)?.isEnabled = !isTripActive
+
+        // CAN Bus Reader only appears when CAN Bus logging is enabled in Settings.
+        val canBusEnabled = AppSettings.isCanBusLoggingEnabled(requireContext())
+        popup.menu.findItem(R.id.nav_can_reader)?.let { item ->
+            item.isVisible = canBusEnabled
+            item.isEnabled = !isTripActive
+        }
         
         popup.setOnMenuItemClickListener { item ->
             val activity = requireActivity() as? MainActivity
@@ -45,6 +53,17 @@ fun Fragment.attachNavOverflow(anchor: View) {
                         Toast.makeText(
                             requireContext(),
                             "Trip Summary is not accessible during an active trip.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+                R.id.nav_can_reader  -> {
+                    if (!isTripActive) {
+                        activity?.navigateToPage(MainPagerAdapter.PAGE_CAN_READER)
+                    } else {
+                        Toast.makeText(
+                            requireContext(),
+                            "CAN Bus Reader is not accessible during an active trip.",
                             Toast.LENGTH_LONG
                         ).show()
                     }

@@ -85,12 +85,7 @@ Trip logs are still written as JSON files and shared/exported through the storag
 - `MetricsCalculator`, `MetricsLogger`, `TripState`, and related flow/collection classes were expanded.
 - `TripStateTest` was updated alongside the metrics refactor.
 
-### 6. 0-PID cache guard and Bluetooth rejection navigation
-- `BluetoothObd2Service.connect()` now guards against 0-PID discovery (unpowered adapter) by restoring supported PIDs from cache and skipping cache/protocol writes. Shows user warning Toast.
-- `MainActivity.navigateToTripSummary()` (refactored from `navigateToLayoutList()`) now navigates to Trip Summary when Bluetooth is off or permissions denied instead of Dashboards.
-- Fixed navigation bounce by setting `programmaticPageChange = true` and using `smoothScroll = false` for direct page transitions.
-
-### 7. Trip Summary and Map View screens
+### 6. Trip Summary and Map View screens
 - **Trip Summary** (PAGE_TRIP_SUMMARY): Lists recorded track files from configured log folder, displays trip summary metrics (fuel, speed, distance), and provides GPS track visualization via Map View button.
 - Log folder selection centralized in Settings (`AppSettings.getLogFolderUri`/`setLogFolderUri`). Trip Summary reuses this folder and provides a Reload button to refresh the file list.
 - **Map View** (PAGE_MAP_VIEW): GPS track visualization on OpenStreetMap with `|<`, `<`, `>`, `>|` navigation buttons to step through samples, cursor marker, seekbar, and speed/altitude display in cursor info.

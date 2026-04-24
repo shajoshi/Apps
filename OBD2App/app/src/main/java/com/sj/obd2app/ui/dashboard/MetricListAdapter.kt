@@ -86,6 +86,13 @@ class MetricListAdapter(
                     listOf("GPS Altitude (MSL)", "m", true, "m")
                 is DashboardMetric.DerivedMetric ->
                     listOf(metric.name, metric.unit, true, metric.unit)
+                is DashboardMetric.CanSignal -> {
+                    val sub = buildString {
+                        append("0x${Integer.toHexString(metric.messageId).uppercase()}")
+                        if (metric.unit.isNotEmpty()) append(" · ").append(metric.unit)
+                    }
+                    listOf(metric.name, metric.unit, true, sub)
+                }
             }
             @Suppress("UNCHECKED_CAST")
             val isSupported = supported as Boolean

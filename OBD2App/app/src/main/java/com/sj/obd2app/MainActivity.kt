@@ -147,7 +147,8 @@ class MainActivity : AppCompatActivity() {
 
                     val swipeBlockedPage = currentPage == MainPagerAdapter.PAGE_TRIP_SUMMARY ||
                         currentPage == MainPagerAdapter.PAGE_MAP_VIEW ||
-                        currentPage == MainPagerAdapter.PAGE_SETTINGS
+                        currentPage == MainPagerAdapter.PAGE_SETTINGS ||
+                        currentPage == MainPagerAdapter.PAGE_CAN_READER
 
                     if (swipeBlockedPage && !wasProgrammatic) {
                         android.util.Log.w("MainActivity", "Blocking swipe access to secondary page: $currentPage")
@@ -164,7 +165,8 @@ class MainActivity : AppCompatActivity() {
                     viewPager.isUserInputEnabled = currentPage !in setOf(
                         MainPagerAdapter.PAGE_TRIP_SUMMARY,
                         MainPagerAdapter.PAGE_MAP_VIEW,
-                        MainPagerAdapter.PAGE_SETTINGS
+                        MainPagerAdapter.PAGE_SETTINGS,
+                        MainPagerAdapter.PAGE_CAN_READER
                     )
                 }
             }
@@ -352,7 +354,8 @@ class MainActivity : AppCompatActivity() {
 
         if (pageIndex == MainPagerAdapter.PAGE_TRIP_SUMMARY ||
             pageIndex == MainPagerAdapter.PAGE_MAP_VIEW ||
-            pageIndex == MainPagerAdapter.PAGE_SETTINGS) {
+            pageIndex == MainPagerAdapter.PAGE_SETTINGS ||
+            pageIndex == MainPagerAdapter.PAGE_CAN_READER) {
             if (isTripActive) {
                 Toast.makeText(
                     this,

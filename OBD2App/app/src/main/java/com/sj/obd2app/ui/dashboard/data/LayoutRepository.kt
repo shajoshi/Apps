@@ -224,6 +224,10 @@ class DashboardMetricAdapter : JsonSerializer<DashboardMetric>, JsonDeserializer
                 result.addProperty("type", "DerivedMetric")
                 result.add("data", context.serialize(src))
             }
+            is DashboardMetric.CanSignal -> {
+                result.addProperty("type", "CanSignal")
+                result.add("data", context.serialize(src))
+            }
         }
         return result
     }
@@ -237,6 +241,7 @@ class DashboardMetricAdapter : JsonSerializer<DashboardMetric>, JsonDeserializer
             "GpsSpeed" -> DashboardMetric.GpsSpeed
             "GpsAltitude" -> DashboardMetric.GpsAltitude
             "DerivedMetric" -> context.deserialize(jsonObject.get("data"), DashboardMetric.DerivedMetric::class.java)
+            "CanSignal" -> context.deserialize(jsonObject.get("data"), DashboardMetric.CanSignal::class.java)
             else -> throw JsonParseException("Unknown DashboardMetric type: $type")
         }
     }
