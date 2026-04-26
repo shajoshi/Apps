@@ -180,6 +180,9 @@ class BluetoothObd2Service(
         _connectionLog.value = _connectionLog.value + msg
     }
 
+    /** Allows external components (e.g. [CanBusScanner]) to append lines to the connection log. */
+    fun appendConnectionLog(msg: String) = log(msg)
+
     /**
      * Connect to the given Bluetooth device and start polling OBD-II data.
      * Automatically detects whether to use Classic Bluetooth or BLE.
@@ -411,8 +414,8 @@ class BluetoothObd2Service(
         log("Initialising ELM327 adapter…")
         delay(1000)
         for (cmd in commands) {
-            log("  → $cmd")
-            t.sendCommand(cmd)
+            val resp = t.sendCommand(cmd).trim()
+            log("  $cmd → $resp")
             // ATZ (reset) needs extra time — clones can take a few seconds
             val cmdDelay = if (cmd == "ATZ") ATZ_SETTLE_DELAY_MS else INIT_COMMAND_DELAY_MS
             delay(cmdDelay)

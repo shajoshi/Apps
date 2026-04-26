@@ -160,7 +160,7 @@ object DbcParser {
         val offset = g[8].toDouble()
         val min = g[9].toDouble()
         val max = g[10].toDouble()
-        val unit = g[11]
+        val unit = sanitizeUnit(g[11])
         val receiversField = g[12].trim()
 
         val receivers = receiversField
@@ -186,6 +186,25 @@ object DbcParser {
             isMultiplexor = isMux,
             multiplexValue = muxVal
         )
+    }
+
+    /**
+     * Cleans a raw DBC unit string. DBC files sometimes embed range/formula notes
+     * inside the unit field (e.g. "0..8191 rpm, E = N * 1"). This function tries to
+     * extract just the actual unit token, falling back to blank if it's too messy.
+     */
+    internal fun sanitizeUnit(raw: String): String {
+        val s = raw.trim()
+        if (s.isEmpty()) return s
+        if (!s.contains(',') && !s.contains('=')) return s
+        val unitToken = s.split(Regex("[,\\s]+"))
+            .map { it.trim() }
+            .firstOrNull { tok ->
+                tok.isNotEmpty() &&
+                (tok[0].isLetter() || tok[0] == '°') &&
+                tok.all { c -> c.isLetterOrDigit() || c == '°' || c == '%' || c == '/' || c == '_' }
+            }
+        return unitToken ?: ""
     }
 
     private data class MutableCanMessage(

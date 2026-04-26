@@ -33,7 +33,8 @@ object AppSettings {
         var lastTripSnapshot: LastTripSnapshot? = null,
         var useCanBusLogging: Boolean = false,
         var defaultCanProfileId: String? = null,
-        var ignoreCachedPids: Boolean = false
+        var ignoreCachedPids: Boolean = false,
+        var syncTickerHz: Int = 50
     )
 
     @Volatile
@@ -60,6 +61,7 @@ object AppSettings {
     private const val KEY_USE_CAN_BUS_LOGGING       = "use_can_bus_logging"
     private const val KEY_DEFAULT_CAN_PROFILE_ID    = "default_can_profile_id"
     private const val KEY_IGNORE_CACHED_PIDS        = "ignore_cached_pids"
+    private const val KEY_SYNC_TICKER_HZ             = "sync_ticker_hz"
 
     val DEFAULT_POLLING_DELAY_MS = 500L
     val DEFAULT_COMMAND_DELAY_MS = 50L
@@ -111,7 +113,8 @@ object AppSettings {
                 lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) },
                 useCanBusLogging = json.optBoolean("useCanBusLogging", false),
                 defaultCanProfileId = json.optString("defaultCanProfileId", "").takeIf { it.isNotEmpty() },
-                ignoreCachedPids = json.optBoolean("ignoreCachedPids", false)
+                ignoreCachedPids = json.optBoolean("ignoreCachedPids", false),
+                syncTickerHz = json.optInt("syncTickerHz", 50)
             )
         } catch (e: Exception) {
             SettingsData()
@@ -137,7 +140,8 @@ object AppSettings {
             pidCacheMap = parsePidCacheMap(p.getString(KEY_PID_CACHE_MAP, null)),
             useCanBusLogging = p.getBoolean(KEY_USE_CAN_BUS_LOGGING, false),
             defaultCanProfileId = p.getString(KEY_DEFAULT_CAN_PROFILE_ID, null),
-            ignoreCachedPids = p.getBoolean(KEY_IGNORE_CACHED_PIDS, false)
+            ignoreCachedPids = p.getBoolean(KEY_IGNORE_CACHED_PIDS, false),
+            syncTickerHz = p.getInt(KEY_SYNC_TICKER_HZ, 50)
         )
     }
 
@@ -177,6 +181,7 @@ object AppSettings {
             put("useCanBusLogging", settings.useCanBusLogging)
             settings.defaultCanProfileId?.let { put("defaultCanProfileId", it) }
             put("ignoreCachedPids", settings.ignoreCachedPids)
+            put("syncTickerHz", settings.syncTickerHz)
         }
 
         try {
@@ -213,6 +218,7 @@ object AppSettings {
             putBoolean(KEY_USE_CAN_BUS_LOGGING, settings.useCanBusLogging)
             settings.defaultCanProfileId?.let { putString(KEY_DEFAULT_CAN_PROFILE_ID, it) } ?: remove(KEY_DEFAULT_CAN_PROFILE_ID)
             putBoolean(KEY_IGNORE_CACHED_PIDS, settings.ignoreCachedPids)
+            putInt(KEY_SYNC_TICKER_HZ, settings.syncTickerHz)
         }.apply()
     }
 
@@ -500,6 +506,17 @@ object AppSettings {
     fun setIgnoreCachedPidsEnabled(context: Context, value: Boolean) {
         val settings = loadSettings(context)
         settings.ignoreCachedPids = value
+        saveSettings(context, settings)
+    }
+
+    // ── Sync Ticker ───────────────────────────────────────────────────────────
+
+    fun getSyncTickerHz(context: Context): Int =
+        loadSettings(context).syncTickerHz
+
+    fun setSyncTickerHz(context: Context, hz: Int) {
+        val settings = loadSettings(context)
+        settings.syncTickerHz = hz
         saveSettings(context, settings)
     }
 

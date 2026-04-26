@@ -148,6 +148,7 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.etCanObjective.setText(p.objective)
             binding.etSamplingMs.setText(p.samplingMs.toString())
             binding.swRecordRaw.isChecked = p.recordRawFrames
+            loadSyncTickerHz()
             binding.btnCanDelete.visibility = View.VISIBLE
             selectedRefs.addAll(p.selectedSignals)
             // Try to auto-load its stored DBC
@@ -174,10 +175,19 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         } ?: run {
             binding.tvSheetTitle.text = "New CAN Profile"
             binding.etSamplingMs.setText("500")
+            loadSyncTickerHz()
             binding.btnCanDelete.visibility = View.GONE
         }
 
         updateSelectionCount()
+    }
+
+    // ── Sync ticker Hz ────────────────────────────────────────────────────────
+
+    private fun loadSyncTickerHz() {
+        val hz = AppSettings.getSyncTickerHz(requireContext())
+        if (hz >= 100) binding.rb100hz.isChecked = true
+        else binding.rb50hz.isChecked = true
     }
 
     // ── DBC picker ────────────────────────────────────────────────────────────
@@ -264,6 +274,8 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             return
         }
         val samplingMs = binding.etSamplingMs.text?.toString()?.toLongOrNull()?.coerceAtLeast(10L) ?: 500L
+        val tickerHz = if (binding.rb100hz.isChecked) 100 else 50
+        AppSettings.setSyncTickerHz(requireContext(), tickerHz)
 
         // Build the profile id first so we can copy the DBC into app-private storage.
         val baseProfile = editingProfile

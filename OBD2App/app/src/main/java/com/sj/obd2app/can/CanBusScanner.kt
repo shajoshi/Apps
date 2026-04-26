@@ -79,6 +79,9 @@ object CanBusScanner {
     private val _latest = MutableStateFlow<Map<String, LatestSample>>(emptyMap())
     val latest: StateFlow<Map<String, LatestSample>> = _latest.asStateFlow()
 
+    /** Returns a point-in-time copy of all currently decoded signal values for [DataOrchestrator]. */
+    fun snapshotLatest(): Map<String, LatestSample> = liveRows.toMap()
+
     private var scanJob: Job? = null
     private var transport: Elm327Transport? = null
 
@@ -242,7 +245,8 @@ object CanBusScanner {
                             val signals = signalsByMessage[frame.id]
                             if (signals != null) {
                                 for (sig in signals) {
-                                    val decodedValue = CanDecoder.decode(sig, frame.data) ?: continue
+                                    val decodedRaw = CanDecoder.decode(sig, frame.data) ?: continue
+                                    val decodedValue = Math.round(decodedRaw * 1000.0) / 1000.0
                                     val sample = LatestSample(
                                         signalName = sig.name,
                                         messageId = frame.id,
@@ -337,25 +341,42 @@ object CanBusScanner {
             // Drain any pending input from OBD polling that was just cancelled.
             t.drainInput(EXIT_DRAIN_MS)
 
-            val setup = buildList {
-                add("ATE0")   // echo off
-                add("ATL0")   // no linefeeds
-                add("ATS0")   // no spaces — needed so CanFrameParser can parse
-                add("ATH1")   // headers on — we need the CAN ID prefix
-                add("ATCAF0") // no CAN auto-formatting (raw frames)
-                val ids = profile.canIdFilter
-                if (ids != null && ids.size == 1) {
-                    val idHex = Integer.toHexString(ids.first()).uppercase()
-                    add("ATCRA$idHex")
-                } else {
-                    add("ATCRA") // clear any previous filter
-                }
-            }
-            for (cmd in setup) {
-                val resp = t.sendCommand(cmd)
+            service.appendConnectionLog("CAN scan setup — verifying adapter capabilities…")
+
+            // Critical commands: a '?' response means the adapter firmware does not support
+            // CAN monitor mode (e.g. cheap ELM327 clones with pirated v2.1 firmware).
+            val criticalCmds = linkedMapOf(
+                "ATE0"   to "Echo off",
+                "ATL0"   to "Linefeeds off",
+                "ATS0"   to "Spaces off",
+                "ATH1"   to "Headers on",
+                "ATCAF0" to "CAN auto-formatting off"
+            )
+            for ((cmd, desc) in criticalCmds) {
+                val resp = t.sendCommand(cmd).trim()
+                service.appendConnectionLog("  $cmd → $resp")
                 Log.d(TAG, "setup $cmd → $resp")
+                if (resp.contains("?")) {
+                    val errMsg = "Adapter rejected $cmd ($desc) — not CAN-capable. Use a vLinker or OBDLink."
+                    service.appendConnectionLog("✗ $errMsg")
+                    throw UnsupportedAdapterException(errMsg)
+                }
                 delay(30)
             }
+
+            // Apply CAN ID filter if the profile specifies exactly one ID.
+            val ids = profile.canIdFilter
+            val filterCmd = if (ids != null && ids.size == 1) {
+                "ATCRA${Integer.toHexString(ids.first()).uppercase()}"
+            } else {
+                "ATCRA" // clear any previous filter
+            }
+            val filterResp = t.sendCommand(filterCmd).trim()
+            service.appendConnectionLog("  $filterCmd → $filterResp")
+            Log.d(TAG, "setup $filterCmd → $filterResp")
+            delay(30)
+
+            service.appendConnectionLog("✓ CAN adapter ready — starting monitor stream")
             // sendCommand would block on '>'; ATMA streams without a prompt.
             t.sendRaw("ATMA")
         }
@@ -545,6 +566,10 @@ object CanBusScanner {
             fallbackWriter(context, fileName)
         }
     }
+
+    /** Thrown when the adapter rejects a CAN-specific AT command with '?', indicating
+     *  it lacks CAN monitor mode support (e.g. cheap ELM327 clone firmware). */
+    class UnsupportedAdapterException(message: String) : IOException(message)
 
     private fun fallbackWriter(context: Context, fileName: String): BufferedWriter? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
