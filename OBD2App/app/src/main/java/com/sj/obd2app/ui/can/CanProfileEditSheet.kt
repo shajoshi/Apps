@@ -85,6 +85,7 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         val d = super.onCreateDialog(savedInstanceState) as BottomSheetDialog
         d.behavior.state = BottomSheetBehavior.STATE_EXPANDED
         d.behavior.skipCollapsed = true
+        d.behavior.peekHeight = resources.displayMetrics.heightPixels
         return d
     }
 
@@ -128,6 +129,11 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             clearExistingCapture = true
             binding.tvCaptureFileLabel.text = "Playback: none (mock uses synthetic frames)"
             binding.btnClearCapture.visibility = View.GONE
+        }
+
+        // Settings panel collapse/expand toggle
+        binding.btnSettingsToggle.setOnClickListener {
+            toggleSettingsPanel()
         }
 
         // Show demo-data toggle only in mock mode
@@ -192,6 +198,18 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         }
 
         updateSelectionCount()
+    }
+
+    // ── Settings panel toggle ─────────────────────────────────────────────────
+
+    private var settingsPanelExpanded = true
+
+    private fun toggleSettingsPanel() {
+        settingsPanelExpanded = !settingsPanelExpanded
+        binding.llSettingsPanel.visibility = if (settingsPanelExpanded) View.VISIBLE else View.GONE
+        binding.btnSettingsToggle.rotation = if (settingsPanelExpanded) 0f else 180f
+        binding.btnSettingsToggle.contentDescription =
+            if (settingsPanelExpanded) "Collapse settings" else "Expand settings"
     }
 
     // ── Demo data toggle ──────────────────────────────────────────────────────
