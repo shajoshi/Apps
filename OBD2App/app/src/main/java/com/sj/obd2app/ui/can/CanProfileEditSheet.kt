@@ -218,9 +218,6 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         val dbcVisibility = if (useDemoData) View.GONE else View.VISIBLE
         binding.tvDbcFileLabel.visibility = dbcVisibility
         binding.btnPickDbc.visibility = dbcVisibility
-        binding.rvSignals.visibility = dbcVisibility
-        binding.tvSelectionCount.visibility = dbcVisibility
-        binding.etSignalFilter.visibility = dbcVisibility
     }
 
     // ── Sync ticker Hz ────────────────────────────────────────────────────────
