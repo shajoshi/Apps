@@ -32,7 +32,8 @@ object AppSettings {
         var pidCacheMap: Map<String, PidCache> = emptyMap(),
         var lastTripSnapshot: LastTripSnapshot? = null,
         var useCanBusLogging: Boolean = false,
-        var defaultCanProfileId: String? = null
+        var defaultCanProfileId: String? = null,
+        var ignoreCachedPids: Boolean = false
     )
 
     @Volatile
@@ -58,6 +59,7 @@ object AppSettings {
     private const val KEY_PID_CACHE_MAP             = "pid_cache_map"
     private const val KEY_USE_CAN_BUS_LOGGING       = "use_can_bus_logging"
     private const val KEY_DEFAULT_CAN_PROFILE_ID    = "default_can_profile_id"
+    private const val KEY_IGNORE_CACHED_PIDS        = "ignore_cached_pids"
 
     val DEFAULT_POLLING_DELAY_MS = 500L
     val DEFAULT_COMMAND_DELAY_MS = 50L
@@ -108,7 +110,8 @@ object AppSettings {
                 pidCacheMap = parsePidCacheMap(json.optJSONObject("pidCacheMap")?.toString()),
                 lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) },
                 useCanBusLogging = json.optBoolean("useCanBusLogging", false),
-                defaultCanProfileId = json.optString("defaultCanProfileId", "").takeIf { it.isNotEmpty() }
+                defaultCanProfileId = json.optString("defaultCanProfileId", "").takeIf { it.isNotEmpty() },
+                ignoreCachedPids = json.optBoolean("ignoreCachedPids", false)
             )
         } catch (e: Exception) {
             SettingsData()
@@ -133,7 +136,8 @@ object AppSettings {
             lastDeviceName = p.getString("last_device_name", null),
             pidCacheMap = parsePidCacheMap(p.getString(KEY_PID_CACHE_MAP, null)),
             useCanBusLogging = p.getBoolean(KEY_USE_CAN_BUS_LOGGING, false),
-            defaultCanProfileId = p.getString(KEY_DEFAULT_CAN_PROFILE_ID, null)
+            defaultCanProfileId = p.getString(KEY_DEFAULT_CAN_PROFILE_ID, null),
+            ignoreCachedPids = p.getBoolean(KEY_IGNORE_CACHED_PIDS, false)
         )
     }
 
@@ -172,6 +176,7 @@ object AppSettings {
             settings.lastTripSnapshot?.let { put("lastTripSnapshot", it.toJSON()) }
             put("useCanBusLogging", settings.useCanBusLogging)
             settings.defaultCanProfileId?.let { put("defaultCanProfileId", it) }
+            put("ignoreCachedPids", settings.ignoreCachedPids)
         }
 
         try {
@@ -207,6 +212,7 @@ object AppSettings {
             }
             putBoolean(KEY_USE_CAN_BUS_LOGGING, settings.useCanBusLogging)
             settings.defaultCanProfileId?.let { putString(KEY_DEFAULT_CAN_PROFILE_ID, it) } ?: remove(KEY_DEFAULT_CAN_PROFILE_ID)
+            putBoolean(KEY_IGNORE_CACHED_PIDS, settings.ignoreCachedPids)
         }.apply()
     }
 
@@ -483,6 +489,17 @@ object AppSettings {
     fun setDefaultCanProfileId(context: Context, id: String?) {
         val settings = loadSettings(context)
         settings.defaultCanProfileId = id
+        saveSettings(context, settings)
+    }
+
+    // ── Ignore Cached PIDs ────────────────────────────────────────────────────
+
+    fun isIgnoreCachedPidsEnabled(context: Context): Boolean =
+        loadSettings(context).ignoreCachedPids
+
+    fun setIgnoreCachedPidsEnabled(context: Context, value: Boolean) {
+        val settings = loadSettings(context)
+        settings.ignoreCachedPids = value
         saveSettings(context, settings)
     }
 

@@ -167,6 +167,7 @@ class SettingsFragment : Fragment() {
         binding.switchAutoShareLog.isChecked = AppSettings.isAutoShareLogEnabled(ctx)
         binding.switchBtLoggingEnabled.isChecked = AppSettings.isBtLoggingEnabled(ctx)
         binding.switchCanBusLogging.isChecked = AppSettings.isCanBusLoggingEnabled(ctx)
+        binding.switchIgnoreCachedPids.isChecked = AppSettings.isIgnoreCachedPidsEnabled(ctx)
         
         val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
         if (accelAvailable) {
@@ -190,6 +191,7 @@ class SettingsFragment : Fragment() {
             settings.btLoggingEnabled = binding.switchBtLoggingEnabled.isChecked
             settings.accelerometerEnabled = binding.switchAccelerometerEnabled.isChecked
             settings.useCanBusLogging = binding.switchCanBusLogging.isChecked
+            settings.ignoreCachedPids = binding.switchIgnoreCachedPids.isChecked
         }
         
         AppSettings.savePendingSettings(ctx)
@@ -267,6 +269,7 @@ class SettingsFragment : Fragment() {
         binding.switchAutoShareLog.setOnCheckedChangeListener { _, _ -> markAsChanged() }
         binding.switchBtLoggingEnabled.setOnCheckedChangeListener { _, _ -> markAsChanged() }
         binding.switchCanBusLogging.setOnCheckedChangeListener { _, _ -> markAsChanged() }
+        binding.switchIgnoreCachedPids.setOnCheckedChangeListener { _, _ -> markAsChanged() }
 
         val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
         if (!accelAvailable) {

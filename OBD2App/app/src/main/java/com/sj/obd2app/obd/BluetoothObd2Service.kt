@@ -3,11 +3,12 @@ package com.sj.obd2app.obd
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.content.Context
-import android.widget.Toast
+import androidx.annotation.VisibleForTesting
 import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.CachedPidEntry
 import com.sj.obd2app.settings.VehicleProfileRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,9 +24,19 @@ import java.io.IOException
  * Service that manages the Bluetooth connection to an ELM327-compatible OBD-II adapter.
  * On connection, discovers which PIDs the ECU supports via bitmask queries (0100/0120/0140/0160),
  * then continuously polls only the supported PIDs.
+ *
+ * The constructor takes several injectable collaborators with sensible defaults
+ * so production code keeps working unchanged, while tests can supply fakes to
+ * exercise [connect] without any real Bluetooth adapter.
  */
 @SuppressLint("MissingPermission")
-class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
+class BluetoothObd2Service(
+    private val context: Context? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val transportFactory: TransportFactory = DefaultTransportFactory,
+    private val settingsSource: ConnectionSettingsSource = AppSettingsConnectionSource(context),
+    private val notifier: UserNotifier = ToastUserNotifier(context)
+) : Obd2Service {
 
     companion object {
         private const val TAG = "BluetoothObd2Service"
@@ -67,6 +78,32 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             } else {
                 BASE_INIT_COMMANDS + listOf(
                     "ATSTFF", // Max timeout (~1s) — gives ECU time during protocol detection
+                    "ATSP0"   // Auto-detect protocol
+                )
+            }
+        }
+
+        /**
+         * ELM327 init commands for CAN Bus sniffing mode.
+         * Headers ON (ATH1) and CAN auto-formatting OFF (ATCAF0) so raw CAN frames
+         * with ID prefixes can be parsed by the CAN scanner / trace recorder.
+         * No OBD-II PID discovery is performed in this mode.
+         */
+        private val CAN_BASE_INIT_COMMANDS = listOf(
+            "ATZ",   // Reset
+            "ATE0",  // Echo off
+            "ATL0",  // Linefeeds off
+            "ATS0",  // Spaces off — required for CanFrameParser
+            "ATH1",  // Headers ON — required to capture CAN ID prefix
+            "ATCAF0" // No CAN auto-formatting — emit raw frames
+        )
+
+        private fun buildCanInitCommands(cachedProtocol: String?): List<String> {
+            return if (cachedProtocol != null) {
+                CAN_BASE_INIT_COMMANDS + "ATSP$cachedProtocol"
+            } else {
+                CAN_BASE_INIT_COMMANDS + listOf(
+                    "ATSTFF", // Max timeout to give ECU time during protocol detection
                     "ATSP0"   // Auto-detect protocol
                 )
             }
@@ -154,152 +191,257 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
             return
         }
 
-        _connectionState.value = Obd2Service.ConnectionState.CONNECTING
-        _errorMessage.value = null
-        _connectionLog.value = emptyList()
-        log("Connecting to ${btDevice.name ?: btDevice.address}…")
+        val target = ConnectTarget.fromDevice(btDevice)
+        beginConnecting(target)
 
-        CoroutineScope(Dispatchers.IO).launch {
+        CoroutineScope(ioDispatcher).launch {
             try {
                 // Create the transport based on device type and forceBle setting
-                transport = createTransport(btDevice, forceBle)
-                log("Detected device type: ${transport!!.getTransportType()}")
+                val newTransport = transportFactory.create(btDevice, forceBle, context) { log(it) }
+                transport = newTransport
+                log("Detected device type: ${newTransport.getTransportType()}")
                 log("Establishing connection…")
-                transport!!.connect()
+                newTransport.connect()
                 log("✓ Connection established")
 
-                // Look up cached protocol for this device
-                val cachedProto = context?.let {
-                    AppSettings.getCachedProtocol(it, btDevice.address)
-                }
-                if (cachedProto != null) {
-                    log("Using cached protocol: $cachedProto")
-                } else {
-                    log("No cached protocol — will auto-detect")
-                }
-
-                // Initialise ELM327
-                log("Initialising ELM327 adapter…")
-                delay(1000)
-                val initCommands = buildInitCommands(cachedProto)
-                for (cmd in initCommands) {
-                    log("  → $cmd")
-                    transport!!.sendCommand(cmd)
-                    // ATZ (reset) needs extra time — clones can take a few seconds
-                    val cmdDelay = if (cmd == "ATZ") ATZ_SETTLE_DELAY_MS else INIT_COMMAND_DELAY_MS
-                    delay(cmdDelay)
-                }
-                log("✓ ELM327 initialised")
-
-                // Let the CAN bus settle after protocol detection before
-                // sending the first real OBD command (0100).  This avoids
-                // flooding the bus while the ECU is still negotiating,
-                // which can trigger U-codes (e.g. U0009) on some bikes.
-                log("Waiting for CAN bus to settle…")
-                delay(if (cachedProto != null) 1000L else 2000L)
-
-                // Discover which PIDs the ECU supports
-                log("Querying supported PIDs from ECU…")
-                supportedPids = discoverSupportedPids()
-                log("✓ ${supportedPids.size} PIDs supported — starting data polling")
-
-                if (supportedPids.isEmpty()) {
-                    // ELM returned no PIDs — adapter may not be properly powered or connected to ECU.
-                    // Restore supportedPids from the last good cache so polling can still run.
-                    context?.let { ctx ->
-                        val cachedEntries = AppSettings.getPidCache(ctx, btDevice.address).orEmpty()
-                        if (cachedEntries.isNotEmpty()) {
-                            supportedPids = cachedEntries.values
-                                .mapNotNull { it.rawPidId.toIntOrNull(16) }
-                                .toSet()
-                            log("⚠ 0 PIDs from ECU — restored ${supportedPids.size} PIDs from cache")
-                        } else {
-                            log("⚠ 0 PIDs from ECU and no cached PIDs available")
-                        }
-                        CoroutineScope(Dispatchers.Main).launch {
-                            Toast.makeText(
-                                ctx,
-                                "ELM returned 0 PIDs — check adapter power. Using cached PIDs.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                    // Skip cache and protocol writes — do not overwrite a good cache with bad data
-                } else {
-                    // Cache discovered PIDs for this MAC address
-                    context?.let { ctx ->
-                        cacheDiscoveredPids(ctx, btDevice.address, supportedPids)
-                        CoroutineScope(Dispatchers.Main).launch {
-                            Toast.makeText(ctx, "${supportedPids.size} PIDs supported", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-
-                    // Lock protocol after auto-detection to skip negotiation on each send
-                    val detectedProto = transport!!.sendCommand("ATDPN").trim()
-                    if (detectedProto.isNotBlank() && detectedProto != "0" && !detectedProto.contains("?")) {
-                        transport!!.sendCommand("ATSP$detectedProto")
-                        log("✓ Protocol locked: ATSP$detectedProto")
-                        delay(PROTOCOL_SETTLE_DELAY_MS)
-                        // Cache the protocol so next connection skips ATSP0 probing
-                        if (detectedProto != cachedProto) {
-                            context?.let { ctx ->
-                                val existingPids = AppSettings.getPidCache(ctx, btDevice.address) ?: emptyMap()
-                                AppSettings.savePidCache(ctx, btDevice.address, existingPids, detectedProto)
-                                log("✓ Protocol cached for future connections")
-                            }
-                        }
-                    }
-                }
-
-                _connectedDeviceName.value = btDevice.name ?: btDevice.address
-                _connectionState.value = Obd2Service.ConnectionState.CONNECTED
+                runConnectFlow(target, newTransport)
+                finalizeConnected(target)
                 startPolling()
 
             } catch (e: IOException) {
-                val msg = "Connection failed: ${e.message}"
-                log("✗ $msg")
-                _errorMessage.value = msg
-                _connectionState.value = Obd2Service.ConnectionState.ERROR
-                closeTransport()
+                android.util.Log.e(TAG, "Connection failed: ${e.message}", e)
+                handleConnectFailure("Connection failed: ${e.message}")
             } catch (e: SecurityException) {
-                val msg = "Bluetooth permission denied"
-                log("✗ $msg")
-                _errorMessage.value = msg
-                _connectionState.value = Obd2Service.ConnectionState.ERROR
-                closeTransport()
+                android.util.Log.e(TAG, "Bluetooth permission denied", e)
+                handleConnectFailure("Bluetooth permission denied")
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Unexpected error during connection: ${e.message}", e)
+                handleConnectFailure("Unexpected error: ${e.message}")
             }
         }
     }
 
     /**
-     * Auto-detect device type and create appropriate transport.
-     * If forceBle is true, always use BLE regardless of device type.
-     * Otherwise, tries Classic Bluetooth first, falls back to BLE if device type is LE.
+     * Test-only entry point that bypasses the [TransportFactory] and runs the
+     * post-transport connection flow against a pre-built [Elm327Transport].
+     *
+     * Lets unit tests exercise the full init / protocol-detect / PID-discover
+     * pipeline without any [BluetoothDevice] or real Bluetooth stack.
+     * Polling is intentionally NOT started so tests stay focused on the
+     * connection handshake.
      */
-    private fun createTransport(device: BluetoothDevice, forceBle: Boolean = false): Elm327Transport {
-        // If force BLE is enabled, always use BLE transport
-        if (forceBle) {
-            log("Force BLE enabled - using BLE transport")
-            return BleTransport(context ?: throw IllegalStateException("Context required for BLE"), device)
-        }
-        
-        // Otherwise, auto-detect based on device type
-        return when (device.type) {
-            BluetoothDevice.DEVICE_TYPE_LE -> {
-                log("Device type: BLE only")
-                BleTransport(context ?: throw IllegalStateException("Context required for BLE"), device)
-            }
-            BluetoothDevice.DEVICE_TYPE_DUAL -> {
-                log("Device type: Dual mode (trying Classic first)")
-                // For dual-mode devices, prefer Classic BT as it's more reliable for serial data
-                ClassicBluetoothTransport(device)
-            }
-            else -> {
-                log("Device type: Classic Bluetooth")
-                ClassicBluetoothTransport(device)
-            }
+    @VisibleForTesting
+    internal suspend fun runConnectFlowForTest(
+        target: ConnectTarget,
+        providedTransport: Elm327Transport
+    ) {
+        beginConnecting(target)
+        try {
+            transport = providedTransport
+            log("Detected device type: ${providedTransport.getTransportType()}")
+            log("Establishing connection…")
+            providedTransport.connect()
+            log("✓ Connection established")
+
+            runConnectFlow(target, providedTransport)
+            finalizeConnected(target)
+        } catch (e: IOException) {
+            android.util.Log.e(TAG, "Connection failed: ${e.message}", e)
+            handleConnectFailure("Connection failed: ${e.message}")
+        } catch (e: SecurityException) {
+            android.util.Log.e(TAG, "Bluetooth permission denied", e)
+            handleConnectFailure("Bluetooth permission denied")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Unexpected error during connection: ${e.message}", e)
+            handleConnectFailure("Unexpected error: ${e.message}")
         }
     }
+
+    // ── connect() helpers ─────────────────────────────────────────────────────
+
+    private fun beginConnecting(target: ConnectTarget) {
+        _connectionState.value = Obd2Service.ConnectionState.CONNECTING
+        _errorMessage.value = null
+        _connectionLog.value = emptyList()
+        log("Connecting to ${target.name ?: target.address}…")
+    }
+
+    private fun finalizeConnected(target: ConnectTarget) {
+        _connectedDeviceName.value = target.name ?: target.address
+        _connectionState.value = Obd2Service.ConnectionState.CONNECTED
+    }
+
+    private fun handleConnectFailure(msg: String) {
+        log("✗ $msg")
+        _errorMessage.value = msg
+        _connectionState.value = Obd2Service.ConnectionState.ERROR
+        closeTransport()
+    }
+
+    /**
+     * Per-connection state captured once at the start of [runConnectFlow] and
+     * passed to a [ConnectionStrategy] so each step has the same view of the
+     * world (no repeated settings lookups, no risk of mid-flow state changes).
+     */
+    private data class FlowConfig(
+        val target: ConnectTarget,
+        val cachedProto: String?,
+        val ignoreCache: Boolean
+    )
+
+    /**
+     * Encapsulates the parts of the connection flow that differ between
+     * OBD-II polling and raw CAN sniffing. Each implementation owns its own
+     * AT-init recipe and post-init "finalize" step (PID discovery vs. plain
+     * protocol detect).
+     */
+    private sealed interface ConnectionStrategy {
+        fun initCommandsFor(cachedProtocol: String?): List<String>
+
+        /** @return the supported-PID set the polling loop should use (empty for CAN mode) */
+        suspend fun finalizeSetup(t: Elm327Transport, config: FlowConfig): Set<Int>
+    }
+
+    private inner class CanSniffStrategy : ConnectionStrategy {
+        override fun initCommandsFor(cachedProtocol: String?): List<String> =
+            buildCanInitCommands(cachedProtocol)
+
+        override suspend fun finalizeSetup(t: Elm327Transport, config: FlowConfig): Set<Int> {
+            // Detect protocol so we can cache it; OBD PID discovery is skipped — the
+            // CAN scanner / trace recorder will set ATMA / ATCRA themselves.
+            val detectedProto = t.sendCommand("ATDPN").trim()
+            if (detectedProto.isValidProtocol()) {
+                log("✓ Protocol detected: $detectedProto")
+                persistProtocolIfChanged(config.target.address, detectedProto, config.cachedProto)
+            } else {
+                log("⚠ Could not detect protocol via ATDPN — CAN scan may need manual ATSP")
+            }
+            log("✓ Ready for CAN sniffing — adapter idle until scan starts")
+            return emptySet()
+        }
+    }
+
+    private inner class ObdPollStrategy : ConnectionStrategy {
+        override fun initCommandsFor(cachedProtocol: String?): List<String> =
+            buildInitCommands(cachedProtocol)
+
+        override suspend fun finalizeSetup(t: Elm327Transport, config: FlowConfig): Set<Int> {
+            log("Querying supported PIDs from ECU…")
+            val discovered = discoverSupportedPids()
+            log("✓ ${discovered.size} PIDs supported — starting data polling")
+
+            return if (discovered.isEmpty()) handleEmptyDiscovery(config)
+                   else handleSuccessfulDiscovery(t, discovered, config)
+        }
+
+        private fun handleEmptyDiscovery(config: FlowConfig): Set<Int> {
+            // ELM returned no PIDs — adapter may not be powered or connected to ECU.
+            // Restore from the last good cache so polling can still run, unless the
+            // user has explicitly asked us to ignore cached PIDs.
+            val cachedEntries = if (config.ignoreCache) emptyMap()
+                else settingsSource.getPidCache(config.target.address).orEmpty()
+            val restored = if (cachedEntries.isNotEmpty()) {
+                val pids = cachedEntries.values
+                    .mapNotNull { it.rawPidId.toIntOrNull(16) }
+                    .toSet()
+                log("⚠ 0 PIDs from ECU — restored ${pids.size} PIDs from cache")
+                pids
+            } else {
+                log("⚠ 0 PIDs from ECU and no cached PIDs available")
+                emptySet()
+            }
+            notifier.toast(
+                if (config.ignoreCache) "ELM returned 0 PIDs — check adapter power."
+                else "ELM returned 0 PIDs — check adapter power. Using cached PIDs.",
+                long = true
+            )
+            return restored
+            // No protocol-cache write here — never overwrite a good cache with bad data.
+        }
+
+        private suspend fun handleSuccessfulDiscovery(
+            t: Elm327Transport,
+            discovered: Set<Int>,
+            config: FlowConfig
+        ): Set<Int> {
+            context?.let { ctx -> cacheDiscoveredPids(ctx, config.target.address, discovered) }
+            notifier.toast("${discovered.size} PIDs supported")
+
+            // Lock protocol after auto-detection to skip negotiation on each send
+            val detectedProto = t.sendCommand("ATDPN").trim()
+            if (detectedProto.isValidProtocol()) {
+                t.sendCommand("ATSP$detectedProto")
+                log("✓ Protocol locked: ATSP$detectedProto")
+                delay(PROTOCOL_SETTLE_DELAY_MS)
+                persistProtocolIfChanged(config.target.address, detectedProto, config.cachedProto)
+            }
+            return discovered
+        }
+    }
+
+    /**
+     * Performs ELM327 init, protocol detection and (in OBD mode) PID discovery
+     * against an already-connected [transport]. Pure suspend function — does
+     * not touch threading or the polling loop, so it is fully unit-testable.
+     *
+     * Mode-specific logic lives inside [ConnectionStrategy]; this method is
+     * just the orchestrator.
+     */
+    private suspend fun runConnectFlow(target: ConnectTarget, t: Elm327Transport) {
+        val ignoreCache = settingsSource.ignoreCachedPids()
+        val isCanMode = settingsSource.isCanBusMode()
+        if (ignoreCache) log("⚠ 'Ignore cached PIDs' is ON — fresh protocol/PID detection")
+        if (isCanMode) log("CAN Bus mode — skipping OBD PID discovery")
+
+        val cachedProto = if (ignoreCache) null
+            else settingsSource.getCachedProtocol(target.address)
+        log(if (cachedProto != null) "Using cached protocol: $cachedProto"
+            else "No cached protocol — will auto-detect")
+
+        val config = FlowConfig(target, cachedProto, ignoreCache)
+        val strategy: ConnectionStrategy = if (isCanMode) CanSniffStrategy() else ObdPollStrategy()
+
+        runInitSequence(t, strategy.initCommandsFor(cachedProto))
+        awaitBusSettle(cachedProto)
+        supportedPids = strategy.finalizeSetup(t, config)
+    }
+
+    /** Send the AT init recipe with appropriate per-command delays. */
+    private suspend fun runInitSequence(t: Elm327Transport, commands: List<String>) {
+        log("Initialising ELM327 adapter…")
+        delay(1000)
+        for (cmd in commands) {
+            log("  → $cmd")
+            t.sendCommand(cmd)
+            // ATZ (reset) needs extra time — clones can take a few seconds
+            val cmdDelay = if (cmd == "ATZ") ATZ_SETTLE_DELAY_MS else INIT_COMMAND_DELAY_MS
+            delay(cmdDelay)
+        }
+        log("✓ ELM327 initialised")
+    }
+
+    /**
+     * Let the CAN bus settle after protocol detection before sending the first
+     * real OBD command. Avoids flooding the bus while the ECU is still
+     * negotiating, which can trigger U-codes (e.g. U0009) on some bikes.
+     */
+    private suspend fun awaitBusSettle(cachedProto: String?) {
+        log("Waiting for CAN bus to settle…")
+        delay(if (cachedProto != null) 1000L else 2000L)
+    }
+
+    /** Save a freshly detected protocol to cache, but only if it actually changed. */
+    private fun persistProtocolIfChanged(address: String, detected: String, cached: String?) {
+        if (detected != cached) {
+            val existingPids = settingsSource.getPidCache(address) ?: emptyMap()
+            settingsSource.savePidCache(address, existingPids, detected)
+            log("✓ Protocol cached for future connections")
+        }
+    }
+
+    /** ATDPN response is a usable protocol identifier (not blank, not '0', no '?'). */
+    private fun String.isValidProtocol(): Boolean =
+        isNotBlank() && this != "0" && !contains("?")
 
     /**
      * Disconnect from the OBD-II adapter.
@@ -431,7 +573,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         // Reset failure counter when starting polling
         consecutiveFailures = 0
 
-        pollingJob = CoroutineScope(Dispatchers.IO).launch {
+        pollingJob = CoroutineScope(ioDispatcher).launch {
             // Startup grace period — let the ECU finish power-on self-test
             android.util.Log.d(TAG, "Startup grace period: waiting ${STARTUP_GRACE_DELAY_MS}ms before polling")
             delay(STARTUP_GRACE_DELAY_MS)
@@ -462,9 +604,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                             cycleSuccessCount++
                         }
                     } catch (e: IOException) {
-                        android.util.Log.w(TAG, "PID ${cmd.pid} IOException: ${e.message}")
+                        android.util.Log.w(TAG, "PID ${cmd.pid} IOException: ${e.message}", e)
                     } catch (e: Exception) {
-                        android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
+                        android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}", e)
                     }
                     if (commandDelayMs > 0) delay(commandDelayMs)
                 }
@@ -481,9 +623,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                                 cycleSuccessCount++
                             }
                         } catch (e: IOException) {
-                            android.util.Log.w(TAG, "PID ${cmd.pid} IOException: ${e.message}")
+                            android.util.Log.w(TAG, "PID ${cmd.pid} IOException: ${e.message}", e)
                         } catch (e: Exception) {
-                            android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}")
+                            android.util.Log.w(TAG, "PID ${cmd.pid} error: ${e.message}", e)
                         }
                         if (commandDelayMs > 0) delay(commandDelayMs)
                     }
@@ -616,6 +758,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
         val value = try {
             command.parse(bytes)
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "Parse error for ${command.pid}: ${e.message}")
             return null
         }
 
@@ -660,7 +803,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                     currentHeader = header
                     android.util.Log.d(TAG, "Custom PID: switched header to $header")
                 } catch (e: Exception) {
-                    android.util.Log.w(TAG, "Failed to switch header to $header: ${e.message}")
+                    android.util.Log.w(TAG, "Failed to switch header to $header: ${e.message}", e)
                     continue // Skip this header group
                 }
             }
@@ -674,9 +817,9 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                         successCount++
                     }
                 } catch (e: IOException) {
-                    android.util.Log.w(TAG, "Custom PID ${cp.name} IOException: ${e.message}")
+                    android.util.Log.w(TAG, "Custom PID ${cp.name} IOException: ${e.message}", e)
                 } catch (e: Exception) {
-                    android.util.Log.w(TAG, "Custom PID ${cp.name} error: ${e.message}")
+                    android.util.Log.w(TAG, "Custom PID ${cp.name} error: ${e.message}", e)
                 }
                 if (commandDelayMs > 0) delay(commandDelayMs)
             }
@@ -688,7 +831,7 @@ class BluetoothObd2Service(private val context: Context? = null) : Obd2Service {
                 transport?.sendCommand("ATSH7DF")
                 android.util.Log.d(TAG, "Custom PID: restored default header 7DF")
             } catch (e: Exception) {
-                android.util.Log.w(TAG, "Failed to restore default header: ${e.message}")
+                android.util.Log.w(TAG, "Failed to restore default header: ${e.message}", e)
             }
         }
 
