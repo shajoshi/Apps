@@ -246,13 +246,13 @@ class BluetoothObd2Service(
             runConnectFlow(target, providedTransport)
             finalizeConnected(target)
         } catch (e: IOException) {
-            android.util.Log.e(TAG, "Connection failed: ${e.message}", e)
+            log("✗ IOException: ${e.message}")
             handleConnectFailure("Connection failed: ${e.message}")
         } catch (e: SecurityException) {
-            android.util.Log.e(TAG, "Bluetooth permission denied", e)
+            log("✗ SecurityException: ${e.message}")
             handleConnectFailure("Bluetooth permission denied")
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Unexpected error during connection: ${e.message}", e)
+            log("✗ Unexpected error: ${e.message}")
             handleConnectFailure("Unexpected error: ${e.message}")
         }
     }
