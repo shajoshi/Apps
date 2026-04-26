@@ -2,6 +2,7 @@ package com.sj.obd2app.obd
 
 import android.bluetooth.BluetoothDevice
 import android.content.Context
+import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,9 +30,11 @@ class MockObd2Service private constructor() : Obd2Service {
         private var baselineData: List<Obd2DataItem> = emptyList()
         private var enhancedMockData: JSONObject? = null
         private var commandProcessor: MockObd2CommandProcessor? = null
+        private var appContext: Context? = null
 
         /** Must be called once with an application Context to load the JSON. */
         fun init(context: Context) {
+            appContext = context.applicationContext
             if (baselineData.isEmpty()) {
                 baselineData = loadFromAssets(context)
             }
@@ -108,23 +111,53 @@ class MockObd2Service private constructor() : Obd2Service {
 
         _connectionState.value = Obd2Service.ConnectionState.CONNECTING
         _errorMessage.value = null
-        _connectionLog.value = listOf("Connecting to Mock OBD2 Adapter…")
-        
+        _connectionLog.value = emptyList()
+
         // Update centralized state manager
         ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTING)
 
-        CoroutineScope(Dispatchers.IO).launch {
-            delay(500)
-            _connectionLog.value = _connectionLog.value + "✓ Bluetooth socket connected"
-            delay(500)
-            _connectionLog.value = _connectionLog.value + "✓ ELM327 initialised (mock)"
-            delay(500)
-            _connectionLog.value = _connectionLog.value + "✓ 20 PIDs supported — starting data polling"
-            _connectionState.value = Obd2Service.ConnectionState.CONNECTED
-            // Update centralized state manager
-            ObdStateManager.updateConnectionState(ObdStateManager.ConnectionState.CONNECTED, "Mock OBD2 Adapter")
-            startPolling()
+        val isCanMode = appContext?.let { AppSettings.isCanBusLoggingEnabled(it) } ?: false
+
+        if (isCanMode) {
+            CoroutineScope(Dispatchers.IO).launch {
+                appendConnectionLog("Connecting to Simulated CAN Adapter…")
+                delay(300)
+                appendConnectionLog("✓ Transport ready (simulated)")
+                delay(300)
+                appendConnectionLog("CAN Bus mode — skipping OBD PID discovery")
+                delay(200)
+                appendConnectionLog("No cached protocol — will auto-detect")
+                delay(300)
+                appendConnectionLog("Waiting for CAN bus to settle…")
+                delay(500)
+                appendConnectionLog("✓ Ready for CAN sniffing — adapter idle until scan starts")
+                _connectionState.value = Obd2Service.ConnectionState.CONNECTED
+                ObdStateManager.updateConnectionState(
+                    ObdStateManager.ConnectionState.CONNECTED, "Simulated CAN Adapter"
+                )
+                // No OBD polling in CAN mode — CanBusScanner drives the data flow.
+            }
+        } else {
+            CoroutineScope(Dispatchers.IO).launch {
+                appendConnectionLog("Connecting to Mock OBD2 Adapter…")
+                delay(500)
+                appendConnectionLog("✓ Bluetooth socket connected")
+                delay(500)
+                appendConnectionLog("✓ ELM327 initialised (mock)")
+                delay(500)
+                appendConnectionLog("✓ 20 PIDs supported — starting data polling")
+                _connectionState.value = Obd2Service.ConnectionState.CONNECTED
+                ObdStateManager.updateConnectionState(
+                    ObdStateManager.ConnectionState.CONNECTED, "Mock OBD2 Adapter"
+                )
+                startPolling()
+            }
         }
+    }
+
+    /** Allows [CanBusScanner] to append lines to the connection log in mock CAN mode. */
+    fun appendConnectionLog(msg: String) {
+        _connectionLog.value = _connectionLog.value + msg
     }
 
     override fun disconnect() {

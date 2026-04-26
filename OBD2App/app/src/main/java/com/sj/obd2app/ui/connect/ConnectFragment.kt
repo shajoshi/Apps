@@ -57,15 +57,6 @@ class ConnectFragment : Fragment() {
         }
     }
 
-    private val canCaptureLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            // User selected a capture file - proceed with mock connection
-            viewModel.connectMock()
-        }
-    }
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -179,14 +170,8 @@ class ConnectFragment : Fragment() {
             binding.btnScan.visibility = View.GONE
             binding.panelForceBle.visibility = View.GONE
 
-            val mockAdapter = MockDeviceAdapter { deviceName ->
-                if (deviceName == "Simulated CAN Adapter") {
-                    // Open file picker for CAN capture file
-                    canCaptureLauncher.launch(arrayOf("application/json", "application/jsonl", "text/plain", "*/*"))
-                } else {
-                    // Regular Mock OBD2 Adapter - connect immediately
-                    viewModel.connectMock()
-                }
+            val mockAdapter = MockDeviceAdapter { _ ->
+                viewModel.connectMock()
             }
             binding.recyclerviewDevices.adapter = mockAdapter
             // Set initial data immediately

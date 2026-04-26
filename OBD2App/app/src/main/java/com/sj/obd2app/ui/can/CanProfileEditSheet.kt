@@ -25,6 +25,7 @@ import com.sj.obd2app.can.DbcParser
 import com.sj.obd2app.can.SignalRef
 import com.sj.obd2app.databinding.ItemCanSignalBinding
 import com.sj.obd2app.databinding.SheetCanProfileEditBinding
+import com.sj.obd2app.obd.ObdStateManager
 import com.sj.obd2app.settings.AppSettings
 
 /**
@@ -129,6 +130,14 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.btnClearCapture.visibility = View.GONE
         }
 
+        // Show demo-data toggle only in mock mode
+        if (ObdStateManager.isMockMode) {
+            binding.llUseDemoData.visibility = View.VISIBLE
+        }
+        binding.swUseDemoData.setOnCheckedChangeListener { _, checked ->
+            updateDbcSectionVisibility(checked)
+        }
+
         binding.btnCanSave.setOnClickListener { save() }
         binding.btnCanCancel.setOnClickListener { dismiss() }
         binding.btnCanDelete.setOnClickListener {
@@ -148,6 +157,8 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.etCanObjective.setText(p.objective)
             binding.etSamplingMs.setText(p.samplingMs.toString())
             binding.swRecordRaw.isChecked = p.recordRawFrames
+            binding.swUseDemoData.isChecked = p.useDemoData
+            updateDbcSectionVisibility(p.useDemoData)
             loadSyncTickerHz()
             binding.btnCanDelete.visibility = View.VISIBLE
             selectedRefs.addAll(p.selectedSignals)
@@ -175,11 +186,23 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         } ?: run {
             binding.tvSheetTitle.text = "New CAN Profile"
             binding.etSamplingMs.setText("500")
+            updateDbcSectionVisibility(false)
             loadSyncTickerHz()
             binding.btnCanDelete.visibility = View.GONE
         }
 
         updateSelectionCount()
+    }
+
+    // ── Demo data toggle ──────────────────────────────────────────────────────
+
+    private fun updateDbcSectionVisibility(useDemoData: Boolean) {
+        val dbcVisibility = if (useDemoData) View.GONE else View.VISIBLE
+        binding.tvDbcFileLabel.visibility = dbcVisibility
+        binding.btnPickDbc.visibility = dbcVisibility
+        binding.rvSignals.visibility = dbcVisibility
+        binding.tvSelectionCount.visibility = dbcVisibility
+        binding.etSignalFilter.visibility = dbcVisibility
     }
 
     // ── Sync ticker Hz ────────────────────────────────────────────────────────
@@ -268,8 +291,9 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.etCanName.error = "Required"
             return
         }
+        val useDemoData = binding.swUseDemoData.isChecked
         val dbcFileName = pendingDbcFileName ?: editingProfile?.dbcFileName
-        if (dbcFileName == null) {
+        if (dbcFileName == null && !useDemoData) {
             Toast.makeText(requireContext(), "Please load a DBC file first.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -281,10 +305,11 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         val baseProfile = editingProfile
             ?: CanProfile(
                 name = name,
-                dbcFileName = dbcFileName,
+                dbcFileName = dbcFileName ?: "<built-in demo>",
                 selectedSignals = selectedRefs.toList(),
                 samplingMs = samplingMs,
-                recordRawFrames = binding.swRecordRaw.isChecked
+                recordRawFrames = binding.swRecordRaw.isChecked,
+                useDemoData = useDemoData
             )
 
         val filterIds = selectedRefs.map { it.messageId }.distinct().takeIf { it.isNotEmpty() }
@@ -299,12 +324,13 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         val profile = baseProfile.copy(
             name = name,
             objective = binding.etCanObjective.text?.toString()?.trim().orEmpty(),
-            dbcFileName = dbcFileName,
+            dbcFileName = dbcFileName ?: "<built-in demo>",
             selectedSignals = selectedRefs.toList(),
             samplingMs = samplingMs,
             canIdFilter = filterIds,
             recordRawFrames = binding.swRecordRaw.isChecked,
-            playbackCaptureFileName = captureName
+            playbackCaptureFileName = captureName,
+            useDemoData = useDemoData
         )
 
         // Import pending DBC under the now-known id.

@@ -29,7 +29,9 @@ data class CanProfile(
      * replays this file instead of generating synthetic frames.
      */
     val playbackCaptureFileName: String? = null,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    /** When true and the app is in mock mode, skip DBC loading and use [DemoDbcDatabase] instead. */
+    val useDemoData: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -39,6 +41,7 @@ data class CanProfile(
         put("samplingMs", samplingMs)
         put("recordRawFrames", recordRawFrames)
         put("isDefault", isDefault)
+        put("useDemoData", useDemoData)
         playbackCaptureFileName?.let { put("playbackCaptureFileName", it) }
         put("selectedSignals", JSONArray().apply {
             selectedSignals.forEach { ref ->
@@ -81,7 +84,8 @@ data class CanProfile(
                 recordRawFrames = json.optBoolean("recordRawFrames", false),
                 playbackCaptureFileName = json.optString("playbackCaptureFileName", "")
                     .takeIf { it.isNotEmpty() },
-                isDefault = json.optBoolean("isDefault", false)
+                isDefault = json.optBoolean("isDefault", false),
+                useDemoData = json.optBoolean("useDemoData", false)
             )
         }
     }

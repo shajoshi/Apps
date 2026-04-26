@@ -113,30 +113,56 @@ object CanBusScanner {
             return
         }
 
-        // Load the DBC first — needed by both real and mock paths.
         val repo = CanProfileRepository.getInstance(context)
-        val dbcFile = repo.dbcFileFor(profile.id) ?: run {
+        val isMock = ObdStateManager.isMockMode
+        val useDemo = profile.useDemoData && isMock
+
+        // Load the DBC, or use the built-in demo when the profile requests it.
+        val dbcFile = if (useDemo) null else repo.dbcFileFor(profile.id)
+
+        if (dbcFile == null && !useDemo) {
             _state.value = State.Error("DBC file missing for profile ${profile.name}.")
             return
         }
-        val dbc = try {
-            dbcFile.inputStream().use { DbcParser.parse(it, profile.dbcFileName) }
-        } catch (e: Exception) {
-            Log.e(TAG, "DBC parse failed", e)
-            _state.value = State.Error("Could not parse DBC: ${e.message}")
-            return
+
+        val dbc: DbcDatabase = if (useDemo) {
+            Log.i(TAG, "useDemoData=true — using built-in demo database for mock scan")
+            DemoDbcDatabase.database
+        } else {
+            try {
+                dbcFile!!.inputStream().use { DbcParser.parse(it, profile.dbcFileName) }
+            } catch (e: Exception) {
+                Log.e(TAG, "DBC parse failed", e)
+                _state.value = State.Error("Could not parse DBC: ${e.message}")
+                return
+            }
+        }
+
+        // When using demo data, substitute an effective profile that pre-selects all demo signals.
+        val effectiveProfile = if (useDemo) {
+            DemoDbcDatabase.demoProfile().copy(
+                name = profile.name.ifBlank { "Demo" },
+                samplingMs = profile.samplingMs
+            )
+        } else {
+            profile
         }
 
         // Pick a frame source based on mock/real mode.
-        val source: FrameSource = if (ObdStateManager.isMockMode) {
+        val source: FrameSource = if (isMock) {
             val captureFile = repo.captureFileFor(profile.id)
             if (profile.playbackCaptureFileName != null && captureFile != null) {
-                Log.i(TAG, "Starting CAPTURE playback for profile '${profile.name}' " +
+                Log.i(TAG, "Starting CAPTURE playback for profile '${effectiveProfile.name}' " +
                     "from ${captureFile.name}")
                 CaptureFrameSource(captureFile)
             } else {
-                Log.i(TAG, "Starting MOCK CAN scan for profile '${profile.name}' (synthetic)")
-                MockFrameSource(profile, dbc)
+                Log.i(TAG, "Starting MOCK CAN scan for profile '${effectiveProfile.name}' (synthetic)")
+                val logFn: ((String) -> Unit)? = when (service) {
+                    is BluetoothObd2Service -> service::appendConnectionLog
+                    is com.sj.obd2app.obd.MockObd2Service -> service::appendConnectionLog
+                    else -> null
+                }
+                MockFrameSource(effectiveProfile, dbc, logFn)
             }
         } else {
             if (service !is BluetoothObd2Service) {
@@ -156,7 +182,7 @@ object CanBusScanner {
         _latest.value = emptyMap()
 
         scanJob = CoroutineScope(Dispatchers.IO).launch {
-            runScan(context, profile, dbc, source)
+            runScan(context, effectiveProfile, dbc, source)
         }
     }
 
@@ -501,10 +527,15 @@ object CanBusScanner {
      * Synthetic source for verifying the full CAN pipeline without a car. Emits one batch of
      * frames per [profile.samplingMs] tick using [MockCanFrameSource]; each signal sweeps
      * through its declared range so the user can see live decoded values on the dashboard.
+     *
+     * On [start] it simulates the exact same AT init handshake that [RealFrameSource] performs,
+     * logging each command → OK exchange to the connection log so the mock flow is
+     * indistinguishable from a real vLinker session on the Connect screen.
      */
     private class MockFrameSource(
         private val profile: CanProfile,
-        dbc: DbcDatabase
+        dbc: DbcDatabase,
+        private val logFn: ((String) -> Unit)?
     ) : FrameSource {
         private val gen = com.sj.obd2app.can.MockCanFrameSource(profile, dbc)
         private val queue: ArrayDeque<CanFrame> = ArrayDeque()
@@ -514,7 +545,38 @@ object CanBusScanner {
         override val label: String get() = "mock (${cadenceMs}ms)"
 
         override suspend fun start() {
+            simulateInitSequence()
             nextBatchAt = System.currentTimeMillis()
+        }
+
+        /** Walks through the same AT commands as [RealFrameSource.start], logging simulated
+         *  OK responses so the connection log mirrors a real vLinker session. */
+        private suspend fun simulateInitSequence() {
+            val log = logFn ?: return
+            log("CAN scan setup — verifying adapter capabilities… [SIMULATED]")
+            delay(50)
+
+            val criticalCmds = linkedMapOf(
+                "ATE0"   to "Echo off",
+                "ATL0"   to "Linefeeds off",
+                "ATS0"   to "Spaces off",
+                "ATH1"   to "Headers on",
+                "ATCAF0" to "CAN auto-formatting off"
+            )
+            for ((cmd, _) in criticalCmds) {
+                delay(30)
+                log("  $cmd → OK")
+            }
+
+            val ids = profile.canIdFilter
+            val filterCmd = if (ids != null && ids.size == 1) {
+                "ATCRA${Integer.toHexString(ids.first()).uppercase()}"
+            } else {
+                "ATCRA"
+            }
+            delay(30)
+            log("  $filterCmd → OK")
+            log("✓ CAN adapter ready — starting monitor stream [SIMULATED]")
         }
 
         override suspend fun next(): FrameResult {
