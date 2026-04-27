@@ -14,6 +14,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sj.obd2app.can.CanBusScanner
+import com.sj.obd2app.can.CanProfileRepository
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
@@ -127,6 +129,14 @@ class ConnectViewModel : ViewModel() {
         }
     }
 
+    /** Application context — set once from the Fragment via [initContext]. */
+    private var appContext: android.content.Context? = null
+
+    /** Call once from [ConnectFragment.onViewCreated] so the ViewModel has a Context. */
+    fun initContext(context: android.content.Context) {
+        if (appContext == null) appContext = context.applicationContext
+    }
+
     init {
         viewModelScope.launch {
             service.connectionState.collect { state ->
@@ -177,6 +187,34 @@ class ConnectViewModel : ViewModel() {
         viewModelScope.launch {
             service.connectionLog.collect { lines ->
                 _connectionLog.postValue(lines)
+            }
+        }
+        // Auto-start CAN scanner in preview mode when CAN mode is on and adapter connects.
+        viewModelScope.launch {
+            service.connectionState.collect { state ->
+                val ctx = appContext ?: return@collect
+                if (!AppSettings.isCanBusLoggingEnabled(ctx)) return@collect
+                when (state) {
+                    Obd2Service.ConnectionState.CONNECTED -> {
+                        if (CanBusScanner.state.value is CanBusScanner.State.Idle) {
+                            val profile = CanProfileRepository.getInstance(ctx).getDefault()
+                            if (profile != null && profile.selectedSignals.isNotEmpty()) {
+                                android.util.Log.i(
+                                    "ConnectViewModel",
+                                    "CAN mode: auto-starting scanner (preview) for '${profile.name}'"
+                                )
+                                CanBusScanner.start(ctx, profile, previewMode = true)
+                            }
+                        }
+                    }
+                    Obd2Service.ConnectionState.DISCONNECTED,
+                    Obd2Service.ConnectionState.ERROR -> {
+                        if (CanBusScanner.state.value !is CanBusScanner.State.Idle) {
+                            CanBusScanner.stop()
+                        }
+                    }
+                    else -> Unit
+                }
             }
         }
     }

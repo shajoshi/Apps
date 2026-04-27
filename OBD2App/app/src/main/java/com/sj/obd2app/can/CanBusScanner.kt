@@ -79,7 +79,7 @@ object CanBusScanner {
     private val _latest = MutableStateFlow<Map<String, LatestSample>>(emptyMap())
     val latest: StateFlow<Map<String, LatestSample>> = _latest.asStateFlow()
 
-    /** Returns a point-in-time copy of all currently decoded signal values for [DataOrchestrator]. */
+    /** Returns a point-in-time copy of all currently decoded signal values for [CanDataOrchestrator]. */
     fun snapshotLatest(): Map<String, LatestSample> = liveRows.toMap()
 
     private var scanJob: Job? = null
@@ -88,6 +88,10 @@ object CanBusScanner {
     /** Snapshot of decoded signal rows for UI rendering; kept alongside [_latest]. */
     private val liveRows: MutableMap<String, LatestSample> = ConcurrentHashMap()
 
+    /** True when the scanner was started with previewMode=true (no file I/O). */
+    @Volatile var isPreviewMode: Boolean = false
+        private set
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
@@ -95,12 +99,17 @@ object CanBusScanner {
      *  - another scan is already active;
      *  - no OBD connection is available;
      *  - the profile's DBC is missing or cannot be loaded.
+     *
+     * @param previewMode When true, file I/O (samples.jsonl / raw.jsonl) is suppressed.
+     *   Use this for the pre-trip "live preview" phase. Set to false when a trip starts
+     *   so decoded samples are persisted to the log folder.
      */
-    fun start(context: Context, profile: CanProfile) {
+    fun start(context: Context, profile: CanProfile, previewMode: Boolean = false) {
         if (scanJob?.isActive == true) {
             Log.w(TAG, "start() ignored — already running")
             return
         }
+        isPreviewMode = previewMode
 
         val service = try {
             com.sj.obd2app.obd.Obd2ServiceProvider.getService()
@@ -182,7 +191,7 @@ object CanBusScanner {
         _latest.value = emptyMap()
 
         scanJob = CoroutineScope(Dispatchers.IO).launch {
-            runScan(context, effectiveProfile, dbc, source)
+            runScan(context, effectiveProfile, dbc, source, previewMode)
         }
     }
 
@@ -200,7 +209,8 @@ object CanBusScanner {
         context: Context,
         profile: CanProfile,
         dbc: DbcDatabase,
-        source: FrameSource
+        source: FrameSource,
+        previewMode: Boolean = false
     ) {
         val signalsByMessage: Map<Int, List<CanSignal>> = profile.selectedSignals
             .mapNotNull { ref -> dbc.findSignal(ref.messageId, ref.signalName)?.second?.let { s -> ref.messageId to s } }
@@ -209,17 +219,19 @@ object CanBusScanner {
         val watchedIds: Set<Int> = profile.canIdFilter?.toSet()
             ?: signalsByMessage.keys
 
+        // In preview mode, suppress all file I/O until the trip starts.
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val logBase = "can_${sanitize(profile.name)}_$ts"
         val samplesFileName = "$logBase.samples.jsonl"
-        val samplesFile = buildCanLogWriter(context, samplesFileName, "application/json")
-        val rawFile = if (profile.recordRawFrames) buildCanLogWriter(context, "$logBase.raw.jsonl", "application/json") else null
+        val samplesFile = if (previewMode) null else buildCanLogWriter(context, samplesFileName, "application/json")
+        val rawFile = if (previewMode || !profile.recordRawFrames) null else buildCanLogWriter(context, "$logBase.raw.jsonl", "application/json")
 
-        val samplesWriter: BufferedWriter = samplesFile ?: run {
+        if (!previewMode && samplesFile == null) {
             Log.e(TAG, "Failed to create samples writer")
             _state.value = State.Error("Failed to create log file")
             return
         }
+        val samplesWriter: BufferedWriter? = samplesFile
         val rawWriter: BufferedWriter? = rawFile
 
         var frames = 0L
@@ -258,14 +270,12 @@ object CanBusScanner {
                         frames++
                         lastFrameAt = System.currentTimeMillis()
 
-                        rawWriter?.let { w ->
-                            w.appendLine(
-                                "{\"t\":$lastFrameAt," +
-                                    "\"id\":${frame.id}," +
-                                    "\"ext\":${frame.extended}," +
-                                    "\"data\":\"${frame.data.toHex()}\"}"
-                            )
-                        }
+                        rawWriter?.appendLine(
+                            "{\"t\":$lastFrameAt," +
+                                "\"id\":${frame.id}," +
+                                "\"ext\":${frame.extended}," +
+                                "\"data\":\"${frame.data.toHex()}\"}"
+                        )
 
                         if (frame.id in watchedIds) {
                             val signals = signalsByMessage[frame.id]
@@ -282,7 +292,7 @@ object CanBusScanner {
                                     )
                                     val key = SignalRef(frame.id, sig.name).key()
                                     liveRows[key] = sample
-                                    samplesWriter.appendLine(
+                                    samplesWriter?.appendLine(
                                         "{\"t\":$lastFrameAt," +
                                             "\"id\":${frame.id}," +
                                             "\"sig\":\"${sig.name}\"," +
@@ -323,7 +333,7 @@ object CanBusScanner {
             _state.value = State.Error("Error: ${e.message}")
         } finally {
             try { source.stop() } catch (e: Exception) { Log.w(TAG, "source.stop() failed", e) }
-            try { samplesWriter.flush(); samplesWriter.close() } catch (_: Exception) {}
+            try { samplesWriter?.flush(); samplesWriter?.close() } catch (_: Exception) {}
             try { rawWriter?.flush(); rawWriter?.close() } catch (_: Exception) {}
 
             Log.i(TAG, "CAN scan finished — frames=$frames decoded=$decoded dropped=$dropped samplesFile=$samplesFileName")

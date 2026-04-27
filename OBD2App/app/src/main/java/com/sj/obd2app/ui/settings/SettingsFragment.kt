@@ -12,7 +12,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.SeekBar
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.fragment.app.Fragment
@@ -134,10 +136,49 @@ class SettingsFragment : Fragment() {
         
         profileAdapter.refresh()
         loadCurrentSettings()
+
+        requireActivity().onBackPressedDispatcher.addCallback(
+            viewLifecycleOwner,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (hasUnsavedChanges) {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle("Unsaved Settings")
+                            .setMessage("You have unsaved changes. Save now?")
+                            .setPositiveButton("Save") { _, _ ->
+                                saveSettings()
+                                isEnabled = false
+                                requireActivity().onBackPressedDispatcher.onBackPressed()
+                            }
+                            .setNegativeButton("Discard") { _, _ ->
+                                hasUnsavedChanges = false
+                                isEnabled = false
+                                requireActivity().onBackPressedDispatcher.onBackPressed()
+                            }
+                            .setNeutralButton("Cancel", null)
+                            .show()
+                    } else {
+                        isEnabled = false
+                        requireActivity().onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+            }
+        )
     }
 
     override fun onResume() {
         super.onResume()
+        if (ObdStateManager.isConnected) {
+            AlertDialog.Builder(requireContext())
+                .setTitle("Active Connection")
+                .setMessage("Disconnect before changing settings.")
+                .setPositiveButton("OK") { _, _ ->
+                    (activity as? com.sj.obd2app.MainActivity)
+                        ?.navigateToPage(com.sj.obd2app.MainPagerAdapter.PAGE_CONNECT)
+                }
+                .setCancelable(false)
+                .show()
+        }
     }
 
     // ── Save/Discard ─────────────────────────────────────────────────────────

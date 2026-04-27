@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import android.widget.Toast
 import com.sj.obd2app.can.CanBusScanner
+import com.sj.obd2app.can.CanDataOrchestrator
 import com.sj.obd2app.can.CanProfileRepository
 import com.sj.obd2app.obd.BluetoothObd2Service
 import com.sj.obd2app.obd.Obd2Service
@@ -114,11 +115,25 @@ class TripLifecycleFacade private constructor(private val context: Context) {
             return
         }
 
-        // Fire the scanner. It handles borrowTransport/restorePolling internally and writes
-        // its own trip log under files/can_scans/. We mirror the RUNNING phase so the rest of
-        // the app (foreground notification, trip button UI, reconnection manager) behaves
-        // consistently — the OBD polling path is suppressed by startPolling()'s early return.
-        CanBusScanner.start(context, profile)
+        // If the scanner is already running in preview mode (auto-started on connect), stop it
+        // cleanly and restart with previewMode=false so log files are created for this trip.
+        // If it is Idle (e.g. preview was skipped), start fresh with logging enabled.
+        if (CanBusScanner.state.value !is CanBusScanner.State.Idle) {
+            CanBusScanner.stop()
+            // Brief yield — stop() is synchronous state change; scan coroutine will cancel shortly.
+        }
+        CanBusScanner.start(context, profile, previewMode = false)
+
+        // Start trip internals (AccelerometerSource, MetricsLogger, connection monitoring)
+        // so accelerometer and GPS metrics flow into the trip JSON log.
+        calculator.startTripInternal()
+        CanDataOrchestrator.resetAccelBasis()
+        CanDataOrchestrator.start(
+            context = context,
+            profile = profile,
+            calculator = calculator,
+            writer = null // raw JSONL writer owned by CanBusScanner; not needed here
+        )
 
         calculator.setTripPhase(TripPhase.RUNNING)
         TripForegroundService.start(context)
@@ -126,9 +141,11 @@ class TripLifecycleFacade private constructor(private val context: Context) {
     }
 
     private fun stopCanBusTrip() {
+        CanDataOrchestrator.stop()
         if (CanBusScanner.state.value !is CanBusScanner.State.Idle) {
             CanBusScanner.stop()
         }
+        calculator.stopTripInternal()
         calculator.setTripPhase(TripPhase.IDLE)
         TripForegroundService.stop(context)
         Log.i(TAG, "CAN Bus trip stopped")

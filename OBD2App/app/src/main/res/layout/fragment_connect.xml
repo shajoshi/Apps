@@ -52,6 +52,36 @@
 
     </LinearLayout>
 
+    <!-- Mode badge: shows active pipeline (CAN Reader / OBD Polling) before connecting -->
+    <LinearLayout
+        android:id="@+id/panel_mode_badge"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:background="#0D0D1A">
+
+        <TextView
+            android:id="@+id/tv_mode_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:background="@drawable/bg_mode_badge"
+            android:text="OBD REQUEST MODE"
+            android:textColor="#FFFFFF" />
+
+    </LinearLayout>
+
     <!-- Force BLE toggle section -->
     <LinearLayout
         android:id="@+id/panel_force_ble"

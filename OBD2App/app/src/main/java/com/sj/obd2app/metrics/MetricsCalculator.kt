@@ -8,7 +8,7 @@ import com.sj.obd2app.gps.GpsDataSource
 import com.sj.obd2app.metrics.calculator.FuelCalculator
 import com.sj.obd2app.metrics.calculator.PowerCalculator
 import com.sj.obd2app.metrics.calculator.TripCalculator
-import com.sj.obd2app.metrics.collector.DataOrchestrator
+import com.sj.obd2app.metrics.collector.ObdDataOrchestrator
 import com.sj.obd2app.obd.Obd2Command
 import com.sj.obd2app.obd.Obd2CommandRegistry
 import com.sj.obd2app.obd.Obd2DataItem
@@ -73,7 +73,7 @@ class MetricsCalculator private constructor(private val context: Context) {
     private val fuelCalculator = FuelCalculator()
     private val powerCalculator = PowerCalculator()
     private val tripCalculator = TripCalculator()
-    private val dataOrchestrator = DataOrchestrator(context, scope, this)
+    private val dataOrchestrator = ObdDataOrchestrator(context, scope, this)
 
     /** Elapsed trip seconds. 0 when IDLE. */
     fun elapsedTripSec(): Long {
@@ -101,7 +101,7 @@ class MetricsCalculator private constructor(private val context: Context) {
     var supportedPids: List<Obd2Command> = emptyList()
         private set
 
-    // ── Methods for DataOrchestrator ────────────────────────────────────────
+    // ── Methods for ObdDataOrchestrator / CanDataOrchestrator ─────────────────
 
     /** Updates the metrics StateFlow with a new snapshot. */
     internal fun updateMetrics(snapshot: VehicleMetrics) {

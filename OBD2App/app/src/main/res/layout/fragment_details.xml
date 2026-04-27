@@ -51,12 +51,90 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- OBD2 Data Section -->
+            <!-- CAN BUS DATA Section (shown only in CAN mode) -->
             <androidx.cardview.widget.CardView
+                android:id="@+id/card_can"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginHorizontal="12dp"
                 android:layout_marginTop="10dp"
+                android:layout_marginBottom="4dp"
+                android:visibility="gone"
+                app:cardBackgroundColor="#16213E"
+                app:cardCornerRadius="10dp"
+                app:cardElevation="4dp"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <LinearLayout
+                        android:id="@+id/header_can"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="CAN BUS DATA"
+                            android:textColor="#4FC3F7"
+                            android:textSize="11sp"
+                            android:letterSpacing="0.1"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/chevron_can"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="▲"
+                            android:textColor="#4FC3F7"
+                            android:textSize="10sp" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/body_can"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/text_can_signal_count"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:textColor="#888888"
+                            android:textSize="12sp"
+                            android:text="0 signals" />
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/recyclerview_can"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="#1A1A2E"
+                            android:clipToPadding="false"
+                            android:paddingBottom="8dp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </androidx.cardview.widget.CardView>
+
+            <!-- OBD2 Data Section -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/card_obd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="12dp"
+                android:layout_marginTop="6dp"
                 android:layout_marginBottom="10dp"
                 app:cardBackgroundColor="#16213E"
                 app:cardCornerRadius="10dp"

@@ -63,6 +63,7 @@ class ConnectFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         viewModel = ViewModelProvider(this)[ConnectViewModel::class.java]
+        viewModel.initContext(requireContext())
         _binding = FragmentConnectBinding.inflate(inflater, container, false)
 
         attachNavOverflow(binding.btnTopOverflow)
@@ -71,12 +72,14 @@ class ConnectFragment : Fragment() {
 
         // Set up UI based on current mock mode
         setupConnectUI(ObdStateManager.isMockMode)
-        
+        updateModeBadge()
+
         // Observe mock mode changes from centralized state manager
         viewLifecycleOwner.lifecycleScope.launch {
             ObdStateManager.mode.collect { mode ->
                 val isMock = mode == ObdStateManager.Mode.MOCK
                 setupConnectUI(isMock)
+                updateModeBadge()
                 // Reload devices when mode changes
                 viewModel.loadPairedDevices(requireContext())
             }
@@ -116,7 +119,31 @@ class ConnectFragment : Fragment() {
     
     fun refreshUI() {
         setupConnectUI(viewModel.currentMockMode)
+        updateModeBadge()
         viewModel.loadPairedDevices(requireContext())
+    }
+
+    private fun updateModeBadge() {
+        val isMock = ObdStateManager.isMockMode
+        val isCan = AppSettings.isCanBusLoggingEnabled(requireContext())
+        val (label, color) = when {
+            isMock && isCan  -> "SIMULATED · CAN READER"  to android.graphics.Color.parseColor("#FFC107")
+            isMock && !isCan -> "SIMULATED · OBD POLLING" to android.graphics.Color.parseColor("#FFC107")
+            !isMock && isCan -> "CAN READER MODE"          to android.graphics.Color.parseColor("#4FC3F7")
+            else             -> "OBD REQUEST MODE"         to android.graphics.Color.parseColor("#4CAF50")
+        }
+        binding.tvModeBadge!!.text = label
+        binding.tvModeBadge!!.setTextColor(android.graphics.Color.WHITE)
+        val bg = binding.tvModeBadge!!.background
+        if (bg is android.graphics.drawable.GradientDrawable) {
+            bg.mutate()
+            val fillColor = android.graphics.Color.argb(50,
+                android.graphics.Color.red(color),
+                android.graphics.Color.green(color),
+                android.graphics.Color.blue(color))
+            (bg as android.graphics.drawable.GradientDrawable).setColor(fillColor)
+            bg.setStroke(2, color)
+        }
     }
 
     private fun applySectionWeights() {
@@ -293,6 +320,7 @@ class ConnectFragment : Fragment() {
         
         // Force UI refresh since ViewPager2 reuses fragments
         setupConnectUI(viewModel.currentMockMode)
+        updateModeBadge()
         
         // Always load paired devices to ensure mock device names are populated
         viewModel.loadPairedDevices(requireContext())

@@ -9,6 +9,11 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -16,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.sj.obd2app.can.CanDataOrchestrator
 import com.sj.obd2app.can.CanMessage
 import com.sj.obd2app.can.CanProfile
 import com.sj.obd2app.can.CanProfileRepository
@@ -26,7 +32,6 @@ import com.sj.obd2app.can.SignalRef
 import com.sj.obd2app.databinding.ItemCanSignalBinding
 import com.sj.obd2app.databinding.SheetCanProfileEditBinding
 import com.sj.obd2app.obd.ObdStateManager
-import com.sj.obd2app.settings.AppSettings
 
 /**
  * Bottom sheet to create or edit a [CanProfile]. Handles DBC file import via SAF and
@@ -66,6 +71,11 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
     private val selectedRefs: MutableSet<SignalRef> = mutableSetOf()
 
     private lateinit var signalAdapter: SignalAdapter
+
+    /** Current trip metric mapping: metricKey → signalRef.key(). Editable via the mapping panel. */
+    private val tripMappingState: MutableMap<String, String> = mutableMapOf()
+    /** Whether the mapping panel is expanded. */
+    private var mappingPanelExpanded = false
 
     var onSaved: (() -> Unit)? = null
 
@@ -146,11 +156,13 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
 
         binding.btnCanSave.setOnClickListener { save() }
         binding.btnCanCancel.setOnClickListener { dismiss() }
+
+        // Trip Attribute Mapping panel toggle
+        binding.llMappingHeader.setOnClickListener { toggleMappingPanel() }
+        binding.btnMappingToggle.setOnClickListener { toggleMappingPanel() }
         binding.btnCanDelete.setOnClickListener {
             editingProfile?.let { p ->
                 repo.delete(p.id)
-                val defaultId = AppSettings.getDefaultCanProfileId(requireContext())
-                if (defaultId == p.id) AppSettings.setDefaultCanProfileId(requireContext(), null)
             }
             onSaved?.invoke()
             dismiss()
@@ -165,9 +177,11 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.swRecordRaw.isChecked = p.recordRawFrames
             binding.swUseDemoData.isChecked = p.useDemoData
             updateDbcSectionVisibility(p.useDemoData)
-            loadSyncTickerHz()
+            loadSyncTickerHz(p)
             binding.btnCanDelete.visibility = View.VISIBLE
             selectedRefs.addAll(p.selectedSignals)
+            // Seed mapping state from saved profile
+            tripMappingState.putAll(p.tripMetricMapping)
             // Try to auto-load its stored DBC
             val file = repo.dbcFileFor(p.id)
             if (file != null) {
@@ -177,6 +191,9 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
                     }
                     binding.tvDbcFileLabel.text = "DBC: ${p.dbcFileName} (${dbc?.messages?.size ?: 0} msgs)"
                     signalAdapter.updateDbc(dbc)
+                    // Auto-fill heuristic for any unmapped keys when DBC is loaded
+                    applyHeuristicMapping()
+                    rebuildMappingRows()
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to load saved DBC for profile ${p.id}", e)
                     binding.tvDbcFileLabel.text = "DBC load failed — re-import"
@@ -193,7 +210,7 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.tvSheetTitle.text = "New CAN Profile"
             binding.etSamplingMs.setText("500")
             updateDbcSectionVisibility(false)
-            loadSyncTickerHz()
+            loadSyncTickerHz(null)
             binding.btnCanDelete.visibility = View.GONE
         }
 
@@ -222,10 +239,9 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
 
     // ── Sync ticker Hz ────────────────────────────────────────────────────────
 
-    private fun loadSyncTickerHz() {
-        val hz = AppSettings.getSyncTickerHz(requireContext())
-        if (hz >= 100) binding.rb100hz.isChecked = true
-        else binding.rb50hz.isChecked = true
+    private fun loadSyncTickerHz(profile: CanProfile? = null) {
+        val hz = profile?.syncTickerHz ?: 50
+        binding.etSyncTickerHz.setText(hz.toString())
     }
 
     // ── DBC picker ────────────────────────────────────────────────────────────
@@ -245,6 +261,10 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             pendingDbcFileName = name
             binding.tvDbcFileLabel.text = "DBC: $name (${db.messages.size} msgs)"
             signalAdapter.updateDbc(db)
+            // Re-run heuristic when a new DBC is loaded (clear stale mappings first)
+            tripMappingState.clear()
+            applyHeuristicMapping()
+            rebuildMappingRows()
             if (db.warnings.isNotEmpty()) {
                 Toast.makeText(
                     requireContext(),
@@ -313,8 +333,13 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             return
         }
         val samplingMs = binding.etSamplingMs.text?.toString()?.toLongOrNull()?.coerceAtLeast(10L) ?: 500L
-        val tickerHz = if (binding.rb100hz.isChecked) 100 else 50
-        AppSettings.setSyncTickerHz(requireContext(), tickerHz)
+        val tickerHzRaw = binding.etSyncTickerHz.text?.toString()?.toIntOrNull()
+        if (tickerHzRaw == null || tickerHzRaw !in 1..200) {
+            binding.etSyncTickerHz.error = "Enter a value between 1 and 200"
+            binding.etSyncTickerHz.requestFocus()
+            return
+        }
+        val tickerHz = tickerHzRaw
 
         // Build the profile id first so we can copy the DBC into app-private storage.
         val baseProfile = editingProfile
@@ -342,10 +367,12 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             dbcFileName = dbcFileName ?: "<built-in demo>",
             selectedSignals = selectedRefs.toList(),
             samplingMs = samplingMs,
+            syncTickerHz = tickerHz,
             canIdFilter = filterIds,
             recordRawFrames = binding.swRecordRaw.isChecked,
             playbackCaptureFileName = captureName,
-            useDemoData = useDemoData
+            useDemoData = useDemoData,
+            tripMetricMapping = tripMappingState.toMap()
         )
 
         // Import pending DBC under the now-known id.
@@ -385,6 +412,116 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    // ── Trip Attribute Mapping ─────────────────────────────────────────────────
+
+    private fun toggleMappingPanel() {
+        mappingPanelExpanded = !mappingPanelExpanded
+        binding.llMappingPanel.visibility = if (mappingPanelExpanded) View.VISIBLE else View.GONE
+        binding.btnMappingToggle.rotation = if (mappingPanelExpanded) 0f else 180f
+        binding.btnMappingToggle.contentDescription =
+            if (mappingPanelExpanded) "Collapse mapping" else "Expand mapping"
+        if (mappingPanelExpanded && binding.llMappingRows.childCount == 0) {
+            rebuildMappingRows()
+        }
+    }
+
+    /**
+     * Heuristic: for each unmapped metric key, scan selected signal names for a substring match
+     * (case-insensitive). First match wins. Existing mappings are NOT overwritten.
+     */
+    private fun applyHeuristicMapping() {
+        val currentDbc = dbc ?: return
+        val allSignals = currentDbc.messages.flatMap { m ->
+            m.signals.map { s -> Pair(SignalRef(m.id, s.name).key(), s.name.lowercase()) }
+        }
+        val keywords = mapOf(
+            CanDataOrchestrator.MetricKey.RPM to listOf("rpm", "engine_speed", "enginespeed"),
+            CanDataOrchestrator.MetricKey.VEHICLE_SPEED_KMH to listOf("speed", "vspd", "vehicle_speed", "wheelspeed"),
+            CanDataOrchestrator.MetricKey.COOLANT_TEMP_C to listOf("coolant", "ect", "water_temp", "engine_temp"),
+            CanDataOrchestrator.MetricKey.THROTTLE_PCT to listOf("throttle", "tps", "accel_pedal", "pedal"),
+            CanDataOrchestrator.MetricKey.MAF_GS to listOf("maf", "air_flow", "mass_air"),
+            CanDataOrchestrator.MetricKey.INTAKE_MAP_KPA to listOf("map", "intake_pressure", "boost", "manifold"),
+            CanDataOrchestrator.MetricKey.ENGINE_LOAD_PCT to listOf("load", "engine_load"),
+            CanDataOrchestrator.MetricKey.FUEL_LEVEL_PCT to listOf("fuel_level", "fuel"),
+            CanDataOrchestrator.MetricKey.INTAKE_TEMP_C to listOf("iat", "intake_temp", "air_temp", "intake_air")
+        )
+        for ((metricKey, kws) in keywords) {
+            if (tripMappingState.containsKey(metricKey)) continue // don't overwrite user selection
+            for ((signalKey, signalNameLower) in allSignals) {
+                if (kws.any { signalNameLower.contains(it) }) {
+                    tripMappingState[metricKey] = signalKey
+                    break
+                }
+            }
+        }
+    }
+
+    /** Programmatically creates one label + spinner row per metric key inside ll_mapping_rows. */
+    private fun rebuildMappingRows() {
+        val container = binding.llMappingRows
+        container.removeAllViews()
+        val ctx = requireContext()
+
+        val currentDbc = dbc
+        val signalEntries: List<Pair<String, String>> = buildList {
+            add("" to "— none —")
+            currentDbc?.messages?.forEach { m ->
+                m.signals.forEach { s ->
+                    val key = SignalRef(m.id, s.name).key()
+                    val label = "${s.name} (0x${Integer.toHexString(m.id).uppercase()})"
+                    add(key to label)
+                }
+            }
+        }
+        val spinnerLabels = signalEntries.map { it.second }
+
+        for (metricKey in CanDataOrchestrator.MetricKey.ALL) {
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = 4 }
+            }
+
+            val label = TextView(ctx).apply {
+                text = CanDataOrchestrator.MetricKey.label(metricKey)
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 12f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+            }
+
+            val spinner = Spinner(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, spinnerLabels)
+                    .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                this.adapter = adapter
+                // Select current mapping
+                val currentSignalKey = tripMappingState[metricKey]
+                val idx = if (currentSignalKey != null) {
+                    signalEntries.indexOfFirst { it.first == currentSignalKey }.takeIf { it >= 0 } ?: 0
+                } else 0
+                setSelection(idx, false)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                        val chosen = signalEntries[pos].first
+                        if (chosen.isEmpty()) tripMappingState.remove(metricKey)
+                        else tripMappingState[metricKey] = chosen
+                    }
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+                }
+            }
+
+            row.addView(label)
+            row.addView(spinner)
+            container.addView(row)
+        }
     }
 
     // ── Signal adapter ────────────────────────────────────────────────────────

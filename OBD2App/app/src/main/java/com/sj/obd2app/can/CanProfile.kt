@@ -18,6 +18,8 @@ data class CanProfile(
     val dbcFileName: String,
     val selectedSignals: List<SignalRef> = emptyList(),
     val samplingMs: Long = 500L,
+    /** Sync-ticker rate for [CanDataOrchestrator] in Hz. Range 1–200. Default 50. */
+    val syncTickerHz: Int = 50,
     /** Optional filter — limits ELM327 `ATCRA`/`ATCF+ATCM` to these IDs. `null` = no HW filter. */
     val canIdFilter: List<Int>? = null,
     /** If true, raw frames are written alongside the trip log during real (non-mock) scans. */
@@ -31,7 +33,13 @@ data class CanProfile(
     val playbackCaptureFileName: String? = null,
     val isDefault: Boolean = false,
     /** When true and the app is in mock mode, skip DBC loading and use [DemoDbcDatabase] instead. */
-    val useDemoData: Boolean = false
+    val useDemoData: Boolean = false,
+    /**
+     * Maps canonical metric keys (e.g. "rpm", "vehicleSpeedKmh") to [SignalRef.key] values
+     * (e.g. "0x7E8:EngineRPM"). Used by [CanDataOrchestrator] to populate [VehicleMetrics].
+     * Auto-populated by heuristic on first edit; user-editable via the Trip Attribute Mapping card.
+     */
+    val tripMetricMapping: Map<String, String> = emptyMap()
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -39,10 +47,16 @@ data class CanProfile(
         put("objective", objective)
         put("dbcFileName", dbcFileName)
         put("samplingMs", samplingMs)
+        put("syncTickerHz", syncTickerHz)
         put("recordRawFrames", recordRawFrames)
         put("isDefault", isDefault)
         put("useDemoData", useDemoData)
         playbackCaptureFileName?.let { put("playbackCaptureFileName", it) }
+        if (tripMetricMapping.isNotEmpty()) {
+            put("tripMetricMapping", JSONObject().apply {
+                tripMetricMapping.forEach { (k, v) -> put(k, v) }
+            })
+        }
         put("selectedSignals", JSONArray().apply {
             selectedSignals.forEach { ref ->
                 put(JSONObject().apply {
@@ -80,12 +94,18 @@ data class CanProfile(
                 dbcFileName = json.getString("dbcFileName"),
                 selectedSignals = selected,
                 samplingMs = json.optLong("samplingMs", 500L),
+                syncTickerHz = json.optInt("syncTickerHz", 50).coerceIn(1, 200),
                 canIdFilter = filter,
                 recordRawFrames = json.optBoolean("recordRawFrames", false),
                 playbackCaptureFileName = json.optString("playbackCaptureFileName", "")
                     .takeIf { it.isNotEmpty() },
                 isDefault = json.optBoolean("isDefault", false),
-                useDemoData = json.optBoolean("useDemoData", false)
+                useDemoData = json.optBoolean("useDemoData", false),
+                tripMetricMapping = json.optJSONObject("tripMetricMapping")?.let { obj ->
+                    val map = mutableMapOf<String, String>()
+                    obj.keys().forEach { k -> map[k] = obj.getString(k) }
+                    map
+                } ?: emptyMap()
             )
         }
     }

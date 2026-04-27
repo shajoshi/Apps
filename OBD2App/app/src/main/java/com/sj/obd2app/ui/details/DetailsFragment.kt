@@ -32,10 +32,11 @@ class DetailsFragment : Fragment() {
 
     private lateinit var viewModel: DetailsViewModel
     private lateinit var adapter: Obd2Adapter
+    private lateinit var canAdapter: Obd2Adapter
     private var isTripActive = false
 
     private val sectionExpanded = mutableMapOf(
-        "obd" to true, "gps" to true, "fuel" to true, "trip" to true, "accel" to true
+        "can" to true, "obd" to true, "gps" to true, "fuel" to true, "trip" to true, "accel" to true
     )
 
     override fun onCreateView(
@@ -53,7 +54,27 @@ class DetailsFragment : Fragment() {
         binding.recyclerviewObd2.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerviewObd2.adapter = adapter
 
+        canAdapter = Obd2Adapter()
+        binding.recyclerviewCan.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerviewCan.adapter = canAdapter
+
         setupCollapsibleSections()
+
+        // Observe CAN mode — show CAN card, hide OBD card (and vice versa)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.isCanMode.collect { isCanMode ->
+                binding.cardCan.visibility = if (isCanMode) View.VISIBLE else View.GONE
+                binding.cardObd.visibility = if (isCanMode) View.GONE else View.VISIBLE
+            }
+        }
+
+        // Observe live CAN signals
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.canData.collect { items ->
+                canAdapter.submitList(items)
+                binding.textCanSignalCount.text = "${items.size} signal${if (items.size == 1) "" else "s"}"
+            }
+        }
 
         // Observe OBD2 data
         viewLifecycleOwner.lifecycleScope.launch {
@@ -177,6 +198,7 @@ class DetailsFragment : Fragment() {
     }
 
     private fun setupCollapsibleSections() {
+        setupSection("can", binding.headerCan, binding.bodyCan, binding.chevronCan)
         setupSection("obd", binding.headerObd, binding.bodyObd, binding.chevronObd)
         setupSection("gps", binding.headerGps, binding.bodyGps, binding.chevronGps)
         setupSection("fuel", binding.headerFuel, binding.bodyFuel, binding.chevronFuel)

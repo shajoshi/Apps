@@ -320,10 +320,10 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
                 R.id.nav_settings -> {
-                    if (isTripActive) {
+                    if (isTripActive || ObdStateManager.isConnected) {
                         Toast.makeText(
                             this,
-                            "Settings is not accessible during an active trip.",
+                            "Settings is not accessible during an active trip or when connected.",
                             Toast.LENGTH_LONG
                         ).show()
                     } else {
@@ -364,6 +364,15 @@ class MainActivity : AppCompatActivity() {
                 ).show()
                 return
             }
+        }
+
+        if (pageIndex == MainPagerAdapter.PAGE_SETTINGS && ObdStateManager.isConnected) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Active Connection")
+                .setMessage("Disconnect before changing settings.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
         }
 
         // Special handling for Map View - only allow access from Trip Summary

@@ -2,6 +2,7 @@ package com.sj.obd2app.ui.details
 
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.sj.obd2app.can.CanBusScanner
 import com.sj.obd2app.metrics.MetricsCalculator
 import com.sj.obd2app.metrics.VehicleMetrics
 import com.sj.obd2app.obd.Obd2DataItem
@@ -49,6 +50,13 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
     private val _lastTripSnapshot = MutableStateFlow<LastTripSnapshot?>(null)
     val lastTripSnapshot: StateFlow<LastTripSnapshot?> = _lastTripSnapshot
 
+    /** Live CAN signal data: one Obd2DataItem per decoded signal, updated at ~5 Hz from CanBusScanner. */
+    private val _canData = MutableStateFlow<List<Obd2DataItem>>(emptyList())
+    val canData: StateFlow<List<Obd2DataItem>> = _canData
+
+    /** True when CAN Bus logging mode is active (drives CAN/OBD section visibility in UI). */
+    private val _isCanMode = MutableStateFlow(false)
+    val isCanMode: StateFlow<Boolean> = _isCanMode
 
     init {
         viewModelScope.launch {
@@ -98,6 +106,29 @@ class DetailsViewModel(application: android.app.Application) : AndroidViewModel(
         
         // Load initial cached data
         loadCachedData()
+
+        // Collect CAN signals from CanBusScanner.latest (no MetricsCalculator dependency)
+        viewModelScope.launch {
+            CanBusScanner.latest.collect { latestMap ->
+                val items = latestMap.values.sortedBy { it.signalName }.map { sample ->
+                    Obd2DataItem(
+                        pid = "CAN_${sample.messageId}",
+                        name = sample.signalName,
+                        value = "%.3f".format(sample.value),
+                        unit = sample.unit
+                    )
+                }
+                _canData.value = items
+            }
+        }
+
+        // Drive isCanMode from AppSettings (re-checked on every CanBusScanner state change)
+        viewModelScope.launch {
+            CanBusScanner.state.collect {
+                val ctx = getApplication<android.app.Application>()
+                _isCanMode.value = AppSettings.isCanBusLoggingEnabled(ctx)
+            }
+        }
     }
     
     private fun loadCachedData() {
