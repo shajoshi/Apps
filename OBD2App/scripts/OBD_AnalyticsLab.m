@@ -1,13 +1,13 @@
 classdef OBD_AnalyticsLab
     % OBD_AnalyticsLab: The master orchestrator for OBD2 Deep Analytics.
-    % PATCH 9: Universal Engine. Auto-detects HTML CAN logs vs JSON OBD logs,
-    % integrating the ultimate 26-channel JLR Master CAN Dictionary.
+    % PATCH 14: The Ultimate Edition. Pre-synced App Data, Universal DBC Parsing, 
+    % Advanced Diagnostics, Dead Channel Filtering, and Shift Quality Analysis.
     
     methods (Static)
         
         function run(filename)
             if nargin < 1 || isempty(filename)
-                [file, path] = uigetfile({'*.htm;*.html;*.json;*.csv', 'All Log Files'}, 'Select Log File');
+                [file, path] = uigetfile({'*.json;*.jsonl;*.htm;*.html;*.csv', 'All Log Files'}, 'Select Log File');
                 if isequal(file, 0), disp('Canceled.'); return; end
                 filename = fullfile(path, file);
             end
@@ -16,376 +16,336 @@ classdef OBD_AnalyticsLab
             fprintf('=== Starting OBD Deep Analytics Pipeline ===\n');
             fprintf('Processing: %s\n', filename);
             
-            [~, ~, ext] = fileparts(filename);
+            [~, name, ext] = fileparts(filename);
             
-            if strcmpi(ext, '.htm') || strcmpi(ext, '.html')
-                % --- RAW CAN LOG PIPELINE ---
-                fprintf('Detected raw CAN trace. Applying Master JLR Dictionary...\n');
+            if contains(name, 'samples') && contains(filename, '.json')
+                % --- 1. CUSTOM APP (PRE-SYNCED) PIPELINE ---
+                fprintf('Detected Pre-Synced App Samples. Pivoting into Table...\n');
+                TripData = OBD_AnalyticsLab.parseAppSamplesSynced(filename);
+                
+            elseif contains(name, 'raw') && contains(filename, '.json')
+                % --- 2. CUSTOM APP (RAW) + DBC PIPELINE ---
+                fprintf('Detected RAW CAN Frames. You must select a DBC file to decode this.\n');
+                [dbcFile, dbcPath] = uigetfile('*.dbc', 'Select DBC File for Decoding');
+                if isequal(dbcFile, 0), error('DBC file required for raw frames.'); end
+                TripData = OBD_AnalyticsLab.parseAppRawWithDBC(filename, fullfile(dbcPath, dbcFile));
+                
+            elseif strcmpi(ext, '.htm') || strcmpi(ext, '.html')
+                % --- 3. RAW CAN LOG PIPELINE (Mongoose) ---
                 TripData = OBD_AnalyticsLab.parseJLR_CAN(filename);
             else
-                % --- ELM327 JSON/CSV PIPELINE ---
-                fprintf('Detected OBD JSON/CSV. Running standard importer...\n');
+                % --- 4. STANDARD ELM327 PIPELINE ---
                 [TripData, Profile] = OBD_Importer.read(filename);
                 TripData = OBD_Calculators.applyAll(TripData, Profile);
-            end
-            
-            % --- Force Chronological Sort and Perfect Linearity ---
-            [raw_t_vec, ~, timeColName] = OBD_AnalyticsLab.getTimeData(TripData);
-            if ~isempty(timeColName)
+                
+                % Force Chronological Linearity
+                [raw_t_vec, ~, timeColName] = OBD_AnalyticsLab.getTimeData(TripData);
                 TripData = sortrows(TripData, timeColName);
+                num_samples = height(TripData);
+                if num_samples > 1 && max(raw_t_vec) > 0
+                    TripData.Linearized_Time = linspace(0, max(raw_t_vec), num_samples)';
+                else
+                    TripData.Linearized_Time = raw_t_vec;
+                end
+                try TripData = movevars(TripData, 'Linearized_Time', 'Before', 1); catch; end
             end
             
-            num_samples = height(TripData);
-            t_max = max(raw_t_vec);
-            if num_samples > 1 && t_max > 0
-                linear_t_vec = linspace(0, t_max, num_samples)';
-            else
-                linear_t_vec = raw_t_vec;
-            end
-            
-            TripData.Linearized_Time = linear_t_vec;
-            
-            try
-                TripData = movevars(TripData, 'Linearized_Time', 'Before', 1);
-            catch
-                % Fallback for older MATLAB versions
-            end
+            % --- FILTER OUT DEAD/UNCHANGING CHANNELS ---
+            TripData = OBD_AnalyticsLab.removeDeadChannels(TripData);
             
             fprintf('=== Pipeline Complete. ===\n');
-            
-            % Push the processed data directly to the Workspace
             assignin('base', 'TripData', TripData);
-            fprintf('✓ Successfully pushed "TripData" (with all 26+ calculations) to your Workspace.\n');
+            fprintf('✓ Successfully pushed cleaned "TripData" to your Workspace.\n');
             
             %% 2. The Main Dashboard Menu (Loop)
             keepRunning = true;
             
             while keepRunning
-                choice = questdlg('Data processed and saved to Workspace. What would you like to do?', ...
+                choice = questdlg('Data processed. Select Analysis Suite:', ...
                                'OBD Analytics Lab', ...
-                               'Plot Standard Telemetry', 'Deep Analytics...', 'Exit (Keep Data)', 'Exit (Keep Data)');
+                               'Standard Telemetry', 'Advanced Diagnostics...', 'Exit', 'Exit');
                            
-                if isempty(choice) || strcmp(choice, 'Exit (Keep Data)')
-                    fprintf('Enjoy your data! Double-click "TripData" in the Workspace panel to view it.\n');
+                if isempty(choice) || strcmp(choice, 'Exit')
+                    fprintf('Enjoy your data! See "TripData" in the Workspace.\n');
                     keepRunning = false;
                     
-                elseif strcmp(choice, 'Plot Standard Telemetry')
-                    fprintf('Launching Standard Telemetry Dashboard...\n');
+                elseif strcmp(choice, 'Standard Telemetry')
                     OBD_AnalyticsLab.plotStandardTelemetry(TripData);
                     
-                elseif strcmp(choice, 'Deep Analytics...')
-                    
-                    [~, ~, timeColName] = OBD_AnalyticsLab.getTimeData(TripData);
-                    allVars = TripData.Properties.VariableNames;
-                    excludeCols = {timeColName, 'Linearized_Time', 'timestampMs', 'Time', 'RelativeTime_s'};
-                    validVars = allVars(~ismember(allVars, excludeCols));
-                    
-                    analysisType = questdlg('Select Advanced Module:', 'Deep Analytics Lab', ...
-                        'Time-Domain Correlations', 'Engine Heatmap', 'Frequency Domain (FFT/PSD)', 'Time-Domain Correlations');
-                    
-                    if isempty(analysisType), continue; end
+                elseif strcmp(choice, 'Advanced Diagnostics...')
+                    analysisType = questdlg('Select Diagnostic Suite:', 'Advanced Diagnostics', ...
+                        'Vehicle Dynamics (G-Circle)', 'Transmission Health (Slip)', 'ZF 8HP Deep Shift Analysis', 'Vehicle Dynamics (G-Circle)');
                     
                     switch analysisType
-                        case 'Time-Domain Correlations'
-                            [indx, tf] = listdlg('PromptString', 'Select signals to correlate:', ...
-                                                 'SelectionMode', 'multiple', 'ListString', validVars, 'ListSize', [300 400]);
-                            if tf, OBD_AnalyticsLab.plotCorrelationMatrix(TripData, validVars(indx)); end
-                            
-                        case 'Engine Heatmap'
-                            OBD_AnalyticsLab.plotEngineHeatmap(TripData);
-                            
-                        case 'Frequency Domain (FFT/PSD)'
-                            [indx, tf] = listdlg('PromptString', 'Select 1 or 2 signals for Frequency Analysis:', ...
-                                                 'SelectionMode', 'multiple', 'ListString', validVars, 'ListSize', [300 400]);
-                            if tf
-                                selected = validVars(indx);
-                                if length(selected) == 1
-                                    OBD_AnalyticsLab.plotFrequencyAnalysis(TripData, selected{1});
-                                elseif length(selected) == 2
-                                    OBD_AnalyticsLab.plotCoherence(TripData, selected{1}, selected{2});
-                                end
-                            end
+                        case 'Vehicle Dynamics (G-Circle)'
+                            OBD_AnalyticsLab.analyzeVehicleDynamics(TripData);
+                        case 'Transmission Health (Slip)'
+                            OBD_AnalyticsLab.analyzeTransmissionHealth(TripData);
+                        case 'ZF 8HP Deep Shift Analysis'
+                            OBD_AnalyticsLab.analyzeShiftQuality(TripData);
                     end
                 end
             end
         end
         
-        %% --- ULTIMATE JLR CAN DICTIONARY PARSER ---
-        function TripData = parseJLR_CAN(filename)
-            % 1. The Master Dictionary (26 Channels)
-            sensorDict = struct('Name', {}, 'ID', {}, 'Formula', {});
-            
-            % DRIVER INPUTS
-            sensorDict(end+1) = struct('Name', 'Accelerator_Pedal', 'ID', '2CB', 'Formula', @(b) b(:,2) / 2.55);
-            sensorDict(end+1) = struct('Name', 'Brake_Pressure', 'ID', '3EB', 'Formula', @(b) ((b(:,5) * 256) + b(:,6)) / 100);
-            sensorDict(end+1) = struct('Name', 'Brake_Pedal_Switch', 'ID', '295', 'Formula', @(b) bitand(b(:,7), 32) / 32);
-            
-            % CHASSIS & IMU
-            sensorDict(end+1) = struct('Name', 'Steering_Angle', 'ID', '280', 'Formula', @(b) (((b(:,7) * 256) + b(:,8)) - 7941) / 10);
-            sensorDict(end+1) = struct('Name', 'Yaw_Rate', 'ID', '3D3', 'Formula', @(b) (((b(:,7) * 256) + b(:,8)) - 1438) / 10);
-            sensorDict(end+1) = struct('Name', 'Accel_Longitudinal', 'ID', '312', 'Formula', @(b) (b(:,1) * 256) + b(:,2));
-            sensorDict(end+1) = struct('Name', 'Accel_Lateral', 'ID', '312', 'Formula', @(b) (b(:,3) * 256) + b(:,4));
-            sensorDict(end+1) = struct('Name', 'Roll_Rate', 'ID', '312', 'Formula', @(b) (b(:,5) * 256) + b(:,6));
-            
-            % WHEEL SPEEDS
-            sensorDict(end+1) = struct('Name', 'Wheel_Speed_FL', 'ID', '215', 'Formula', @(b) ((bitand(b(:,1), 15) * 256) + b(:,2)) * 0.01);
-            sensorDict(end+1) = struct('Name', 'Wheel_Speed_FR', 'ID', '215', 'Formula', @(b) ((bitand(b(:,3), 15) * 256) + b(:,4)) * 0.01);
-            sensorDict(end+1) = struct('Name', 'Wheel_Speed_RL', 'ID', '215', 'Formula', @(b) ((bitand(b(:,5), 15) * 256) + b(:,6)) * 0.01);
-            sensorDict(end+1) = struct('Name', 'Wheel_Speed_RR', 'ID', '215', 'Formula', @(b) ((bitand(b(:,7), 15) * 256) + b(:,8)) * 0.01);
-            
-            % POWERTRAIN
-            sensorDict(end+1) = struct('Name', 'Engine_RPM', 'ID', '295', 'Formula', @(b) (bitand(b(:,7), 31) * 256) + b(:,8));
-            sensorDict(end+1) = struct('Name', 'Engine_Torque_Nm', 'ID', '20B', 'Formula', @(b) ((b(:,5) * 256) + b(:,6)) - 1000);
-            sensorDict(end+1) = struct('Name', 'Vehicle_Speed', 'ID', '29B', 'Formula', @(b) ((b(:,7) * 256) + b(:,8)) / 100);
-            sensorDict(end+1) = struct('Name', 'Selected_Gear', 'ID', '2CB', 'Formula', @(b) bitand(b(:,4), 15));
-            sensorDict(end+1) = struct('Name', 'Coolant_Temp', 'ID', '355', 'Formula', @(b) b(:,6) - 40);
-            
-            % INSTRUMENTS
-            sensorDict(end+1) = struct('Name', 'Fuel_Level', 'ID', '477', 'Formula', @(b) b(:,1) / 2.55);
-            sensorDict(end+1) = struct('Name', 'Ambient_Temp', 'ID', '4E1', 'Formula', @(b) (b(:,7) / 4) - 40);
-            sensorDict(end+1) = struct('Name', 'Odometer', 'ID', '4C0', 'Formula', @(b) ((b(:,5) * 65536) + (b(:,6) * 256) + b(:,7)) / 10);
-            
-            % FAULTS & STATUS
-            sensorDict(end+1) = struct('Name', 'Gearbox_Fault_State', 'ID', '3F3', 'Formula', @(b) b(:,7));
-            sensorDict(end+1) = struct('Name', 'Limp_Mode_Yellow', 'ID', '315', 'Formula', @(b) bitand(b(:,2), 2) / 2);
-            sensorDict(end+1) = struct('Name', 'Cruise_Unavailable', 'ID', '315', 'Formula', @(b) bitand(b(:,2), 4) / 4);
-            sensorDict(end+1) = struct('Name', 'Glow_Plugs_Active', 'ID', '315', 'Formula', @(b) bitand(b(:,4), 8) / 8);
-            sensorDict(end+1) = struct('Name', 'Oil_Warning', 'ID', '315', 'Formula', @(b) bitand(b(:,4), 16) / 16);
-            sensorDict(end+1) = struct('Name', 'Seatbelt_Warning', 'ID', '39A', 'Formula', @(b) bitand(b(:,7), 48) / 48);
-
-            % 2. Read and Parse HTML
-            filetext = fileread(filename);
-            pattern = '>(\d{2}:\d{2}:\d{2}\.\d{3})</span><span class=''RxData''>([0-9A-F]{3}):\s+([0-9A-F\s]+)</span>';
-            tokens = regexp(filetext, pattern, 'tokens');
-            if isempty(tokens), error('No CAN data found in HTML file.'); end
-            
-            % 3. Extract to Map
-            canMap = containers.Map('KeyType', 'char', 'ValueType', 'any');
-            t0 = datetime(tokens{1}{1}, 'InputFormat', 'HH:mm:ss.SSS');
-            for i = 1:length(tokens)
-                t_curr = datetime(tokens{i}{1}, 'InputFormat', 'HH:mm:ss.SSS');
-                time_sec = seconds(t_curr - t0);
-                id = tokens{i}{2};
-                byteCells = strsplit(strtrim(tokens{i}{3}));
-                if length(byteCells) == 8
-                    rowData = [time_sec, hex2dec(byteCells)'];
-                    if isKey(canMap, id), canMap(id) = [canMap(id); rowData];
-                    else, canMap(id) = rowData; end
-                end
-            end
-            
-            % 4. Interpolate onto 100Hz base (0.01s)
-            lastTime = datetime(tokens{end}{1}, 'InputFormat', 'HH:mm:ss.SSS');
-            t_max = seconds(lastTime - t0);
-            Linearized_Time = (0 : 0.01 : t_max)';
-            TripData = table(Linearized_Time);
-            
-            for s = 1:length(sensorDict)
-                sensor = sensorDict(s);
-                if isKey(canMap, sensor.ID)
-                    rawTbl = canMap(sensor.ID);
-                    raw_t = rawTbl(:,1);
-                    raw_vals = sensor.Formula(rawTbl(:, 2:9));
-                    [uTime, uIdx] = unique(raw_t, 'stable');
-                    if length(uTime) > 1
-                        TripData.(sensor.Name) = interp1(uTime, raw_vals(uIdx), Linearized_Time, 'previous', 'extrap');
-                    else
-                        TripData.(sensor.Name) = nan(size(Linearized_Time));
-                    end
-                else
-                    TripData.(sensor.Name) = nan(size(Linearized_Time));
-                end
-            end
-        end
-        
-        %% --- BULLETPROOF TIME FINDER ---
-        function [t_vec, dt, timeColName] = getTimeData(T)
+        %% --- DATA CLEANING ---
+        function T_clean = removeDeadChannels(T)
+            fprintf('Scanning for dead/unchanging CAN channels...\n');
             vars = T.Properties.VariableNames;
-            lowerVars = lower(vars);
-            timeColName = '';
+            keepCols = true(1, length(vars));
             
-            priority = {'linearized_time', 'relativetime_s', 'time', 'timestampms'};
+            for i = 1:length(vars)
+                colName = vars{i};
+                if strcmp(colName, 'Linearized_Time') || strcmp(colName, 'Time_ms') || strcmp(colName, 'timestampMs'), continue; end
+                
+                colData = T.(colName);
+                if isnumeric(colData)
+                    validData = colData(~isnan(colData));
+                    if isempty(validData) || max(validData) == min(validData)
+                        keepCols(i) = false;
+                    end
+                end
+            end
+            T_clean = T(:, keepCols);
+        end
+
+        %% --- APP PARSERS ---
+        function TripData = parseAppSamplesSynced(filename)
+            fid = fopen(filename, 'r'); raw = fread(fid, '*char')'; fclose(fid);
+            lines = splitlines(strtrim(raw));
+            t_vals = []; sigs = {}; v_vals = [];
+            for i = 1:length(lines)
+                if isempty(lines{i}), continue; end
+                try
+                    val = jsondecode(lines{i});
+                    t_vals(end+1, 1) = val.t; %#ok<*AGROW>
+                    sigs{end+1, 1} = val.sig;
+                    v_vals(end+1, 1) = val.v;
+                catch
+                end
+            end
+            T_long = table(t_vals, sigs, v_vals, 'VariableNames', {'Time_ms', 'Signal', 'Value'});
+            [~, uniqueIdx] = unique(strcat(num2str(T_long.Time_ms), T_long.Signal), 'stable');
+            T_long = T_long(uniqueIdx, :);
+            TripData = unstack(T_long, 'Value', 'Signal', 'AggregationFunction', @mean);
+            TripData = sortrows(TripData, 'Time_ms');
+            TripData.Linearized_Time = (TripData.Time_ms - TripData.Time_ms(1)) / 1000;
+            TripData = movevars(TripData, 'Linearized_Time', 'Before', 1);
+            TripData = fillmissing(TripData, 'previous');
+        end
+
+        function TripData = parseAppRawWithDBC(rawFile, dbcFile)
+            hasVNT = license('test', 'Vehicle_Network_Toolbox');
+            if hasVNT
+                try db = canDatabase(dbcFile); catch, hasVNT = false; end
+            end
+            fid = fopen(rawFile, 'r'); rawStr = fread(fid, '*char')'; fclose(fid);
+            lines = splitlines(strtrim(rawStr));
+            t_vals = []; sigs = {}; v_vals = [];
+            for i = 1:length(lines)
+                if isempty(lines{i}), continue; end
+                try
+                    val = jsondecode(lines{i});
+                    if hasVNT
+                        msg = canMessage(val.id, false, 8);
+                        msg.Data = uint8(hex2dec(reshape(val.data, 2, [])'));
+                        physVals = decodePhysicalValues(db, msg);
+                        fields = fieldnames(physVals);
+                        for f = 1:length(fields)
+                            t_vals(end+1, 1) = val.t; sigs{end+1, 1} = fields{f}; v_vals(end+1, 1) = physVals.(fields{f});
+                        end
+                    end
+                catch
+                end
+            end
+            if isempty(t_vals), error('Could not decode any raw frames. Vehicle Network Toolbox required.'); end
+            T_long = table(t_vals, sigs, v_vals, 'VariableNames', {'Time_ms', 'Signal', 'Value'});
+            [~, uniqueIdx] = unique(strcat(num2str(T_long.Time_ms), T_long.Signal), 'stable');
+            T_long = T_long(uniqueIdx, :);
+            TripData = unstack(T_long, 'Value', 'Signal', 'AggregationFunction', @mean);
+            TripData = sortrows(TripData, 'Time_ms');
+            TripData.Linearized_Time = (TripData.Time_ms - TripData.Time_ms(1)) / 1000;
+            TripData = movevars(TripData, 'Linearized_Time', 'Before', 1);
+            TripData = fillmissing(TripData, 'previous');
+        end
+        
+        %% --- ADVANCED DIAGNOSTICS SUITES ---
+        
+        function analyzeVehicleDynamics(T)
+            vars = T.Properties.VariableNames;
+            fig = figure('Name', 'Vehicle Dynamics Suite', 'Color', 'w', 'Position', [100 100 1200 600]);
+            tiledlayout(1, 2, 'TileSpacing', 'compact');
+            
+            % Lat/Lon mapping
+            latVar = ''; lonVar = ''; yawVar = '';
+            if ismember('LateralAcceleration_HS', vars), latVar = 'LateralAcceleration_HS'; end
+            if ismember('EPBLongitudinalAcc_HS', vars), lonVar = 'EPBLongitudinalAcc_HS';
+            elseif ismember('LongitudinalAccel_HS', vars), lonVar = 'LongitudinalAccel_HS'; end
+            if ismember('YawRate_HS', vars), yawVar = 'YawRate_HS'; end
+            
+            ax1 = nexttile;
+            if ~isempty(latVar) && ~isempty(lonVar)
+                lat = T.(latVar) / 9.81; lon = T.(lonVar) / 9.81;
+                scatter(ax1, lat, lon, 15, T.Linearized_Time, 'filled', 'MarkerFaceAlpha', 0.6);
+                colormap(ax1, jet); cb = colorbar(ax1); cb.Label.String = 'Time (s)';
+                hold on; xline(0, 'k--'); yline(0, 'k--');
+                title(ax1, 'Traction Circle (G-G Diagram)', 'FontWeight', 'bold');
+                xlabel(ax1, 'Lateral G'); ylabel(ax1, 'Longitudinal G');
+                axis(ax1, 'equal'); grid(ax1, 'on');
+            else
+                title(ax1, 'Traction Circle Data Missing');
+            end
+            
+            ax2 = nexttile;
+            if ~isempty(latVar) && ~isempty(yawVar)
+                scatter(ax2, T.(latVar), T.(yawVar), 15, T.Linearized_Time, 'filled');
+                colormap(ax2, jet); colorbar(ax2);
+                title(ax2, 'Yaw vs. Lateral Accel (Handling Balance)', 'FontWeight', 'bold');
+                xlabel(ax2, 'Lateral Accel (m/s^2)'); ylabel(ax2, 'Yaw Rate (deg/s)');
+                grid(ax2, 'on');
+            else
+                title(ax2, 'Handling Balance Data Missing');
+            end
+        end
+        
+        function analyzeTransmissionHealth(T)
+            vars = T.Properties.VariableNames;
+            fig = figure('Name', 'ZF 8HP Transmission Diagnostics', 'Color', 'w', 'Position', [150 150 1000 700]);
+            tiledlayout(3, 1, 'TileSpacing', 'compact');
+            time = T.Linearized_Time;
+            
+            ax1 = nexttile; hold(ax1, 'on');
+            if ismember('TransOilTemp_HS', vars), plot(ax1, time, T.TransOilTemp_HS, 'b', 'LineWidth', 1.5, 'DisplayName', 'Trans Temp'); end
+            if ismember('EngineCoolantTemp_HS', vars), plot(ax1, time, T.EngineCoolantTemp_HS, 'r', 'LineWidth', 1.5, 'DisplayName', 'Coolant Temp'); end
+            title(ax1, 'Thermal Status', 'FontWeight', 'bold'); ylabel(ax1, 'Temp (°C)'); legend(ax1, 'Location', 'best'); grid(ax1, 'on');
+            
+            ax2 = nexttile; hold(ax2, 'on');
+            if ismember('GearPosActual_HS', vars), plot(ax2, time, T.GearPosActual_HS, 'k', 'LineWidth', 2, 'DisplayName', 'Actual Gear'); end
+            if ismember('GearPosTarget_HS', vars), plot(ax2, time, T.GearPosTarget_HS, 'r--', 'LineWidth', 1.5, 'DisplayName', 'Target Gear'); end
+            title(ax2, 'Gear Shift Commands', 'FontWeight', 'bold'); ylabel(ax2, 'Gear'); yticks(ax2, 0:8); legend(ax2, 'Location', 'best'); grid(ax2, 'on');
+            
+            ax3 = nexttile; hold(ax3, 'on');
+            if ismember('TorqConvSlip_HS', vars)
+                plot(ax3, time, T.TorqConvSlip_HS, 'm', 'LineWidth', 1.5, 'DisplayName', 'Slip %');
+            end
+            if ismember('EngineSpeed_HS', vars) && ismember('TransInputSpeed_HS', vars)
+                calcSlip = T.EngineSpeed_HS - T.TransInputSpeed_HS;
+                plot(ax3, time, calcSlip, 'r', 'LineWidth', 1.5, 'DisplayName', 'Calculated Slip (RPM)');
+            end
+            title(ax3, 'Torque Converter Slip', 'FontWeight', 'bold'); grid(ax3, 'on'); xlabel(ax3, 'Time (s)'); legend(ax3, 'Location', 'best');
+            linkaxes([ax1, ax2, ax3], 'x');
+        end
+        
+        function analyzeShiftQuality(T)
+            fprintf('Running Deep Shift Analysis...\n');
+            vars = T.Properties.VariableNames;
+            
+            % Variable mapping for robustness
+            rpmVar = ''; if ismember('EngineSpeed_HS', vars), rpmVar = 'EngineSpeed_HS'; elseif ismember('obd_rpm', vars), rpmVar = 'obd_rpm'; end
+            actVar = ''; if ismember('GearPosActual_HS', vars), actVar = 'GearPosActual_HS'; end
+            tgtVar = ''; if ismember('GearPosTarget_HS', vars), tgtVar = 'GearPosTarget_HS'; end
+            
+            if isempty(rpmVar) || isempty(actVar) || isempty(tgtVar)
+                errordlg('Missing RPM, Actual Gear, or Target Gear for Shift Analysis.'); return;
+            end
+            
+            accelVar = '';
+            if ismember('EPBLongitudinalAcc_HS', vars), accelVar = 'EPBLongitudinalAcc_HS';
+            elseif ismember('LongitudinalAccel_HS', vars), accelVar = 'LongitudinalAccel_HS'; end
+            
+            tempVar = '';
+            if ismember('TransOilTemp_HS', vars), tempVar = 'TransOilTemp_HS';
+            elseif ismember('EngineCoolantTemp_HS', vars), tempVar = 'EngineCoolantTemp_HS'; end
+            
+            time = T.Linearized_Time; actualGear = T.(actVar); targetGear = T.(tgtVar); rpm = T.(rpmVar);
+            shiftIdx = find(diff(actualGear) > 0 & actualGear(1:end-1) > 0);
+            shiftScores = struct('GearChange', {}, 'Temp', {}, 'HarshnessG', {}, 'DelayMs', {}, 'RpmFlare', {});
+            
+            for i = 1:length(shiftIdx)
+                idx = shiftIdx(i); t_shift = time(idx);
+                windowMask = time >= (t_shift - 0.5) & time <= (t_shift + 1.0);
+                if sum(windowMask) < 5, continue; end
+                
+                t_win = time(windowMask);
+                gear_act_win = actualGear(windowMask); gear_tgt_win = targetGear(windowMask); rpm_win = rpm(windowMask);
+                
+                idx_tgt_change = find(diff(gear_tgt_win) > 0, 1, 'last');
+                idx_act_change = find(diff(gear_act_win) > 0, 1, 'last');
+                
+                if ~isempty(idx_tgt_change) && ~isempty(idx_act_change)
+                    delay = (t_win(idx_act_change) - t_win(idx_tgt_change)) * 1000;
+                    if delay < 0, delay = 0; end
+                else, delay = NaN; end
+                
+                flare = 0;
+                if ~isempty(idx_act_change)
+                    flareMask = t_win >= (t_win(idx_act_change) - 0.3) & t_win <= t_win(idx_act_change);
+                    if sum(flareMask) > 1, flare = max(0, max(diff(rpm_win(flareMask)))); end
+                end
+                
+                if ~isempty(accelVar), accel_win = T.(accelVar)(windowMask) / 9.81; harshness = max(accel_win) - min(accel_win);
+                else, harshness = NaN; end
+                
+                if ~isempty(tempVar), temp = mean(T.(tempVar)(windowMask), 'omitnan'); else, temp = NaN; end
+                
+                gearStr = sprintf('%d->%d', gear_act_win(1), gear_act_win(end));
+                shiftScores(end+1) = struct('GearChange', gearStr, 'Temp', temp, 'HarshnessG', harshness, 'DelayMs', delay, 'RpmFlare', flare);
+            end
+            
+            if isempty(shiftScores), msgbox('No valid upshifts found in this log.'); return; end
+            
+            temps = [shiftScores.Temp]; harsh = [shiftScores.HarshnessG];
+            delays = [shiftScores.DelayMs]; flares = [shiftScores.RpmFlare];
+            
+            fig = figure('Name', 'ZF 8HP Deep Shift Analysis', 'Color', 'w', 'Position', [100 100 1200 600]);
+            tiledlayout(1, 2, 'TileSpacing', 'compact');
+            
+            ax1 = nexttile; scatter(ax1, temps, harsh, 60, delays, 'filled', 'MarkerEdgeColor', 'k');
+            colormap(ax1, jet); cb1 = colorbar(ax1); cb1.Label.String = 'Shift Delay (ms)';
+            title(ax1, 'Shift Harshness (Clunk) vs. Temp', 'FontWeight', 'bold'); xlabel(ax1, 'Temp (°C)'); ylabel(ax1, 'Peak-to-Peak G'); grid(ax1, 'on');
+            
+            ax2 = nexttile; scatter(ax2, temps, flares, 60, harsh, 'filled', 'MarkerEdgeColor', 'k');
+            colormap(ax2, hot); cb2 = colorbar(ax2); cb2.Label.String = 'Harshness (G)';
+            title(ax2, 'Shift Hesitation (RPM Flare) vs. Temp', 'FontWeight', 'bold'); xlabel(ax2, 'Temp (°C)'); ylabel(ax2, 'RPM Flare'); grid(ax2, 'on');
+        end
+        
+        %% --- UTILITY FUNCTIONS ---
+        function [t_vec, dt, timeColName] = getTimeData(T)
+            vars = T.Properties.VariableNames; lowerVars = lower(vars); timeColName = '';
+            priority = {'linearized_time', 'time_ms', 'relativetime_s', 'time', 'timestampms'};
             for i = 1:length(priority)
                 idx = find(strcmp(lowerVars, priority{i}), 1);
                 if ~isempty(idx), timeColName = vars{idx}; break; end
             end
-            
-            if isempty(timeColName)
-                idx = find(contains(lowerVars, 'time') | contains(lowerVars, 'timestamp'), 1);
-                if ~isempty(idx), timeColName = vars{idx}; end
-            end
-            
-            if ~isempty(timeColName)
-                raw_t = T.(timeColName);
-                if isdatetime(raw_t) || isduration(raw_t)
-                    t_vec = seconds(raw_t - raw_t(1));
-                elseif isnumeric(raw_t) && max(raw_t) > 1e10 
-                    t_vec = (raw_t - raw_t(1)) / 1000;
-                else
-                    t_vec = raw_t - min(raw_t); 
-                end
-            else
-                warning('No explicit time column found. Generating synthetic 1Hz time base.');
-                timeColName = 'Synthetic_Time';
-                t_vec = (0:height(T)-1)';
-            end
-            
-            dt = mean(diff(t_vec));
-            if isnan(dt) || dt <= 0, dt = 0.01; end % Default 100Hz if failed
+            if ~isempty(timeColName), t_vec = T.(timeColName); else, t_vec = (0:height(T)-1)'; end
+            dt = 0.01;
         end
-        
-        %% --- UPGRADED: Smart Pagination Plotter ---
         
         function plotStandardTelemetry(T)
             [timeData, ~, timeColName] = OBD_AnalyticsLab.getTimeData(T);
-            
             allVars = T.Properties.VariableNames;
-            excludeCols = {timeColName, 'Linearized_Time', 'timestampMs', 'Time', 'RelativeTime_s'};
+            excludeCols = {timeColName, 'Linearized_Time', 'Time_ms', 'timestampMs'};
             sensorNames = allVars(~ismember(allVars, excludeCols));
-            
             validSensors = {};
             for p = 1:length(sensorNames)
                 colData = T.(sensorNames{p});
-                if isnumeric(colData) && ~all(isnan(colData))
-                    validSensors{end+1} = sensorNames{p};
-                end
+                if isnumeric(colData) && ~all(isnan(colData)), validSensors{end+1} = sensorNames{p}; end
             end
+            if isempty(validSensors), disp('No valid numeric sensor data found.'); return; end
             
-            numPlots = length(validSensors);
-            if numPlots == 0, disp('No valid numeric sensor data found to plot.'); return; end
-            
-            plotsPerWindow = 5; 
-            numWindows = ceil(numPlots / plotsPerWindow);
-            
+            numPlots = length(validSensors); plotsPerWindow = 5; numWindows = ceil(numPlots / plotsPerWindow);
             for w = 1:numWindows
-                startIdx = (w - 1) * plotsPerWindow + 1;
-                endIdx = min(w * plotsPerWindow, numPlots);
+                startIdx = (w - 1) * plotsPerWindow + 1; endIdx = min(w * plotsPerWindow, numPlots);
                 currentPlotCount = endIdx - startIdx + 1;
-                
-                figHeight = 200 * currentPlotCount; 
-                offset = (w-1) * 30; 
-                
-                figure('Name', sprintf('Standard Telemetry Dashboard (Page %d of %d)', w, numWindows), ...
-                       'NumberTitle', 'off', 'Position', [50 + offset, 100 - offset, 1200, figHeight]);
-                
-                tiledlayout(currentPlotCount, 1, 'TileSpacing', 'compact', 'Padding', 'tight');
-                
+                figure('Name', sprintf('Standard Telemetry Dashboard (Page %d of %d)', w, numWindows), 'Position', [50, 100, 1200, 200 * currentPlotCount]);
+                tiledlayout(currentPlotCount, 1, 'TileSpacing', 'compact');
                 for p = startIdx:endIdx
-                    sName = validSensors{p};
-                    nexttile;
-                    
-                    yData = T.(sName);
-                    plot(timeData, yData, 'LineWidth', 1.5, 'Color', [0 0.4470 0.7410]);
-                    
-                    cleanName = strrep(sName, '_', ' ');
-                    title(cleanName, 'FontSize', 11, 'FontWeight', 'bold');
-                    grid on;
-                    
-                    validY = yData(~isnan(yData));
-                    if ~isempty(validY) && all(validY == 0 | validY == 1)
-                        ylim([-0.2 1.2]); yticks([0 1]); yticklabels({'OFF', 'ON'});
-                    else
-                        min_y = min(validY); max_y = max(validY);
-                        if min_y ~= max_y
-                            ylim([min_y - 0.05*(max_y-min_y), max_y + 0.05*(max_y-min_y)]);
-                        end
-                    end
+                    sName = validSensors{p}; nexttile;
+                    plot(timeData, T.(sName), 'LineWidth', 1.5, 'Color', [0 0.4470 0.7410]);
+                    title(strrep(sName, '_', ' '), 'FontSize', 11, 'FontWeight', 'bold'); grid on;
                 end
                 xlabel('Time (seconds)', 'FontSize', 12, 'FontWeight', 'bold');
             end
-        end
-        
-        %% --- FFT & Frequency Analytics ---
-        
-        function plotFrequencyAnalysis(T, signalName)
-            y = T.(signalName);
-            y = fillmissing(y, 'linear'); 
-            y_ac = y - mean(y);
-            
-            [~, dt, ~] = OBD_AnalyticsLab.getTimeData(T);
-            Fs = 1 / dt;
-            L = length(y_ac);
-            
-            Y = fft(y_ac);
-            P2 = abs(Y/L);
-            P1 = P2(1:floor(L/2)+1);
-            P1(2:end-1) = 2*P1(2:end-1);
-            f_fft = Fs*(0:(L/2))/L;
-            
-            cleanName = strrep(signalName, '_', ' ');
-            fig = figure('Name', sprintf('Frequency Analysis: %s', cleanName), 'Color', 'w', 'Position', [100 100 1000 600]);
-            tiledlayout(2, 1, 'TileSpacing', 'compact');
-            
-            ax1 = nexttile;
-            plot(ax1, f_fft, P1, 'b', 'LineWidth', 1.5);
-            title(ax1, sprintf('Single-Sided FFT Amplitude Spectrum: %s', cleanName), 'FontWeight', 'bold');
-            xlabel(ax1, 'Frequency (Hz)'); ylabel(ax1, 'Amplitude');
-            grid(ax1, 'on');
-            
-            ax2 = nexttile;
-            try
-                [pxx, f_psd] = pwelch(y_ac, [], [], [], Fs);
-                plot(ax2, f_psd, 10*log10(pxx), 'r', 'LineWidth', 1.5);
-                title(ax2, 'Welch''s Power Spectral Density (PSD)', 'FontWeight', 'bold');
-                xlabel(ax2, 'Frequency (Hz)'); ylabel(ax2, 'Power/Frequency (dB/Hz)');
-                grid(ax2, 'on');
-            catch
-                title(ax2, '(Signal Processing Toolbox required for PSD plot)');
-                axis(ax2, 'off');
-            end
-        end
-        
-        function plotCoherence(T, sig1, sig2)
-            y1 = fillmissing(T.(sig1), 'linear'); y2 = fillmissing(T.(sig2), 'linear');
-            y1 = y1 - mean(y1); y2 = y2 - mean(y2);
-            
-            [~, dt, ~] = OBD_AnalyticsLab.getTimeData(T);
-            Fs = 1 / dt;
-            clean1 = strrep(sig1, '_', ' '); clean2 = strrep(sig2, '_', ' ');
-            
-            fig = figure('Name', 'Cross-Spectral Coherence', 'Color', 'w', 'Position', [150 150 900 500]);
-            try
-                [Cxy, f] = mscohere(y1, y2, [], [], [], Fs);
-                plot(f, Cxy, 'k', 'LineWidth', 2);
-                title(sprintf('Signal Coherence: %s vs. %s', clean1, clean2), 'FontSize', 14, 'FontWeight', 'bold');
-                xlabel('Frequency (Hz)'); ylabel('Coherence (0 to 1)');
-                grid on; yline(0.5, 'r--', 'Significant Correlation Threshold', 'LabelHorizontalAlignment', 'left');
-            catch
-                text(0.1, 0.5, 'Signal Processing Toolbox required for Coherence Analysis.', 'FontSize', 12);
-                axis off;
-            end
-        end
-        
-        %% --- Existing Plotting Functions ---
-        
-        function plotCorrelationMatrix(T, selectedVars)
-            fig = figure('Name', 'Correlation Matrix', 'Color', 'w', 'Position', [100 100 900 700]);
-            dataMatrix = T{:, selectedVars};
-            cleanRows = ~any(isnan(dataMatrix), 2);
-            cleanData = dataMatrix(cleanRows, :);
-            if isempty(cleanData), close(fig); return; end
-            corrMat = corrcoef(cleanData);
-            cleanNames = strrep(selectedVars, '_', ' ');
-            heatmap(cleanNames, cleanNames, corrMat, 'Title', 'Cross-Signal Correlation', 'Colormap', jet, 'CellLabelFormat', '%.2f');
-        end
-        
-        function plotEngineHeatmap(T)
-            vars = T.Properties.VariableNames;
-            
-            if ismember('Engine_RPM', vars), rpm = T.Engine_RPM; 
-            elseif ismember('obd_rpm', vars), rpm = T.obd_rpm;
-            else, return; end
-            
-            if ismember('Accelerator_Pedal', vars), load = T.Accelerator_Pedal;
-            elseif ismember('obd_engineLoadPct', vars), load = T.obd_engineLoadPct;
-            else, return; end
-                
-            fig = figure('Name', 'Engine Operating Range', 'Color', 'w', 'Position', [150 150 800 600]);
-            valid = ~isnan(rpm) & ~isnan(load);
-            histogram2(rpm(valid), load(valid), [40 40], 'DisplayStyle', 'tile', 'ShowEmptyBins', 'off');
-            colormap(jet); cb = colorbar; cb.Label.String = 'Samples';
-            title('Engine Heatmap (RPM vs. Load/Pedal)', 'FontSize', 14, 'FontWeight', 'bold'); 
-            xlabel('RPM'); ylabel('Load/Pedal (%)');
         end
     end
 end
