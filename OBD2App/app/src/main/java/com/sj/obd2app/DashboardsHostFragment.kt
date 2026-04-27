@@ -74,6 +74,13 @@ class DashboardsHostFragment : Fragment() {
             putString("mode", "view")
             putBoolean("is_new", false)
         }
-        navController.navigate(R.id.action_layoutList_to_editor, bundle)
+        // Check current destination to use appropriate navigation method
+        val currentDest = navController.currentDestination?.id
+        if (currentDest == R.id.nav_layout_list) {
+            navController.navigate(R.id.action_layoutList_to_editor, bundle)
+        } else {
+            // Navigate directly to the editor destination if not on layout list
+            navController.navigate(R.id.nav_editor, bundle)
+        }
     }
 }

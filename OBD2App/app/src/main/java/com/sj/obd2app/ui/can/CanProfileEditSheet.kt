@@ -3,6 +3,7 @@ package com.sj.obd2app.ui.can
 import android.app.Dialog
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -11,6 +12,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -29,6 +32,7 @@ import com.sj.obd2app.can.CanSignal
 import com.sj.obd2app.can.DbcDatabase
 import com.sj.obd2app.can.DbcParser
 import com.sj.obd2app.can.SignalRef
+import com.sj.obd2app.R
 import com.sj.obd2app.databinding.ItemCanSignalBinding
 import com.sj.obd2app.databinding.SheetCanProfileEditBinding
 import com.sj.obd2app.obd.ObdStateManager
@@ -96,6 +100,16 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         d.behavior.state = BottomSheetBehavior.STATE_EXPANDED
         d.behavior.skipCollapsed = true
         d.behavior.peekHeight = resources.displayMetrics.heightPixels
+        // Disable swipe-to-dismiss to prevent accidental closure when scrolling
+        d.behavior.isDraggable = false
+        // Intercept back button to prevent accidental dismissal (use Cancel instead)
+        d.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                true // Consume the back press, do nothing
+            } else {
+                false
+            }
+        }
         return d
     }
 
@@ -142,9 +156,8 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         }
 
         // Settings panel collapse/expand toggle
-        binding.btnSettingsToggle.setOnClickListener {
-            toggleSettingsPanel()
-        }
+        binding.llProfileSettingsHeader.setOnClickListener { toggleSettingsPanel() }
+        binding.btnSettingsToggle.setOnClickListener { toggleSettingsPanel() }
 
         // Show demo-data toggle only in mock mode
         if (ObdStateManager.isMockMode) {
@@ -160,6 +173,14 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         // Trip Attribute Mapping panel toggle
         binding.llMappingHeader.setOnClickListener { toggleMappingPanel() }
         binding.btnMappingToggle.setOnClickListener { toggleMappingPanel() }
+        binding.btnMappingAutoFill.setOnClickListener {
+            applyHeuristicMapping()
+            rebuildMappingRows()
+        }
+        binding.btnMappingClearAll.setOnClickListener {
+            tripMappingState.clear()
+            rebuildMappingRows()
+        }
         binding.btnCanDelete.setOnClickListener {
             editingProfile?.let { p ->
                 repo.delete(p.id)
@@ -407,6 +428,57 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
 
     private fun updateSelectionCount() {
         binding.tvSelectionCount.text = "${selectedRefs.size} signals selected"
+        binding.tvSelectedEmpty.visibility = if (selectedRefs.isEmpty()) View.VISIBLE else View.GONE
+        binding.llSelectedSignals.visibility = if (selectedRefs.isEmpty()) View.GONE else View.VISIBLE
+
+        // Rebuild chip views with wordwrap
+        val container = binding.llSelectedSignals
+        container.removeAllViews()
+
+        if (selectedRefs.isEmpty()) return
+
+        val ctx = requireContext()
+        val displayMetrics = ctx.resources.displayMetrics
+        val availableWidth = displayMetrics.widthPixels - 32.dpToPx() // subtract padding
+
+        var currentRow: LinearLayout? = null
+        var currentRowWidth = 0
+
+        for (ref in selectedRefs) {
+            val chipView = LayoutInflater.from(ctx).inflate(R.layout.item_selected_signal_chip, container, false)
+            val tvName = chipView.findViewById<TextView>(R.id.tv_chip_name)
+            val btnRemove = chipView.findViewById<ImageButton>(R.id.btn_chip_remove)
+
+            tvName.text = ref.signalName
+            btnRemove.setOnClickListener {
+                selectedRefs.remove(ref)
+                updateSelectionCount()
+                signalAdapter.notifyDataSetChanged()
+            }
+
+            chipView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val chipWidth = chipView.measuredWidth + 12.dpToPx() // add margin
+
+            if (currentRow == null || currentRowWidth + chipWidth > availableWidth) {
+                currentRow = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = 4.dpToPx() }
+                }
+                container.addView(currentRow)
+                currentRowWidth = 0
+            }
+
+            currentRow!!.addView(chipView)
+            currentRowWidth += chipWidth
+        }
+    }
+
+    private fun Int.dpToPx(): Int {
+        val density = requireContext().resources.displayMetrics.density
+        return (this * density + 0.5f).toInt()
     }
 
     override fun onDestroyView() {
@@ -428,14 +500,22 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
     }
 
     /**
-     * Heuristic: for each unmapped metric key, scan selected signal names for a substring match
-     * (case-insensitive). First match wins. Existing mappings are NOT overwritten.
+     * Heuristic: for each unmapped metric key, scan signal names for a substring match
+     * (case-insensitive). Selected signals are checked first; all DBC signals are the fallback.
+     * Existing mappings are NOT overwritten — tap "Clear all" first for a full re-run.
      */
     private fun applyHeuristicMapping() {
         val currentDbc = dbc ?: return
+
+        // Build two candidate lists: selected signals first (preferred), then everything else.
+        val selectedKeys = selectedRefs.map { it.key() }.toSet()
         val allSignals = currentDbc.messages.flatMap { m ->
             m.signals.map { s -> Pair(SignalRef(m.id, s.name).key(), s.name.lowercase()) }
         }
+        val selectedSignals = allSignals.filter { it.first in selectedKeys }
+        val unselectedSignals = allSignals.filter { it.first !in selectedKeys }
+        val candidateSignals = selectedSignals + unselectedSignals
+
         val keywords = mapOf(
             CanDataOrchestrator.MetricKey.RPM to listOf("rpm", "engine_speed", "enginespeed"),
             CanDataOrchestrator.MetricKey.VEHICLE_SPEED_KMH to listOf("speed", "vspd", "vehicle_speed", "wheelspeed"),
@@ -448,8 +528,8 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             CanDataOrchestrator.MetricKey.INTAKE_TEMP_C to listOf("iat", "intake_temp", "air_temp", "intake_air")
         )
         for ((metricKey, kws) in keywords) {
-            if (tripMappingState.containsKey(metricKey)) continue // don't overwrite user selection
-            for ((signalKey, signalNameLower) in allSignals) {
+            if (tripMappingState.containsKey(metricKey)) continue
+            for ((signalKey, signalNameLower) in candidateSignals) {
                 if (kws.any { signalNameLower.contains(it) }) {
                     tripMappingState[metricKey] = signalKey
                     break
@@ -465,44 +545,63 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
         val ctx = requireContext()
 
         val currentDbc = dbc
+        if (currentDbc == null) {
+            binding.tvMappingEmpty.visibility = View.VISIBLE
+            binding.tvMappingEmpty.text = "Load a DBC file to enable signal mapping."
+            binding.btnMappingAutoFill.isEnabled = false
+            binding.btnMappingAutoFill.alpha = 0.4f
+            return
+        }
+        if (selectedRefs.isEmpty()) {
+            binding.tvMappingEmpty.visibility = View.VISIBLE
+            binding.tvMappingEmpty.text = "Select signals above to enable trip attribute mapping."
+            binding.btnMappingAutoFill.isEnabled = false
+            binding.btnMappingAutoFill.alpha = 0.4f
+            return
+        }
+        binding.tvMappingEmpty.visibility = View.GONE
+        binding.btnMappingAutoFill.isEnabled = true
+        binding.btnMappingAutoFill.alpha = 1f
+
         val signalEntries: List<Pair<String, String>> = buildList {
             add("" to "— none —")
-            currentDbc?.messages?.forEach { m ->
-                m.signals.forEach { s ->
-                    val key = SignalRef(m.id, s.name).key()
-                    val label = "${s.name} (0x${Integer.toHexString(m.id).uppercase()})"
+            selectedRefs.forEach { ref ->
+                val signal = currentDbc.findSignal(ref.messageId, ref.signalName)?.second
+                if (signal != null) {
+                    val key = ref.key()
+                    val label = "${signal.name}  (0x${Integer.toHexString(ref.messageId).uppercase()})"
                     add(key to label)
                 }
             }
         }
         val spinnerLabels = signalEntries.map { it.second }
 
+        val dpScale = ctx.resources.displayMetrics.density
+        val labelWidthPx = (130 * dpScale + 0.5f).toInt()
+
         for (metricKey in CanDataOrchestrator.MetricKey.ALL) {
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = 4 }
+                ).apply { bottomMargin = (6 * dpScale + 0.5f).toInt() }
             }
 
             val label = TextView(ctx).apply {
                 text = CanDataOrchestrator.MetricKey.label(metricKey)
-                setTextColor(0xFFFFFFFF.toInt())
+                setTextColor(0xFFCCCCCC.toInt())
                 textSize = 12f
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(labelWidthPx, LinearLayout.LayoutParams.WRAP_CONTENT)
                     .apply { gravity = android.view.Gravity.CENTER_VERTICAL }
             }
 
             val spinner = Spinner(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, spinnerLabels)
-                    .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                val adapter = ArrayAdapter(ctx, R.layout.item_spinner_white, spinnerLabels)
+                    .also { it.setDropDownViewResource(R.layout.item_spinner_dropdown_black) }
                 this.adapter = adapter
-                // Select current mapping
                 val currentSignalKey = tripMappingState[metricKey]
                 val idx = if (currentSignalKey != null) {
                     signalEntries.indexOfFirst { it.first == currentSignalKey }.takeIf { it >= 0 } ?: 0

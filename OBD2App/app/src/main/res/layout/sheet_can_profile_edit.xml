@@ -7,7 +7,7 @@
     android:background="#16213E"
     android:padding="16dp">
 
-    <!-- ── Header row with title, caret toggle, Cancel, Save ─────────────── -->
+    <!-- ── Header row with title, Cancel, Save ─────────────────────────────── -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -25,15 +25,6 @@
             android:textSize="16sp"
             android:textStyle="bold" />
 
-        <ImageButton
-            android:id="@+id/btn_settings_toggle"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:src="@drawable/ic_chevron_up"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Collapse settings"
-            android:tint="#AAAAAA" />
-
         <Button
             android:id="@+id/btn_can_cancel"
             android:layout_width="wrap_content"
@@ -50,6 +41,37 @@
             android:text="Save"
             android:textColor="#4FC3F7"
             style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+    </LinearLayout>
+
+    <!-- ── Profile settings header with caret toggle ───────────────────────── -->
+    <LinearLayout
+        android:id="@+id/ll_profile_settings_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp"
+        android:background="?attr/selectableItemBackground"
+        android:layout_marginBottom="4dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Profile settings"
+            android:textColor="#4FC3F7"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/btn_settings_toggle"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@drawable/ic_chevron_up"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Collapse settings"
+            android:tint="#4FC3F7" />
 
     </LinearLayout>
 
@@ -324,7 +346,55 @@
                 android:textColor="#888888"
                 android:textSize="11sp" />
 
-            <!-- Rows injected programmatically; id prefix: row_mapping_ -->
+            <!-- Action buttons row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:orientation="horizontal"
+                android:gravity="end">
+
+                <TextView
+                    android:id="@+id/btn_mapping_auto_fill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="12dp"
+                    android:text="Auto-fill"
+                    android:textColor="#4FC3F7"
+                    android:textSize="12sp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:background="?attr/selectableItemBackground" />
+
+                <TextView
+                    android:id="@+id/btn_mapping_clear_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Clear all"
+                    android:textColor="#FF6B6B"
+                    android:textSize="12sp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:background="?attr/selectableItemBackground" />
+
+            </LinearLayout>
+
+            <!-- Empty-state shown when no DBC is loaded -->
+            <TextView
+                android:id="@+id/tv_mapping_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                android:text="Load a DBC file to enable signal mapping."
+                android:textColor="#666666"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Rows injected programmatically -->
             <LinearLayout
                 android:id="@+id/ll_mapping_rows"
                 android:layout_width="match_parent"
@@ -335,6 +405,42 @@
 
     </LinearLayout>
     <!-- ── End Trip Attribute Mapping card ───────────────────────────────── -->
+
+    <!-- Selected signals section (chips) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Selected signals"
+            android:textColor="#4FC3F7"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="4dp" />
+
+        <LinearLayout
+            android:id="@+id/ll_selected_signals"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="4dp"
+            android:background="#1A1A2E" />
+
+        <TextView
+            android:id="@+id/tv_selected_empty"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:text="No signals selected"
+            android:textColor="#666666"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
     <EditText
         android:id="@+id/et_signal_filter"
