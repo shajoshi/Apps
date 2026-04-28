@@ -275,6 +275,9 @@ object CanDataOrchestrator {
             gpsAccuracyM       = gps?.accuracyM,
             gpsBearingDeg      = gps?.bearingDeg,
 
+            // All raw decoded CAN signal values (signal ref key → decoded value)
+            canSignalValues    = canSnapshot.mapValues { it.value.value },
+
             // Accelerometer-derived (null when accel disabled or no samples)
             accelVertRms       = accelMetrics?.vertRms,
             accelVertMax       = accelMetrics?.vertMax,

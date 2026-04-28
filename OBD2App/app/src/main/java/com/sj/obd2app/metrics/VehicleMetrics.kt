@@ -229,5 +229,9 @@ data class VehicleMetrics(
     val outlierDetected: Boolean = false,
 
     /** Comma-separated list of outlier parameter names */
-    val outlierNames: String? = null
+    val outlierNames: String? = null,
+
+    /** All decoded CAN signal values from the raw snapshot, keyed by SignalRef.key().
+     *  Populated only in CAN mode; empty in OBD mode. */
+    val canSignalValues: Map<String, Double> = emptyMap()
 )

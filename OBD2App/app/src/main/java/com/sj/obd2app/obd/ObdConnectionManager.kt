@@ -260,6 +260,11 @@ class ObdConnectionManager private constructor(private val context: Context) {
      */
     @SuppressLint("MissingPermission")
     fun tryConnectForTripStart(): Boolean {
+        // In mock mode, always allow trip to proceed (for testing)
+        if (com.sj.obd2app.obd.ObdStateManager.isMockMode) {
+            return true
+        }
+        
         val currentState = obdService.connectionState.value
         if (currentState == Obd2Service.ConnectionState.CONNECTED) return true
         if (currentState == Obd2Service.ConnectionState.CONNECTING) return true

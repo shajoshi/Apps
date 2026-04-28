@@ -406,7 +406,7 @@
     </LinearLayout>
     <!-- ── End Trip Attribute Mapping card ───────────────────────────────── -->
 
-    <!-- Selected signals section (chips) -->
+    <!-- Selected signals section (chips) — fixed height with scroll -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -422,13 +422,22 @@
             android:textStyle="bold"
             android:layout_marginBottom="4dp" />
 
-        <LinearLayout
-            android:id="@+id/ll_selected_signals"
+        <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="4dp"
-            android:background="#1A1A2E" />
+            android:layout_height="120dp"
+            android:background="#1A1A2E"
+            android:scrollbars="vertical"
+            android:scrollbarStyle="insideOverlay"
+            android:fadeScrollbars="false">
+
+            <LinearLayout
+                android:id="@+id/ll_selected_signals"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="4dp" />
+
+        </ScrollView>
 
         <TextView
             android:id="@+id/tv_selected_empty"

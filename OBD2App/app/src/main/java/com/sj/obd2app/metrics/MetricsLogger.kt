@@ -441,6 +441,13 @@ class MetricsLogger {
             put("pctIdle", pctIdle)
         })
 
+        // can sub-object — all decoded CAN signal values (CAN mode only)
+        if (canSignalValues.isNotEmpty()) {
+            put("can", JSONObject().apply {
+                canSignalValues.forEach { (k, v) -> put(k, v) }
+            })
+        }
+
         // data quality sub-object
         put("data", JSONObject().apply {
             put("outlierDetected", if (outlierDetected) "Y" else "N")
