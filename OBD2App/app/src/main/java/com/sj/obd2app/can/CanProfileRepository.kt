@@ -152,6 +152,11 @@ class CanProfileRepository private constructor(private val context: Context) {
         File(captureDir, "$profileId.jsonl").takeIf { it.exists() }?.delete()
     }
 
+    /** Clears the in-memory cache so the next [getAll] reloads from disk (call after import). */
+    fun invalidateCache() {
+        cached = null
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun sanitize(name: String): String =

@@ -378,6 +378,14 @@
                             android:textColor="#CCCCCC"
                             android:checked="true" />
 
+                        <CheckBox
+                            android:id="@+id/checkbox_export_can_profiles"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="CAN Profiles"
+                            android:textColor="#CCCCCC"
+                            android:checked="true" />
+
                         <Button
                             android:id="@+id/btn_export_data"
                             android:layout_width="wrap_content"

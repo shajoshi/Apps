@@ -12,6 +12,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.documentfile.provider.DocumentFile
+import com.sj.obd2app.can.CanProfile
+import com.sj.obd2app.can.CanProfileRepository
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfileRepository
 import com.sj.obd2app.settings.PidCache
@@ -43,6 +45,7 @@ object ExportImportManager {
     private const val METADATA_FILE = "export_metadata.json"
     private const val PROFILES_DIR = "profiles"
     private const val LAYOUTS_DIR = "layouts"
+    private const val CAN_PROFILES_DIR = "can_profiles"
     
     // Gson instance with DashboardMetricAdapter for proper deserialization
     private val gson = GsonBuilder()
@@ -58,7 +61,8 @@ object ExportImportManager {
         targetFolderUri: Uri,
         exportSettings: Boolean,
         exportProfiles: Boolean,
-        exportLayouts: Boolean
+        exportLayouts: Boolean,
+        exportCanProfiles: Boolean = false
     ): Boolean {
         return try {
             val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
@@ -93,6 +97,11 @@ object ExportImportManager {
                     // Export layouts
                     if (exportLayouts) {
                         exportLayoutsToZip(context, zipOut)
+                    }
+
+                    // Export CAN profiles
+                    if (exportCanProfiles) {
+                        exportCanProfilesToZip(context, zipOut)
                     }
                 }
             }
@@ -328,6 +337,45 @@ object ExportImportManager {
             Log.e(TAG, "Failed to export layouts", e)
         }
     }
+
+    private fun exportCanProfilesToZip(context: Context, zipOut: ZipOutputStream) {
+        try {
+            val repo = CanProfileRepository.getInstance(context)
+            val profiles = repo.getAll()
+            val dbcDir = File(context.filesDir, "can_dbc")
+            val captureDir = File(context.filesDir, "can_captures")
+
+            for (profile in profiles) {
+                // Profile JSON
+                val profileJson = profile.toJson().toString(2)
+                zipOut.putNextEntry(ZipEntry("$CAN_PROFILES_DIR/can_profile_${sanitizeFileName(profile.name)}.json"))
+                zipOut.write(profileJson.toByteArray(Charsets.UTF_8))
+                zipOut.closeEntry()
+
+                // DBC file (keyed by profile ID)
+                val dbcFile = File(dbcDir, "${profile.id}.dbc")
+                if (dbcFile.exists()) {
+                    zipOut.putNextEntry(ZipEntry("$CAN_PROFILES_DIR/${profile.id}.dbc"))
+                    zipOut.write(dbcFile.readBytes())
+                    zipOut.closeEntry()
+                }
+
+                // Capture JSONL (optional)
+                val captureFile = File(captureDir, "${profile.id}.jsonl")
+                if (captureFile.exists()) {
+                    zipOut.putNextEntry(ZipEntry("$CAN_PROFILES_DIR/${profile.id}.jsonl"))
+                    zipOut.write(captureFile.readBytes())
+                    zipOut.closeEntry()
+                }
+            }
+            Log.d(TAG, "CAN profiles exported to ZIP (${profiles.size} profiles)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export CAN profiles", e)
+        }
+    }
+
+    private fun sanitizeFileName(name: String): String =
+        name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "profile" }
     
     private fun importFromZip(context: Context, zipFile: DocumentFile, result: ImportResult) {
         context.contentResolver.openInputStream(zipFile.uri)?.use { inputStream ->
@@ -344,6 +392,17 @@ object ExportImportManager {
                         }
                         entry.name.startsWith("$LAYOUTS_DIR/") -> {
                             importLayoutFromZip(context, zipIn, entry.name, result)
+                        }
+                        entry.name.startsWith("$CAN_PROFILES_DIR/") && entry.name.endsWith(".json") -> {
+                            importCanProfileFromZip(context, zipIn, result)
+                        }
+                        entry.name.startsWith("$CAN_PROFILES_DIR/") && entry.name.endsWith(".dbc") -> {
+                            val profileId = entry.name.removePrefix("$CAN_PROFILES_DIR/").removeSuffix(".dbc")
+                            importCanDbcFromZip(context, zipIn, profileId)
+                        }
+                        entry.name.startsWith("$CAN_PROFILES_DIR/") && entry.name.endsWith(".jsonl") -> {
+                            val profileId = entry.name.removePrefix("$CAN_PROFILES_DIR/").removeSuffix(".jsonl")
+                            importCanCaptureFromZip(context, zipIn, profileId)
                         }
                     }
                     zipIn.closeEntry()
@@ -373,6 +432,31 @@ object ExportImportManager {
             layoutsDir.listFiles()?.forEach { layoutFile ->
                 if (layoutFile.name?.startsWith("dashboard_") == true && layoutFile.name?.endsWith(".json") == true) {
                     importLayoutFromFile(context, layoutFile, result)
+                }
+            }
+        }
+
+        // Import CAN profiles from can_profiles/ directory
+        sourceFolder.findFile("can_profiles")?.let { canProfilesDir ->
+            val dbcDir = File(context.filesDir, "can_dbc").apply { if (!exists()) mkdirs() }
+            val captureDir = File(context.filesDir, "can_captures").apply { if (!exists()) mkdirs() }
+            canProfilesDir.listFiles()?.forEach { file ->
+                when {
+                    file.name?.startsWith("can_profile_") == true && file.name?.endsWith(".json") == true -> {
+                        importCanProfileFromFile(context, file, result)
+                    }
+                    file.name?.endsWith(".dbc") == true -> {
+                        val profileId = file.name!!.removeSuffix(".dbc")
+                        context.contentResolver.openInputStream(file.uri)?.use { input ->
+                            File(dbcDir, "$profileId.dbc").outputStream().use { input.copyTo(it) }
+                        }
+                    }
+                    file.name?.endsWith(".jsonl") == true -> {
+                        val profileId = file.name!!.removeSuffix(".jsonl")
+                        context.contentResolver.openInputStream(file.uri)?.use { input ->
+                            File(captureDir, "$profileId.jsonl").outputStream().use { input.copyTo(it) }
+                        }
+                    }
                 }
             }
         }
@@ -427,6 +511,54 @@ object ExportImportManager {
         }
     }
     
+    private fun importCanProfileFromZip(context: Context, zipIn: java.util.zip.ZipInputStream, result: ImportResult) {
+        try {
+            val content = zipIn.readBytes().toString(Charsets.UTF_8)
+            val profile = CanProfile.fromJson(org.json.JSONObject(content))
+            CanProfileRepository.getInstance(context).save(profile)
+            result.canProfilesImported.add(profile.name)
+            Log.d(TAG, "CAN profile imported from ZIP: ${profile.name}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import CAN profile from ZIP", e)
+            result.addError("Failed to import CAN profile: ${e.message}")
+        }
+    }
+
+    private fun importCanDbcFromZip(context: Context, zipIn: java.util.zip.ZipInputStream, profileId: String) {
+        try {
+            val dbcDir = File(context.filesDir, "can_dbc").apply { if (!exists()) mkdirs() }
+            File(dbcDir, "$profileId.dbc").outputStream().use { zipIn.copyTo(it) }
+            Log.d(TAG, "CAN DBC imported from ZIP for profile $profileId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import CAN DBC for $profileId", e)
+        }
+    }
+
+    private fun importCanCaptureFromZip(context: Context, zipIn: java.util.zip.ZipInputStream, profileId: String) {
+        try {
+            val captureDir = File(context.filesDir, "can_captures").apply { if (!exists()) mkdirs() }
+            File(captureDir, "$profileId.jsonl").outputStream().use { zipIn.copyTo(it) }
+            Log.d(TAG, "CAN capture imported from ZIP for profile $profileId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import CAN capture for $profileId", e)
+        }
+    }
+
+    private fun importCanProfileFromFile(context: Context, profileFile: DocumentFile, result: ImportResult) {
+        try {
+            val content = context.contentResolver.openInputStream(profileFile.uri)?.use {
+                it.readBytes().toString(Charsets.UTF_8)
+            } ?: return
+            val profile = CanProfile.fromJson(org.json.JSONObject(content))
+            CanProfileRepository.getInstance(context).save(profile)
+            result.canProfilesImported.add(profile.name)
+            Log.d(TAG, "CAN profile imported from file: ${profile.name}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import CAN profile from file: ${profileFile.name}", e)
+            result.addError("Failed to import CAN profile ${profileFile.name}: ${e.message}")
+        }
+    }
+
     private fun importLayoutFromZip(context: Context, zipIn: java.util.zip.ZipInputStream, fileName: String, result: ImportResult) {
         try {
             val content = zipIn.readBytes().toString(Charsets.UTF_8)
@@ -527,9 +659,10 @@ object ExportImportManager {
         var settingsImported: Boolean = false,
         val profilesImported: MutableList<String> = mutableListOf(),
         val layoutsImported: MutableList<String> = mutableListOf(),
+        val canProfilesImported: MutableList<String> = mutableListOf(),
         val errors: MutableList<String> = mutableListOf()
     ) {
-        val totalItemsImported: Int get() = profilesImported.size + layoutsImported.size + if (settingsImported) 1 else 0
+        val totalItemsImported: Int get() = profilesImported.size + layoutsImported.size + canProfilesImported.size + if (settingsImported) 1 else 0
         
         fun addError(error: String) {
             errors.add(error)
@@ -542,8 +675,9 @@ object ExportImportManager {
         fun getSummary(): String {
             val summary = StringBuilder()
             if (settingsImported) summary.append("• Settings imported\n")
-            if (profilesImported.isNotEmpty()) summary.append("• ${profilesImported.size} profile(s) imported\n")
+            if (profilesImported.isNotEmpty()) summary.append("• ${profilesImported.size} vehicle profile(s) imported\n")
             if (layoutsImported.isNotEmpty()) summary.append("• ${layoutsImported.size} layout(s) imported\n")
+            if (canProfilesImported.isNotEmpty()) summary.append("• ${canProfilesImported.size} CAN profile(s) imported\n")
             if (errors.isNotEmpty()) {
                 summary.append("• ${errors.size} error(s)\n")
             }
@@ -558,6 +692,9 @@ object ExportImportManager {
             }
             layoutsImported.forEach { layout ->
                 summary.append("• Layout: $layout\n")
+            }
+            canProfilesImported.forEach { canProfile ->
+                summary.append("• CAN Profile: $canProfile\n")
             }
             if (errors.isNotEmpty()) {
                 summary.append("• Errors:\n")

@@ -65,13 +65,15 @@ class SettingsFragment : Fragment() {
             val exportSettings = binding.checkboxExportSettings.isChecked
             val exportProfiles = binding.checkboxExportProfiles.isChecked
             val exportLayouts = binding.checkboxExportLayouts.isChecked
+            val exportCanProfiles = binding.checkboxExportCanProfiles.isChecked
             
             ExportImportManager.exportData(
                 requireContext(),
                 uri,
                 exportSettings,
                 exportProfiles,
-                exportLayouts
+                exportLayouts,
+                exportCanProfiles
             )
         }
     }
@@ -87,7 +89,8 @@ class SettingsFragment : Fragment() {
             if (result.success) {
                 profileAdapter.refresh()
                 loadCurrentSettings()
-                AppSettings.invalidateCache() // Invalidate cache to refresh other components
+                AppSettings.invalidateCache()
+                com.sj.obd2app.can.CanProfileRepository.getInstance(requireContext()).invalidateCache()
             }
         }
     }
@@ -102,6 +105,7 @@ class SettingsFragment : Fragment() {
                 profileAdapter.refresh()
                 loadCurrentSettings()
                 AppSettings.invalidateCache()
+                com.sj.obd2app.can.CanProfileRepository.getInstance(requireContext()).invalidateCache()
             }
         }
     }
