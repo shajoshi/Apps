@@ -1,15 +1,13 @@
-classdef OBD_AnalyticsLab
-    % OBD_AnalyticsLab: The master orchestrator for OBD2 Deep Analytics.
-    % PATCH 25: The Ultimate All-in-One Dashboard.
-    % Features: Robust JSON fusion, NVH IMU analysis, Fuel Efficiency, 
-    % Turbo Health, Shift Dynamics, and native UI plotting.
+classdef OBD_AnalyticsLab_Update
+    % OBD_AnalyticsLab_Update: Master orchestrator for OBD2 Deep Analytics.
+    % PATCH 28: Eradicated fragile stack() functions. Built custom JSON unroller.
     
     methods (Static)
         
         function run()
-            % Allow multi-file selection
-            [files, path] = uigetfile({'*.json;*.jsonl;*.csv', 'Log Files'}, ...
-                                      'Select Log Files (Hold Ctrl to select multiple)', 'MultiSelect', 'on');
+            % Allow multiselection of ANY file type (bypasses extension hiding)
+            [files, path] = uigetfile({'*.*', 'All Log Files (*.*)'}, ...
+                                      'Select ALL Log Files (Hold Ctrl to multiselect)', 'MultiSelect', 'on');
             if isequal(files, 0), disp('Canceled.'); return; end
             if ischar(files), files = {files}; end 
             
@@ -18,49 +16,59 @@ classdef OBD_AnalyticsLab
             
             for f = 1:length(files)
                 filename = fullfile(path, files{f});
-                [~, name, ext] = fileparts(filename);
+                
+                % CONTENT SNIFFING: Read the first 150 chars to detect file type
+                fid = fopen(filename, 'r');
+                if fid == -1, warning('Cannot open %s', files{f}); continue; end
+                previewText = fread(fid, 150, '*char')';
+                fclose(fid);
                 
                 try
-                    if contains(lower(name), 'raw')
-                        fprintf('Skipping %s (Raw CAN superseded by decoded samples).\n', files{f});
+                    if contains(previewText, '"ext":') && contains(previewText, '"data":')
+                        fprintf('Skipping %s (Raw CAN Dump superseded by Decoded Data).\n', files{f});
                         continue;
-                    elseif contains(lower(name), 'samples') || contains(lower(ext), '.jsonl')
-                        fprintf('Extracting Synchronized CAN (JSONL): %s\n', files{f});
-                        T_long = OBD_AnalyticsLab.extractJSONL(filename);
-                    elseif strcmpi(ext, '.json')
-                        fprintf('Extracting GPS/IMU (JSON): %s\n', files{f});
-                        T_long = OBD_AnalyticsLab.extractJSON(filename);
+                    elseif contains(previewText, '"sig"') || contains(previewText, '{"t":')
+                        fprintf('Extracting Synchronized CAN File: %s\n', files{f});
+                        T_long = OBD_AnalyticsLab_Update.extractJSONL(filename);
+                    elseif contains(previewText, '"header"') || contains(previewText, '"samples"')
+                        fprintf('Extracting Main GPS/IMU File: %s\n', files{f});
+                        T_long = OBD_AnalyticsLab_Update.extractJSON(filename);
                     else
-                        warning('Unsupported file type for fusion: %s', files{f});
+                        warning('Unrecognized data format in file: %s', files{f});
                         continue;
                     end
-                    T_long_master = [T_long_master; T_long]; %#ok<AGROW>
+                    
+                    % Append to master table
+                    if ~isempty(T_long)
+                        T_long_master = [T_long_master; T_long]; %#ok<AGROW>
+                    end
                 catch ME
                     warning('Failed to extract %s: %s', files{f}, ME.message);
                 end
             end
             
-            if isempty(T_long_master), error('No valid data extracted.'); end
-            
-            % Remove duplicates and pivot
-            [~, uniqueIdx] = unique(strcat(num2str(T_long_master.Time_ms), T_long_master.Signal), 'stable');
-            T_long_master = T_long_master(uniqueIdx, :);
+            if isempty(T_long_master), error('No valid data extracted from files.'); end
             
             fprintf('Pivoting %d data points into Master Timeline...\n', height(T_long_master));
+            
+            % Unstack handles duplicates automatically via @mean
             TripData = unstack(T_long_master, 'Value', 'Signal', 'AggregationFunction', @mean);
             TripData = sortrows(TripData, 'Time_ms');
             
-            % Clean and linearize
+            % Clean and linearize Time
             TripData.Linearized_Time = (TripData.Time_ms - TripData.Time_ms(1)) / 1000;
             TripData = movevars(TripData, 'Linearized_Time', 'Before', 1);
-            TripData = fillmissing(TripData, 'previous');
             
-            % Fix broken Longitudinal Acceleration by deriving it from Vehicle Speed
-            spdVar = OBD_AnalyticsLab.findChannel(TripData, {'VehicleSpeed', 'gps_speedKmh'});
+            % Fill missing data so high-speed CAN signals match slower GPS signals
+            TripData = fillmissing(TripData, 'previous');
+            TripData = fillmissing(TripData, 'next');
+            
+            % Derive Longitudinal Acceleration if missing
+            spdVar = OBD_AnalyticsLab_Update.findChannel(TripData, {'VehicleSpeed', 'gps_speedKmh', 'speedKmh'});
             if ~isempty(spdVar)
                 spd_ms = TripData.(spdVar) / 3.6; % Convert kph to m/s
                 dt = [0.01; diff(TripData.Linearized_Time)];
-                dt(dt <= 0) = 0.01; % prevent divide by zero
+                dt(dt <= 0) = 0.01; % Prevent divide by zero
                 derived_accel = [0; diff(spd_ms)] ./ dt;
                 TripData.Derived_Long_Accel = smoothdata(derived_accel, 'movmean', 50); 
             end
@@ -68,79 +76,107 @@ classdef OBD_AnalyticsLab
             fprintf('=== Pipeline Complete. Building Dashboard... ===\n');
             assignin('base', 'TripData', TripData);
             
-            % Build the single UI Dashboard
-            OBD_AnalyticsLab.buildDashboard(TripData);
+            OBD_AnalyticsLab_Update.buildDashboard(TripData);
         end
         
-        %% --- EXTRACTION ENGINES ---
+        %% --- FAST EXTRACTION ENGINES ---
         function T_long = extractJSONL(filename)
             fid = fopen(filename, 'r'); raw = fread(fid, '*char')'; fclose(fid);
             lines = splitlines(strtrim(raw));
-            t_vals = []; sigs = {}; v_vals = [];
-            for i = 1:length(lines)
+            
+            N = length(lines);
+            t_vals = zeros(N, 1);
+            sigs = cell(N, 1);
+            v_vals = zeros(N, 1);
+            valid = false(N, 1);
+            
+            for i = 1:N
                 if isempty(lines{i}), continue; end
                 try
                     val = jsondecode(lines{i});
-                    t_vals(end+1, 1) = val.t; %#ok<*AGROW>
-                    sigs{end+1, 1} = val.sig;
-                    v_vals(end+1, 1) = val.v;
+                    t_vals(i) = val.t; 
+                    sigs{i} = val.sig;
+                    v_vals(i) = val.v;
+                    valid(i) = true;
                 catch
                 end
             end
-            T_long = table(t_vals, sigs, v_vals, 'VariableNames', {'Time_ms', 'Signal', 'Value'});
+            
+            T_long = table(t_vals(valid), sigs(valid), v_vals(valid), ...
+                'VariableNames', {'Time_ms', 'Signal', 'Value'});
         end
 
         function T_long = extractJSON(filename)
+            % Bulletproof custom JSON unroller. Bypasses MATLAB's fragile table functions.
             rawText = fileread(filename);
-            % Sanitize JSON dropped packets
             rawText = regexprep(rawText, ',\s*,', ',');
             rawText = regexprep(rawText, ',\s*\]', ']');
             
             try jsonData = jsondecode(rawText); 
-            catch ME, error('JSON Sanitization failed. %s', ME.message); end
+            catch ME, error('JSON Sanitization failed: %s', ME.message); end
             
             if isfield(jsonData, 'samples'), samples = jsonData.samples;
             else, samples = jsonData; end
             
-            % Bulletproof Heterogeneous Struct Flattener
-            T = table();
-            if iscell(samples)
-                for i = 1:length(samples)
-                    try
-                        rowT = struct2table(samples{i}, 'AsArray', true);
-                        if isempty(T), T = rowT;
-                        else
-                            missingInT = setdiff(rowT.Properties.VariableNames, T.Properties.VariableNames);
-                            missingInRow = setdiff(T.Properties.VariableNames, rowT.Properties.VariableNames);
-                            for m = 1:length(missingInT), T.(missingInT{m}) = NaN(height(T), 1); end
-                            for m = 1:length(missingInRow), rowT.(missingInRow{m}) = NaN(height(rowT), 1); end
-                            T = [T; rowT]; %#ok<AGROW>
-                        end
-                    catch, end
+            N = length(samples);
+            maxPts = N * 60; % Generous preallocation memory
+            time_ms = zeros(maxPts, 1);
+            sigs = cell(maxPts, 1);
+            vals = zeros(maxPts, 1);
+            
+            ptr = 1;
+            for i = 1:N
+                if iscell(samples), s = samples{i}; else, s = samples(i); end
+                if isempty(s), continue; end
+                
+                % Standardize Timestamp
+                if isfield(s, 'timestampMs'), t = double(s.timestampMs);
+                elseif isfield(s, 'time_ms'), t = double(s.time_ms);
+                else, continue; end
+                
+                % Recursively flatten the GPS/IMU data, isolating only numbers
+                [f_names, f_vals] = OBD_AnalyticsLab_Update.flattenRecord(s, '');
+                
+                numF = length(f_names);
+                
+                % Dynamic expansion if data exceeds preallocation
+                if ptr + numF > maxPts
+                     time_ms = [time_ms; zeros(maxPts, 1)]; %#ok<AGROW>
+                     sigs = [sigs; cell(maxPts, 1)]; %#ok<AGROW>
+                     vals = [vals; zeros(maxPts, 1)]; %#ok<AGROW>
+                     maxPts = maxPts * 2;
                 end
-            else
-                T = struct2table(samples(:), 'AsArray', true);
+                
+                for j = 1:numF
+                    time_ms(ptr) = t;
+                    sigs{ptr} = f_names{j};
+                    vals(ptr) = f_vals(j);
+                    ptr = ptr + 1;
+                end
             end
             
-            % Flatten nested IMU/GPS structs
-            vars = T.Properties.VariableNames;
-            for i = 1:length(vars)
-                if isstruct(T.(vars{i}))
-                    flatCols = struct2table(T.(vars{i})(:), 'AsArray', true);
-                    flatCols.Properties.VariableNames = strcat(vars{i}, '_', flatCols.Properties.VariableNames);
-                    T = [T, flatCols]; %#ok<AGROW>
-                    T.(vars{i}) = [];
+            T_long = table(time_ms(1:ptr-1), sigs(1:ptr-1), vals(1:ptr-1), ...
+                'VariableNames', {'Time_ms', 'Signal', 'Value'});
+        end
+
+        function [fields, vals] = flattenRecord(s, prefix)
+            % Recursively navigates nested JSON structs to extract only numeric values
+            fields = {}; vals = [];
+            if isstruct(s)
+                fn = fieldnames(s);
+                for i = 1:length(fn)
+                    f = fn{i}; v = s.(f);
+                    if isstruct(v)
+                        [subF, subV] = OBD_AnalyticsLab_Update.flattenRecord(v, [prefix f '_']);
+                        fields = [fields; subF]; %#ok<AGROW>
+                        vals = [vals; subV]; %#ok<AGROW>
+                    elseif isnumeric(v) && isscalar(v)
+                        % Ignores text fields completely preventing crash during stack
+                        fields{end+1, 1} = [prefix f]; %#ok<AGROW>
+                        vals(end+1, 1) = double(v); %#ok<AGROW>
+                    end
                 end
             end
-            
-            timeCol = OBD_AnalyticsLab.findChannel(T, {'time_ms', 'timestampms'});
-            if isempty(timeCol), error('No time column found in JSON.'); end
-            T = renamevars(T, timeCol, 'Time_ms');
-            
-            sigCols = setdiff(T.Properties.VariableNames, 'Time_ms');
-            T_long = stack(T, sigCols, 'IndexVariableName', 'Signal', 'DataVariableName', 'Value');
-            T_long = T_long(~isnan(T_long.Value), :); 
-            T_long.Signal = cellstr(T_long.Signal);
         end
         
         %% --- MASTER DASHBOARD ---
@@ -150,34 +186,34 @@ classdef OBD_AnalyticsLab
             
             % Tab 1: Shift Diagnostics
             tab1 = uitab(tg, 'Title', 'ZF 8HP Shift Diagnostics');
-            OBD_AnalyticsLab.analyzeShiftQuality(T, tab1);
+            OBD_AnalyticsLab_Update.analyzeShiftQuality(T, tab1);
             
             % Tab 2: Powertrain & Fuel
             tab2 = uitab(tg, 'Title', 'Powertrain & Fuel Efficiency');
-            OBD_AnalyticsLab.analyzePowertrain(T, tab2);
+            OBD_AnalyticsLab_Update.analyzePowertrain(T, tab2);
             
             % Tab 3: NVH Ride Quality
             tab3 = uitab(tg, 'Title', 'NVH & Ride Quality (IMU)');
-            OBD_AnalyticsLab.analyzeNVH(T, tab3);
+            OBD_AnalyticsLab_Update.analyzeNVH(T, tab3);
 
             % Tab 4: Vehicle Dynamics
             tab4 = uitab(tg, 'Title', 'Vehicle Dynamics (G-Circle)');
-            OBD_AnalyticsLab.analyzeVehicleDynamics(T, tab4);
+            OBD_AnalyticsLab_Update.analyzeVehicleDynamics(T, tab4);
             
             % Tab 5: Standard Telemetry
             tab5 = uitab(tg, 'Title', 'Standard Telemetry');
-            OBD_AnalyticsLab.plotStandardTelemetry(T, tab5);
+            OBD_AnalyticsLab_Update.plotStandardTelemetry(T, tab5);
         end
         
         %% --- SHIFT DIAGNOSTICS ---
         function analyzeShiftQuality(T, parentTab)
-            rpmVar = OBD_AnalyticsLab.findChannel(T, {'EngineSpeed', 'obd_rpm'});
-            actVar = OBD_AnalyticsLab.findChannel(T, {'GearPosActual'});
-            tgtVar = OBD_AnalyticsLab.findChannel(T, {'GearPosTarget'});
-            tempVar = OBD_AnalyticsLab.findChannel(T, {'TransOilTemp', 'EngineOilTemp'});
+            rpmVar = OBD_AnalyticsLab_Update.findChannel(T, {'EngineSpeed', 'obd_rpm'});
+            actVar = OBD_AnalyticsLab_Update.findChannel(T, {'GearPosActual'});
+            tgtVar = OBD_AnalyticsLab_Update.findChannel(T, {'GearPosTarget'});
+            tempVar = OBD_AnalyticsLab_Update.findChannel(T, {'TransOilTemp', 'EngineOilTemp'});
             
             if isempty(rpmVar) || isempty(actVar)
-                uilabel(parentTab, 'Text', 'Missing RPM or Gear Data.', 'Position', [500 400 300 50], 'FontSize', 14);
+                uilabel(parentTab, 'Text', 'Missing RPM or Gear Data. Ensure Decoded CAN file was loaded.', 'Position', [450 400 400 50], 'FontSize', 14);
                 return;
             end
             
@@ -196,7 +232,7 @@ classdef OBD_AnalyticsLab
                 t_start = time(idx_start); t_end = time(idx_end);
                 start_gear = actGear(idx_start); end_gear = actGear(idx_end);
                 
-                if (end_gear - start_gear) > 2, continue; end
+                if (end_gear - start_gear) > 2, continue; end % Skip extreme jumps
                 
                 delay_ms = NaN;
                 if ~isempty(tgtVar)
@@ -215,7 +251,9 @@ classdef OBD_AnalyticsLab
                 shiftScores(end+1) = struct('Shift', sprintf('%d->%d', start_gear, end_gear), 'Temp', temp, 'FlareRpm', flare, 'ShiftDelayMs', delay_ms);
             end
             
-            if isempty(shiftScores), return; end
+            if isempty(shiftScores)
+                 uilabel(parentTab, 'Text', 'No shifts occurred in this dataset.', 'Position', [500 400 300 50]); return;
+            end
             
             temps = [shiftScores.Temp]; flares = [shiftScores.FlareRpm]; delays = [shiftScores.ShiftDelayMs]; 
             shifts = categorical({shiftScores.Shift});
@@ -243,11 +281,11 @@ classdef OBD_AnalyticsLab
 
         %% --- POWERTRAIN, TURBO & FUEL ---
         function analyzePowertrain(T, parentTab)
-            rpmVar = OBD_AnalyticsLab.findChannel(T, {'EngineSpeed', 'obd_rpm'});
-            trqVar = OBD_AnalyticsLab.findChannel(T, {'EngineTorqFlywheelAct', 'Torque'});
-            actBoostVar = OBD_AnalyticsLab.findChannel(T, {'ManifoldPressure', 'MAP_Act'});
-            fuelVar = OBD_AnalyticsLab.findChannel(T, {'FuelConsumption_HS'});
-            spdVar = OBD_AnalyticsLab.findChannel(T, {'VehicleSpeed', 'gps_speedKmh'});
+            rpmVar = OBD_AnalyticsLab_Update.findChannel(T, {'EngineSpeed', 'obd_rpm'});
+            trqVar = OBD_AnalyticsLab_Update.findChannel(T, {'EngineTorqFlywheelAct', 'Torque'});
+            actBoostVar = OBD_AnalyticsLab_Update.findChannel(T, {'ManifoldPressure', 'MAP_Act'});
+            fuelVar = OBD_AnalyticsLab_Update.findChannel(T, {'FuelConsumption_HS'});
+            spdVar = OBD_AnalyticsLab_Update.findChannel(T, {'VehicleSpeed', 'gps_speedKmh'});
             
             tl = tiledlayout(parentTab, 3, 1, 'TileSpacing', 'compact'); time = T.Linearized_Time;
             
@@ -281,9 +319,9 @@ classdef OBD_AnalyticsLab
 
         %% --- NVH & RIDE QUALITY ---
         function analyzeNVH(T, parentTab)
-            rmsVar = OBD_AnalyticsLab.findChannel(T, {'accel_vertRms', 'vertRms'});
-            maxVar = OBD_AnalyticsLab.findChannel(T, {'accel_vertMax', 'vertMax'});
-            spdVar = OBD_AnalyticsLab.findChannel(T, {'VehicleSpeed', 'gps_speedKmh'});
+            rmsVar = OBD_AnalyticsLab_Update.findChannel(T, {'accel_vertRms', 'vertRms'});
+            maxVar = OBD_AnalyticsLab_Update.findChannel(T, {'accel_vertMax', 'vertMax'});
+            spdVar = OBD_AnalyticsLab_Update.findChannel(T, {'VehicleSpeed', 'gps_speedKmh'});
             
             if isempty(rmsVar) || isempty(spdVar)
                 uilabel(parentTab, 'Text', 'Missing Phone IMU (Accelerometer) or Speed Data.', 'Position', [500 400 400 50], 'FontSize', 14);
@@ -304,8 +342,8 @@ classdef OBD_AnalyticsLab
 
         %% --- VEHICLE DYNAMICS ---
         function analyzeVehicleDynamics(T, parentTab)
-            latVar = OBD_AnalyticsLab.findChannel(T, {'accel_latMax', 'LateralAcceleration'});
-            spdVar = OBD_AnalyticsLab.findChannel(T, {'VehicleSpeed', 'gps_speedKmh'});
+            latVar = OBD_AnalyticsLab_Update.findChannel(T, {'accel_latMax', 'LateralAcceleration'});
+            spdVar = OBD_AnalyticsLab_Update.findChannel(T, {'VehicleSpeed', 'gps_speedKmh'});
             
             if isempty(latVar) || ~ismember('Derived_Long_Accel', T.Properties.VariableNames)
                 uilabel(parentTab, 'Text', 'Missing Acceleration Data.', 'Position', [500 400 300 50], 'FontSize', 14); return;
@@ -360,16 +398,6 @@ classdef OBD_AnalyticsLab
                 if isempty(idx), idx = find(contains(lower(vars), lower(keywords{i})), 1); end
                 if ~isempty(idx), colName = vars{idx}; return; end
             end
-        end
-        function [t_vec, dt, timeColName] = getTimeData(T)
-            vars = T.Properties.VariableNames; lowerVars = lower(vars); timeColName = '';
-            priority = {'time_ms', 'timestampms'};
-            for i = 1:length(priority)
-                idx = find(strcmp(lowerVars, priority{i}), 1);
-                if ~isempty(idx), timeColName = vars{idx}; break; end
-            end
-            if ~isempty(timeColName), t_vec = T.(timeColName); else, t_vec = (0:height(T)-1)'; end
-            dt = 0.01;
         end
     end
 end
