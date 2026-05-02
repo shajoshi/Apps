@@ -28,5 +28,10 @@ data class DashboardWidget(
     // Number of decimal places to show in numeric displays
     var decimalPlaces: Int = 1,
     // Display unit label — inferred from the metric at config time, user-editable per widget
-    var displayUnit: String = ""
+    var displayUnit: String = "",
+    // Corner metric overlays for LIVE_MAP widget type (ignored by other types)
+    var cornerMetricTL: DashboardMetric? = null,
+    var cornerMetricTR: DashboardMetric? = null,
+    var cornerMetricBL: DashboardMetric? = null,
+    var cornerMetricBR: DashboardMetric? = null
 )

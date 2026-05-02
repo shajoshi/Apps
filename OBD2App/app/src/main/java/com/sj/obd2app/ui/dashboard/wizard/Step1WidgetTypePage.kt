@@ -31,7 +31,8 @@ class Step1WidgetTypePage : Fragment() {
         WidgetType.BAR_GAUGE_H,
         WidgetType.BAR_GAUGE_V,
         WidgetType.NUMERIC_DISPLAY,
-        WidgetType.TEMPERATURE_ARC
+        WidgetType.TEMPERATURE_ARC,
+        WidgetType.LIVE_MAP
     )
 
     private val typeLabels = mapOf(
@@ -40,7 +41,8 @@ class Step1WidgetTypePage : Fragment() {
         WidgetType.BAR_GAUGE_H     to "Bar (Horizontal)",
         WidgetType.BAR_GAUGE_V     to "Bar (Vertical)",
         WidgetType.NUMERIC_DISPLAY to "Numeric Readout",
-        WidgetType.TEMPERATURE_ARC to "Temperature Arc"
+        WidgetType.TEMPERATURE_ARC to "Temperature Arc",
+        WidgetType.LIVE_MAP       to "Live Map"
     )
 
     override fun onCreateView(
@@ -117,12 +119,22 @@ class Step1WidgetTypePage : Fragment() {
                 itemView.setOnClickListener { onSelect(type) }
             }
 
-            private fun createPreviewView(type: WidgetType): DashboardGaugeView {
+            private fun createPreviewView(type: WidgetType): View {
                 val ctx = requireContext()
                 val scheme = ColorScheme.DEFAULT_DARK
                 val defaults = MetricDefaults.get("010C") // RPM as demo defaults
 
-                val view: DashboardGaugeView = when (type) {
+                val view: View = when (type) {
+                    WidgetType.LIVE_MAP -> {
+                        // Create a simple placeholder view for LiveMap preview
+                        TextView(ctx).apply {
+                            text = "Live Map\n(GPS + Corners)"
+                            gravity = android.view.Gravity.CENTER
+                            setTextColor(scheme.text)
+                            textSize = 16f
+                            setPadding(16, 16, 16, 16)
+                        }
+                    }
                     WidgetType.DIAL            -> DialView(ctx)
                     WidgetType.SEVEN_SEGMENT   -> SevenSegmentView(ctx)
                     WidgetType.BAR_GAUGE_H     -> BarGaugeView(ctx).also { it.isVertical = false }
@@ -131,17 +143,19 @@ class Step1WidgetTypePage : Fragment() {
                     WidgetType.TEMPERATURE_ARC -> TemperatureGaugeView(ctx)
                 }
 
-                view.colorScheme       = scheme
-                view.metricName        = "DEMO"
-                view.metricUnit        = defaults.displayUnit
-                view.rangeMin          = defaults.rangeMin
-                view.rangeMax          = defaults.rangeMax
-                view.majorTickInterval = defaults.majorTickInterval
-                view.minorTickCount    = defaults.minorTickCount
-                view.warningThreshold  = defaults.warningThreshold
-                view.decimalPlaces     = defaults.decimalPlaces
-                // Set a mid-range demo value immediately (no animation needed for preview)
-                view.setValueImmediate(defaults.rangeMin + (defaults.rangeMax - defaults.rangeMin) * 0.45f)
+                if (view is DashboardGaugeView) {
+                    view.colorScheme       = scheme
+                    view.metricName        = "DEMO"
+                    view.metricUnit        = defaults.displayUnit
+                    view.rangeMin          = defaults.rangeMin
+                    view.rangeMax          = defaults.rangeMax
+                    view.majorTickInterval = defaults.majorTickInterval
+                    view.minorTickCount    = defaults.minorTickCount
+                    view.warningThreshold  = defaults.warningThreshold
+                    view.decimalPlaces     = defaults.decimalPlaces
+                    // Set a mid-range demo value immediately (no animation needed for preview)
+                    view.setValueImmediate(defaults.rangeMin + (defaults.rangeMax - defaults.rangeMin) * 0.45f)
+                }
                 return view
             }
         }

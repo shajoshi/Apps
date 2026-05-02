@@ -65,7 +65,14 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     private lateinit var rowTicks: LinearLayout
     private lateinit var rowWarningDecimals: LinearLayout
     private lateinit var tvCurrentMetric: TextView
+    private lateinit var rowCornerMetrics: LinearLayout
+    private lateinit var tvCornerTL: TextView
+    private lateinit var tvCornerTR: TextView
+    private lateinit var tvCornerBL: TextView
+    private lateinit var tvCornerBR: TextView
     private var metricSelectionDialog: androidx.appcompat.app.AlertDialog? = null
+    private var cornerSelectionDialog: androidx.appcompat.app.AlertDialog? = null
+    private var selectedCorner: String? = null
     
     private var unitOptions: Array<String> = emptyArray()
     
@@ -82,6 +89,12 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     private var displayUnit = ""
     private var gridW = 4
     private var gridH = 4
+
+    // Corner metrics for LIVE_MAP
+    private var cornerMetricTL: DashboardMetric? = null
+    private var cornerMetricTR: DashboardMetric? = null
+    private var cornerMetricBL: DashboardMetric? = null
+    private var cornerMetricBR: DashboardMetric? = null
 
     private var selectedPreset: SizePreset = SizePreset.MEDIUM
     private val presetButtonIds = listOf(
@@ -126,6 +139,11 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         rowTicks          = view.findViewById(R.id.row_ticks)
         rowWarningDecimals = view.findViewById(R.id.row_warning_decimals)
         tvCurrentMetric   = view.findViewById(R.id.tv_current_metric)
+        rowCornerMetrics  = view.findViewById(R.id.row_corner_metrics)
+        tvCornerTL        = view.findViewById(R.id.tv_corner_tl)
+        tvCornerTR        = view.findViewById(R.id.tv_corner_tr)
+        tvCornerBL        = view.findViewById(R.id.tv_corner_bl)
+        tvCornerBR        = view.findViewById(R.id.tv_corner_br)
 
         // Initialise working copy from widget
         currentMetric     = widget.metric
@@ -138,10 +156,21 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         displayUnit       = widget.displayUnit
         gridW             = widget.gridW
         gridH             = widget.gridH
+        cornerMetricTL    = widget.cornerMetricTL
+        cornerMetricTR    = widget.cornerMetricTR
+        cornerMetricBL    = widget.cornerMetricBL
+        cornerMetricBR    = widget.cornerMetricBR
         
         // Setup metric selection
         updateMetricDisplay()
         tvCurrentMetric.setOnClickListener { showMetricSelectionDialog() }
+
+        // Setup corner metric selection
+        updateCornerMetricDisplay()
+        tvCornerTL.setOnClickListener { showCornerMetricSelectionDialog("TL") }
+        tvCornerTR.setOnClickListener { showCornerMetricSelectionDialog("TR") }
+        tvCornerBL.setOnClickListener { showCornerMetricSelectionDialog("BL") }
+        tvCornerBR.setOnClickListener { showCornerMetricSelectionDialog("BR") }
 
         // Setup unit spinner
         unitOptions = resources.getStringArray(R.array.display_unit_options)
@@ -229,7 +258,11 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                 decimalPlaces     = decimalPlaces,
                 displayUnit       = displayUnit,
                 gridW             = gridW,
-                gridH             = gridH
+                gridH             = gridH,
+                cornerMetricTL    = cornerMetricTL,
+                cornerMetricTR    = cornerMetricTR,
+                cornerMetricBL    = cornerMetricBL,
+                cornerMetricBR    = cornerMetricBR
             )
             dismiss()
         }
@@ -241,19 +274,28 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
             WidgetType.SEVEN_SEGMENT -> {
                 rowTicks.visibility           = View.GONE
                 rowWarningDecimals.visibility = View.GONE  // Seven segment doesn't support warning colors
+                rowCornerMetrics.visibility  = View.GONE
             }
             WidgetType.NUMERIC_DISPLAY -> {
                 rowTicks.visibility           = View.GONE
                 rowWarningDecimals.visibility = View.VISIBLE  // Can change font color when threshold exceeded
+                rowCornerMetrics.visibility  = View.GONE
             }
             WidgetType.BAR_GAUGE_H,
             WidgetType.BAR_GAUGE_V -> {
                 rowTicks.visibility           = View.GONE  // Bar gauges don't need tick marks
                 rowWarningDecimals.visibility = View.VISIBLE  // Can change bar color when threshold exceeded
+                rowCornerMetrics.visibility  = View.GONE
+            }
+            WidgetType.LIVE_MAP -> {
+                rowTicks.visibility           = View.GONE
+                rowWarningDecimals.visibility = View.GONE  // No gauge fields for LiveMap
+                rowCornerMetrics.visibility  = View.VISIBLE  // Show corner metrics for LiveMap
             }
             else -> {
                 rowTicks.visibility           = View.VISIBLE
                 rowWarningDecimals.visibility = View.VISIBLE
+                rowCornerMetrics.visibility  = View.GONE
             }
         }
     }
@@ -276,6 +318,22 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                 is DashboardMetric.CanSignal -> "${metric.name} · 0x${Integer.toHexString(metric.messageId).uppercase()}"
             }
         }
+    }
+
+    private fun updateCornerMetricDisplay() {
+        tvCornerTL.text = formatMetricName(cornerMetricTL) ?: "None"
+        tvCornerTR.text = formatMetricName(cornerMetricTR) ?: "None"
+        tvCornerBL.text = formatMetricName(cornerMetricBL) ?: "None"
+        tvCornerBR.text = formatMetricName(cornerMetricBR) ?: "None"
+    }
+
+    private fun formatMetricName(metric: DashboardMetric?): String? = when (metric) {
+        is DashboardMetric.Obd2Pid -> metric.name
+        is DashboardMetric.GpsSpeed -> "GPS Speed"
+        is DashboardMetric.GpsAltitude -> "GPS Altitude"
+        is DashboardMetric.DerivedMetric -> metric.name
+        is DashboardMetric.CanSignal -> metric.name
+        null -> null
     }
     
     private fun showMetricSelectionDialog() {
@@ -339,6 +397,53 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
             .create()
         
         metricSelectionDialog?.show()
+    }
+
+    private fun showCornerMetricSelectionDialog(corner: String) {
+        val ctx = requireContext()
+        val metrics = buildMetricItems()
+        selectedCorner = corner
+
+        // Create dialog with RecyclerView
+        val dialogView = LayoutInflater.from(ctx).inflate(R.layout.dialog_metric_selection, null)
+        val recyclerView = dialogView.findViewById<RecyclerView>(R.id.rv_metrics)
+        recyclerView.layoutManager = LinearLayoutManager(ctx)
+
+        val currentCornerMetric = when (corner) {
+            "TL" -> cornerMetricTL
+            "TR" -> cornerMetricTR
+            "BL" -> cornerMetricBL
+            "BR" -> cornerMetricBR
+            else -> null
+        }
+
+        val adapter = MetricListAdapter(
+            items = metrics,
+            livePids = emptySet(),
+            profileKnownPids = emptySet(),
+            profileLastValues = emptyMap(),
+            hasProfileData = false,
+            selected = currentCornerMetric,
+            onSelect = { metric ->
+                when (corner) {
+                    "TL" -> cornerMetricTL = metric
+                    "TR" -> cornerMetricTR = metric
+                    "BL" -> cornerMetricBL = metric
+                    "BR" -> cornerMetricBR = metric
+                }
+                updateCornerMetricDisplay()
+                cornerSelectionDialog?.dismiss()
+            }
+        )
+        recyclerView.adapter = adapter
+
+        cornerSelectionDialog = androidx.appcompat.app.AlertDialog.Builder(ctx)
+            .setTitle("Select Corner Metric")
+            .setView(dialogView)
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        cornerSelectionDialog?.show()
     }
     
     private fun buildMetricItems(): List<MetricListItem> {

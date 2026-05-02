@@ -20,7 +20,6 @@ import com.sj.obd2app.MainActivity
 import com.sj.obd2app.MainPagerAdapter
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentMapViewBinding
-import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
@@ -49,7 +48,6 @@ class MapViewFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        Configuration.getInstance().userAgentValue = requireContext().packageName
         setupMap()
         binding.topBarInclude.txtTopBarTitle.text = "Map View"
         binding.topBarInclude.btnTopBack.visibility = View.VISIBLE
@@ -155,6 +153,11 @@ class MapViewFragment : Fragment() {
 
     private fun renderRoute() {
         if (_binding == null) return
+        val mapView = binding.mapView
+        if (mapView.repository == null) {
+            mapView.post { renderRoute() }
+            return
+        }
         
         routePolyline = Polyline().apply {
             setPoints(pathPoints)
@@ -184,8 +187,13 @@ class MapViewFragment : Fragment() {
 
     private fun setupCursor() {
         if (_binding == null) return
+        val mapView = binding.mapView
+        if (mapView.repository == null) {
+            mapView.post { setupCursor() }
+            return
+        }
         
-        cursorMarker = Marker(binding.mapView).apply {
+        cursorMarker = Marker(mapView).apply {
             position = pathPoints.first()
             title = "Cursor"
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)

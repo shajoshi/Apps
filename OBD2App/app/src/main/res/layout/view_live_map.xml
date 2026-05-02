@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipChildren="false">
+
+    <org.osmdroid.views.MapView
+        android:id="@+id/live_map_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Corner metric overlays - circular badges with labels below -->
+    <!-- Top-Left -->
+    <LinearLayout
+        android:id="@+id/corner_tl_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="8dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="65dp"
+                android:layout_height="65dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_corner_circle" />
+
+                <TextView
+                    android:id="@+id/value_tl"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="#2196F3"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:text="" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/unit_tl"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="#2196F3"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:text="" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/label_tl"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#2196F3"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- Top-Right -->
+    <LinearLayout
+        android:id="@+id/corner_tr_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="65dp"
+                android:layout_height="65dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_corner_circle" />
+
+                <TextView
+                    android:id="@+id/value_tr"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="#2196F3"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:text="" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/unit_tr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="#2196F3"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:text="" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/label_tr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#2196F3"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- Bottom-Left -->
+    <LinearLayout
+        android:id="@+id/corner_bl_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="8dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="65dp"
+                android:layout_height="65dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_corner_circle" />
+
+                <TextView
+                    android:id="@+id/value_bl"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="#2196F3"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:text="" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/unit_bl"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="#2196F3"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:text="" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/label_bl"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#2196F3"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- Bottom-Right -->
+    <LinearLayout
+        android:id="@+id/corner_br_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="8dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="65dp"
+                android:layout_height="65dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_corner_circle" />
+
+                <TextView
+                    android:id="@+id/value_br"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="#2196F3"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:text="" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/unit_br"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="#2196F3"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:text="" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/label_br"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#2196F3"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+
+</FrameLayout>

@@ -9,5 +9,6 @@ enum class WidgetType {
     BAR_GAUGE_H,       // Horizontal bar gauge
     BAR_GAUGE_V,       // Vertical bar gauge
     NUMERIC_DISPLAY,   // Large numeric readout
-    TEMPERATURE_ARC;   // 180° arc sweep for temperature metrics
+    TEMPERATURE_ARC,   // 180° arc sweep for temperature metrics
+    LIVE_MAP;          // Real-time OSM map with vehicle position and corner metric overlays
 }

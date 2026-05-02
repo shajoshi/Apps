@@ -598,15 +598,17 @@ class DashboardEditorFragment : Fragment() {
             val wrapper = layoutInflater.inflate(R.layout.layout_widget_wrapper, canvasContainer, false)
             val contentFrame = wrapper.findViewById<FrameLayout>(R.id.widget_content_frame)
 
-            val gaugeView = createViewForWidgetType(widget.type)
-            applyWidgetSettings(gaugeView, widget, layout.colorScheme)
-            
-            // Reset min/max values for dial and bar gauges when dashboard is displayed
-            if (gaugeView is DialView || gaugeView is BarGaugeView) {
-                gaugeView.resetTripMinMax()
+            val widgetView = createViewForWidgetType(widget.type)
+            if (widgetView is DashboardGaugeView) {
+                applyWidgetSettings(widgetView, widget, layout.colorScheme)
+                if (widgetView is DialView || widgetView is BarGaugeView) {
+                    widgetView.resetTripMinMax()
+                }
+            } else if (widgetView is LiveMapView) {
+                widgetView.isEditMode = isEditMode
             }
 
-            contentFrame.addView(gaugeView, FrameLayout.LayoutParams(
+            contentFrame.addView(widgetView, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             ))
@@ -670,7 +672,11 @@ class DashboardEditorFragment : Fragment() {
             canvasContainer.addView(wrapper)
 
             // Wire live data
-            liveDataJobs[widget.id] = startLiveDataJob(widget, gaugeView)
+            if (widgetView is LiveMapView) {
+                liveDataJobs[widget.id] = startLiveMapDataJob(widget.id, widgetView)
+            } else if (widgetView is DashboardGaugeView) {
+                liveDataJobs[widget.id] = startLiveDataJob(widget, widgetView)
+            }
         }
 
         // Tap on blank canvas → deselect + exit move/resize mode.
@@ -698,11 +704,16 @@ class DashboardEditorFragment : Fragment() {
         }
         wrapper.let {
             val contentFrame = it.findViewById<FrameLayout>(R.id.widget_content_frame)
-            val gaugeView = contentFrame.getChildAt(0) as DashboardGaugeView
-            
-            // Apply updated settings to the existing gauge view
-            applyWidgetSettings(gaugeView, widget, viewModel.currentLayout.value.colorScheme)
-            
+            val childView = contentFrame.getChildAt(0)
+
+            // Apply updated settings to the existing view (gauge or live map)
+            if (childView is DashboardGaugeView) {
+                applyWidgetSettings(childView, widget, viewModel.currentLayout.value.colorScheme)
+            } else if (childView is LiveMapView) {
+                // Update corner metrics for LiveMapView
+                updateLiveMapCornerMetrics(childView, widget)
+            }
+
             // Update size and position if they changed
             val lp = it.layoutParams as FrameLayout.LayoutParams
             lp.width = widget.gridW * gridSizePx
@@ -800,6 +811,40 @@ class DashboardEditorFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun updateLiveMapCornerMetrics(view: LiveMapView, widget: DashboardWidget) {
+        // Immediately update corner labels with the current widget configuration
+        // This ensures the labels are visible even if data flow is not emitting
+        fun updateCorner(metric: DashboardMetric?, corner: LiveMapView.Corner) {
+            if (metric == null) {
+                view.updateCornerValue(corner, "", "", "")
+                return
+            }
+            view.updateCornerValue(
+                corner = corner,
+                label = when (metric) {
+                    is DashboardMetric.Obd2Pid -> metric.name
+                    DashboardMetric.GpsSpeed -> "Speed"
+                    DashboardMetric.GpsAltitude -> "Alt"
+                    is DashboardMetric.DerivedMetric -> metric.name
+                    is DashboardMetric.CanSignal -> metric.name
+                },
+                value = "",  // Don't show value on edit, just the label
+                unit = when (metric) {
+                    is DashboardMetric.Obd2Pid -> metric.unit
+                    DashboardMetric.GpsSpeed -> "km/h"
+                    DashboardMetric.GpsAltitude -> "m"
+                    is DashboardMetric.DerivedMetric -> metric.unit
+                    is DashboardMetric.CanSignal -> metric.unit
+                }
+            )
+        }
+
+        updateCorner(widget.cornerMetricTL, LiveMapView.Corner.TOP_LEFT)
+        updateCorner(widget.cornerMetricTR, LiveMapView.Corner.TOP_RIGHT)
+        updateCorner(widget.cornerMetricBL, LiveMapView.Corner.BOTTOM_LEFT)
+        updateCorner(widget.cornerMetricBR, LiveMapView.Corner.BOTTOM_RIGHT)
     }
 
     /** Applies all DashboardWidget settings (scale, unit, colours) to a gauge view. */
@@ -912,7 +957,89 @@ class DashboardEditorFragment : Fragment() {
         "DERIVED_POWER_ACCEL_BHP" -> m.powerAccelKw?.let { it * 1.34102f } // kW to BHP
         "DERIVED_POWER_THERMO_BHP" -> m.powerThermoKw?.let { it * 1.34102f } // kW to BHP
         "DERIVED_POWER_OBD_BHP" -> m.powerOBDKw?.let { it * 1.34102f } // kW to BHP
+        "DERIVED_BEARING"   -> m.gpsBearingDeg
         else                -> null
+    }
+
+    /**
+     * Launches a coroutine that collects GPS location and metrics data for a LiveMapView.
+     * Updates the vehicle position on the map and pushes corner metric values.
+     */
+    private fun startLiveMapDataJob(widgetId: String, liveMapView: LiveMapView): Job {
+        return viewLifecycleOwner.lifecycleScope.launch {
+            // Collect GPS location for vehicle position and bearing
+            launch {
+                GpsDataSource.getInstance(requireContext()).gpsData.collect { item ->
+                    item ?: return@collect
+                    liveMapView.updateLocation(
+                        lat = item.latitude,
+                        lon = item.longitude,
+                        bearingDeg = item.bearingDeg
+                    )
+                }
+            }
+
+            // Collect metrics for corner overlays
+            launch {
+                calculator.metrics.collect { m ->
+                    // Read the latest widget from ViewModel to get updated corner metrics
+                    val widget = viewModel.currentLayout.value.widgets.find { it.id == widgetId }
+                    if (widget == null) return@collect
+
+                    fun formatValue(value: Float?): String = value?.let {
+                        val decimals = when {
+                            it < 10 -> 1
+                            it < 100 -> 0
+                            else -> 0
+                        }
+                        String.format("%.${decimals}f", it)
+                    } ?: ""
+
+                    fun updateCorner(metric: DashboardMetric?, corner: LiveMapView.Corner) {
+                        if (metric == null) {
+                            liveMapView.updateCornerValue(corner, "", "", "")
+                            return
+                        }
+                        val value = when (metric) {
+                            is DashboardMetric.Obd2Pid -> {
+                                val item = m.rawObdData.find { it.pid == metric.pid }
+                                item?.value?.toFloatOrNull()
+                            }
+                            DashboardMetric.GpsSpeed -> m.gpsSpeedKmh
+                            DashboardMetric.GpsAltitude -> m.altitudeMslM?.toFloat()
+                            is DashboardMetric.DerivedMetric -> derivedMetricValue(metric.key, m)
+                            is DashboardMetric.CanSignal -> {
+                                val key = metric.latestKey()
+                                m.canSignalValues[key]?.toFloat()
+                            }
+                        }
+                        liveMapView.updateCornerValue(
+                            corner = corner,
+                            label = when (metric) {
+                                is DashboardMetric.Obd2Pid -> metric.name
+                                DashboardMetric.GpsSpeed -> "Speed"
+                                DashboardMetric.GpsAltitude -> "Alt"
+                                is DashboardMetric.DerivedMetric -> metric.name
+                                is DashboardMetric.CanSignal -> metric.name
+                            },
+                            value = formatValue(value),
+                            unit = when (metric) {
+                                is DashboardMetric.Obd2Pid -> metric.unit
+                                DashboardMetric.GpsSpeed -> "km/h"
+                                DashboardMetric.GpsAltitude -> "m"
+                                is DashboardMetric.DerivedMetric -> metric.unit
+                                is DashboardMetric.CanSignal -> metric.unit
+                            }
+                        )
+                    }
+
+                    updateCorner(widget.cornerMetricTL, LiveMapView.Corner.TOP_LEFT)
+                    updateCorner(widget.cornerMetricTR, LiveMapView.Corner.TOP_RIGHT)
+                    updateCorner(widget.cornerMetricBL, LiveMapView.Corner.BOTTOM_LEFT)
+                    updateCorner(widget.cornerMetricBR, LiveMapView.Corner.BOTTOM_RIGHT)
+                }
+            }
+        }
     }
 
     /**
@@ -981,7 +1108,7 @@ class DashboardEditorFragment : Fragment() {
         popup.show()
     }
 
-    private fun createViewForWidgetType(type: WidgetType): DashboardGaugeView {
+    private fun createViewForWidgetType(type: WidgetType): View {
         val ctx = requireContext()
         return when (type) {
             WidgetType.DIAL             -> DialView(ctx)
@@ -990,6 +1117,7 @@ class DashboardEditorFragment : Fragment() {
             WidgetType.BAR_GAUGE_V      -> BarGaugeView(ctx)
             WidgetType.NUMERIC_DISPLAY  -> NumericDisplayView(ctx)
             WidgetType.TEMPERATURE_ARC  -> TemperatureGaugeView(ctx)
+            WidgetType.LIVE_MAP         -> LiveMapView(ctx)
         }
     }
 
@@ -1012,6 +1140,36 @@ class DashboardEditorFragment : Fragment() {
             Toast.makeText(context, "Min/Max values reset for $resetCount gauge(s)", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "No gauges with min/max tracking found", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Call onResume on all LiveMapView instances
+        for (i in 0 until canvasContainer.childCount) {
+            val wrapper = canvasContainer.getChildAt(i)
+            val contentFrame = wrapper.findViewById<FrameLayout>(R.id.widget_content_frame)
+            if (contentFrame != null && contentFrame.childCount > 0) {
+                val childView = contentFrame.getChildAt(0)
+                if (childView is LiveMapView) {
+                    childView.onResume()
+                }
+            }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Call onPause on all LiveMapView instances
+        for (i in 0 until canvasContainer.childCount) {
+            val wrapper = canvasContainer.getChildAt(i)
+            val contentFrame = wrapper.findViewById<FrameLayout>(R.id.widget_content_frame)
+            if (contentFrame != null && contentFrame.childCount > 0) {
+                val childView = contentFrame.getChildAt(0)
+                if (childView is LiveMapView) {
+                    childView.onPause()
+                }
+            }
         }
     }
 

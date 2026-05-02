@@ -131,9 +131,12 @@ class Step3ConfigPage : Fragment() {
         }
 
         // Default selection
-        selectedPreset = presets.firstOrNull {
-            it.gridW == state.gridW && it.gridH == state.gridH
-        } ?: SizePreset.MEDIUM
+        selectedPreset = when (state.selectedType) {
+            WidgetType.LIVE_MAP -> SizePreset.LARGE  // LiveMap defaults to LARGE
+            else -> presets.firstOrNull {
+                it.gridW == state.gridW && it.gridH == state.gridH
+            } ?: SizePreset.MEDIUM
+        }
         state.gridW = selectedPreset.gridW
         state.gridH = selectedPreset.gridH
         tvSizeHint.text = selectedPreset.hint
@@ -145,6 +148,7 @@ class Step3ConfigPage : Fragment() {
      * - SEVEN_SEGMENT: tick marks and warning threshold are unused (7-segment can't change colors)
      * - NUMERIC_DISPLAY: warning threshold useful for font color changes; tick marks not needed
      * - BAR_GAUGE_H / BAR_GAUGE_V: warning threshold useful for bar color changes; tick marks not needed
+     * - LIVE_MAP: all gauge-specific fields are unused (uses corner metrics instead)
      * - GAUGE types: both tick marks and warning threshold are useful
      */
     private fun applyFieldVisibility(type: WidgetType?) {
@@ -161,6 +165,10 @@ class Step3ConfigPage : Fragment() {
             WidgetType.BAR_GAUGE_V -> {
                 rowTicks.visibility          = View.GONE  // Bar gauges don't need tick marks
                 rowWarningDecimals.visibility = View.VISIBLE  // Can change bar color when threshold exceeded
+            }
+            WidgetType.LIVE_MAP -> {
+                rowTicks.visibility          = View.GONE
+                rowWarningDecimals.visibility = View.GONE  // No gauge fields for LiveMap
             }
             else -> {
                 rowTicks.visibility          = View.VISIBLE

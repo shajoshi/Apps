@@ -245,6 +245,136 @@
             android:visibility="gone" />
     </LinearLayout>
 
+    <!-- Corner Metrics (for LIVE_MAP only) -->
+    <LinearLayout
+        android:id="@+id/row_corner_metrics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="CORNER METRICS"
+            android:textColor="#888899"
+            android:textSize="11sp"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Top Left -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Top-Left Corner"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tv_corner_tl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#2A2A3E"
+                android:padding="12dp"
+                android:textColor="#4FC3F7"
+                android:textSize="14sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground" />
+        </LinearLayout>
+
+        <!-- Top Right -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Top-Right Corner"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tv_corner_tr"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#2A2A3E"
+                android:padding="12dp"
+                android:textColor="#4FC3F7"
+                android:textSize="14sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground" />
+        </LinearLayout>
+
+        <!-- Bottom Left -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Bottom-Left Corner"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tv_corner_bl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#2A2A3E"
+                android:padding="12dp"
+                android:textColor="#4FC3F7"
+                android:textSize="14sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground" />
+        </LinearLayout>
+
+        <!-- Bottom Right -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Bottom-Right Corner"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tv_corner_br"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="#2A2A3E"
+                android:padding="12dp"
+                android:textColor="#4FC3F7"
+                android:textSize="14sp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground" />
+        </LinearLayout>
+    </LinearLayout>
+
     <!-- Size presets -->
     <TextView
         android:layout_width="match_parent"

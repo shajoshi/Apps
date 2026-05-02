@@ -20,15 +20,13 @@ val versionMinor = versionProps.getProperty("VERSION_MINOR", "0").toInt()
 val versionPatch = versionProps.getProperty("VERSION_PATCH", "0").toInt()
 val currentVersionCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
 
-// Auto-increment version code on each build
-val newVersionCode = currentVersionCode + 1
-versionProps.setProperty("VERSION_CODE", newVersionCode.toString())
-versionProps.store(versionPropsFile.writer(), "Auto-incremented on build")
+// Use current version code for the build (increment only after successful build)
+val buildVersionCode = currentVersionCode
 
 // Generate version name with build number and timestamp
 val dateFormat = SimpleDateFormat("yyyyMMdd-HHmm")
 val buildTime = dateFormat.format(Date())
-val generatedVersionName = "$versionMajor.$versionMinor.$versionPatch-build$newVersionCode-$buildTime"
+val generatedVersionName = "$versionMajor.$versionMinor.$versionPatch-build$buildVersionCode-$buildTime"
 
 android {
     namespace = "com.sj.obd2app"
@@ -40,7 +38,7 @@ android {
         applicationId = "com.sj.obd2app"
         minSdk = 26
         targetSdk = 36
-        versionCode = newVersionCode
+        versionCode = buildVersionCode
         versionName = generatedVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -95,4 +93,26 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+}
+
+afterEvaluate {
+    tasks.named("assembleDebug") {
+        doLast {
+            // Increment only when this task completes successfully
+            val newVersionCode = currentVersionCode + 1
+            versionProps.setProperty("VERSION_CODE", newVersionCode.toString())
+            versionProps.store(versionPropsFile.writer(), "Auto-incremented on successful build")
+            println("Version code incremented to $newVersionCode")
+        }
+    }
+
+    tasks.named("assembleRelease") {
+        doLast {
+            // Increment only when this task completes successfully
+            val newVersionCode = currentVersionCode + 1
+            versionProps.setProperty("VERSION_CODE", newVersionCode.toString())
+            versionProps.store(versionPropsFile.writer(), "Auto-incremented on successful build")
+            println("Version code incremented to $newVersionCode")
+        }
+    }
 }

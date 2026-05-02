@@ -27,9 +27,19 @@ class Step2MetricPage : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        val wizardSheet = parentFragment as? AddWidgetWizardSheet ?: return
+
+        // LIVE_MAP doesn't need a single metric - it uses corner metrics instead
+        // Skip this step and auto-advance to Step3
+        if (wizardSheet.state.selectedType == com.sj.obd2app.ui.dashboard.model.WidgetType.LIVE_MAP) {
+            wizardSheet.state.selectedMetric = com.sj.obd2app.ui.dashboard.model.DashboardMetric.GpsSpeed // Placeholder
+            // Navigate to Step3 (index 2) by setting the pager's current item
+            wizardSheet.navigateToStep(2)
+            return
+        }
+
         recyclerView = view.findViewById(R.id.rv_metrics)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        val wizardSheet = parentFragment as? AddWidgetWizardSheet
 
         // PIDs seen live in this session
         val livePids = Obd2ServiceProvider.getService().obd2Data.value.map { it.pid }.toSet()
@@ -48,11 +58,11 @@ class Step2MetricPage : Fragment() {
             profileKnownPids = profileKnownPids,
             profileLastValues = profileLastValues,
             hasProfileData = hasProfileData,
-            selected = wizardSheet?.state?.selectedMetric,
+            selected = wizardSheet.state.selectedMetric,
             onSelect = { metric ->
-                wizardSheet?.state?.selectedMetric = metric
+                wizardSheet.state.selectedMetric = metric
                 val d = MetricDefaults.get(metric)
-                wizardSheet?.state?.let { s ->
+                wizardSheet.state?.let { s ->
                     s.rangeMin = d.rangeMin; s.rangeMax = d.rangeMax
                     s.majorTickInterval = d.majorTickInterval; s.minorTickCount = d.minorTickCount
                     s.warningThreshold = d.warningThreshold; s.decimalPlaces = d.decimalPlaces

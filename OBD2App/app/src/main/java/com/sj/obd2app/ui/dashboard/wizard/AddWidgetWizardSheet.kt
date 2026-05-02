@@ -34,6 +34,11 @@ class AddWidgetWizardSheet : BottomSheetDialogFragment() {
     val state = WizardState()
 
     private lateinit var pager: ViewPager2
+
+    /** Allows child fragments to navigate to a specific wizard step (0-indexed). */
+    fun navigateToStep(stepIndex: Int) {
+        pager.currentItem = stepIndex
+    }
     private lateinit var btnBack: Button
     private lateinit var btnNext: Button
     private lateinit var btnCancel: Button
@@ -151,7 +156,19 @@ class AddWidgetWizardSheet : BottomSheetDialogFragment() {
 
         // Obtain the shared ViewModel from the parent fragment (DashboardEditorFragment)
         val vm = ViewModelProvider(requireParentFragment())[DashboardEditorViewModel::class.java]
-        
+
+        // Default corner metrics for LIVE_MAP
+        val cornerMetrics = if (type == com.sj.obd2app.ui.dashboard.model.WidgetType.LIVE_MAP) {
+            mapOf(
+                "TL" to com.sj.obd2app.ui.dashboard.model.DashboardMetric.GpsSpeed,
+                "TR" to com.sj.obd2app.ui.dashboard.model.DashboardMetric.GpsAltitude,
+                "BL" to com.sj.obd2app.ui.dashboard.model.DashboardMetric.DerivedMetric("DERIVED_TRIP_DIST", "Trip Distance", "km"),
+                "BR" to com.sj.obd2app.ui.dashboard.model.DashboardMetric.DerivedMetric("DERIVED_BEARING", "Bearing", "°")
+            )
+        } else {
+            emptyMap()
+        }
+
         // Use the batched method to add widget with all properties in one operation
         // This prevents double StateFlow emission and ensures the widget renders immediately
         vm.addWidgetWithProperties(
@@ -165,9 +182,13 @@ class AddWidgetWizardSheet : BottomSheetDialogFragment() {
             minorTickCount = state.minorTickCount,
             warningThreshold = state.warningThreshold,
             decimalPlaces = state.decimalPlaces,
-            displayUnit = state.displayUnit
+            displayUnit = state.displayUnit,
+            cornerMetricTL = cornerMetrics["TL"],
+            cornerMetricTR = cornerMetrics["TR"],
+            cornerMetricBL = cornerMetrics["BL"],
+            cornerMetricBR = cornerMetrics["BR"]
         )
-        
+
         dismiss()
     }
 

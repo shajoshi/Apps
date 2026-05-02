@@ -146,7 +146,11 @@ class DashboardEditorViewModel : ViewModel() {
         minorTickCount: Int,
         warningThreshold: Float?,
         decimalPlaces: Int,
-        displayUnit: String
+        displayUnit: String,
+        cornerMetricTL: DashboardMetric? = null,
+        cornerMetricTR: DashboardMetric? = null,
+        cornerMetricBL: DashboardMetric? = null,
+        cornerMetricBR: DashboardMetric? = null
     ) {
         val layout = _currentLayout.value
         val newZ = (layout.widgets.maxOfOrNull { it.zOrder } ?: -1) + 1
@@ -167,7 +171,11 @@ class DashboardEditorViewModel : ViewModel() {
             minorTickCount = minorTickCount,
             warningThreshold = warningThreshold,
             decimalPlaces = decimalPlaces,
-            displayUnit = displayUnit
+            displayUnit = displayUnit,
+            cornerMetricTL = cornerMetricTL,
+            cornerMetricTR = cornerMetricTR,
+            cornerMetricBL = cornerMetricBL,
+            cornerMetricBR = cornerMetricBR
         )
 
         _currentLayout.value = layout.copy(widgets = layout.widgets + newWidget)
@@ -333,7 +341,11 @@ class DashboardEditorViewModel : ViewModel() {
         decimalPlaces: Int,
         displayUnit: String,
         gridW: Int,
-        gridH: Int
+        gridH: Int,
+        cornerMetricTL: DashboardMetric? = null,
+        cornerMetricTR: DashboardMetric? = null,
+        cornerMetricBL: DashboardMetric? = null,
+        cornerMetricBR: DashboardMetric? = null
     ) {
         snapshot()  // Create undo point before editing
         val layout = _currentLayout.value
@@ -352,7 +364,11 @@ class DashboardEditorViewModel : ViewModel() {
                 decimalPlaces     = decimalPlaces,
                 displayUnit       = displayUnit,
                 gridW             = maxOf(2, gridW),
-                gridH             = maxOf(2, gridH)
+                gridH             = maxOf(2, gridH),
+                cornerMetricTL    = cornerMetricTL,
+                cornerMetricTR    = cornerMetricTR,
+                cornerMetricBL    = cornerMetricBL,
+                cornerMetricBR    = cornerMetricBR
             ) else w
         }
         _currentLayout.value = layout.copy(widgets = updated)
