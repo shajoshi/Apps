@@ -189,12 +189,14 @@ class LiveMapView @JvmOverloads constructor(
         // Use custom vehicle arrow drawable
         val arrowIcon = ContextCompat.getDrawable(context, R.drawable.ic_vehicle_arrow)
         vehicleMarker?.icon = arrowIcon
-        // Rotate the arrow based on bearing (0 degrees = pointing up)
         if (bearingDeg != null) {
-            vehicleMarker?.rotation = bearingDeg
-            // Rotate map to follow bearing if in bearing mode
             if (isBearingMode) {
-                mapView.mapOrientation = -bearingDeg // Negative to rotate map opposite to bearing
+                // Map is rotated to follow bearing, so arrow always points straight up (direction of travel)
+                vehicleMarker?.rotation = 0f
+                mapView.mapOrientation = -bearingDeg
+            } else {
+                // North-up mode: rotate the arrow to point in the bearing direction
+                vehicleMarker?.rotation = bearingDeg
             }
         }
         android.util.Log.e("LiveMapView", "Using custom vehicle arrow icon, bearing: $bearingDeg, bearingMode: $isBearingMode")
