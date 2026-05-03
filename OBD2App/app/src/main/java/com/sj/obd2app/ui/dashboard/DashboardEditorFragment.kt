@@ -49,6 +49,7 @@ class DashboardEditorFragment : Fragment() {
     private lateinit var viewModel: DashboardEditorViewModel
     private var isEditMode = false
     private var hasUnsavedChanges = false
+    private var isMapBearingMode = false // Map orientation: false = north-up, true = bearing-up
     private val gridSizePx = 60
 
     private val liveDataJobs = mutableMapOf<String, Job>()
@@ -66,6 +67,7 @@ class DashboardEditorFragment : Fragment() {
     private lateinit var btnTripPause: ImageButton
     private lateinit var btnTripStop: ImageButton
     private lateinit var btnResetMinMax: ImageButton
+    private lateinit var btnMapOrientation: ImageButton
     private lateinit var btnOverflow: ImageButton
 
     private lateinit var btnBringFront: View
@@ -126,6 +128,7 @@ class DashboardEditorFragment : Fragment() {
         btnTripPause     = view.findViewById(R.id.btn_trip_pause)
         btnTripStop      = view.findViewById(R.id.btn_trip_stop)
         btnResetMinMax   = view.findViewById(R.id.btn_reset_minmax)
+        btnMapOrientation = view.findViewById(R.id.btn_map_orientation)
         btnOverflow      = view.findViewById(R.id.btn_overflow)
 
         btnBringFront    = view.findViewById(R.id.btn_bring_front)
@@ -232,6 +235,10 @@ class DashboardEditorFragment : Fragment() {
                     }
                 }
             }
+        }
+
+        btnMapOrientation.setOnClickListener {
+            toggleMapOrientation()
         }
 
         btnResetMinMax.setOnClickListener {
@@ -348,6 +355,19 @@ class DashboardEditorFragment : Fragment() {
         }
         updateEditModeVisuals()
         renderCanvas(viewModel.currentLayout.value)
+    }
+
+    private fun toggleMapOrientation() {
+        isMapBearingMode = !isMapBearingMode
+        btnMapOrientation.alpha = if (isMapBearingMode) 1.0f else 0.5f
+        Toast.makeText(context, if (isMapBearingMode) "Map: Bearing direction" else "Map: North up", Toast.LENGTH_SHORT).show()
+        // Update all LiveMapViews with new orientation mode
+        for (i in 0 until canvasContainer.childCount) {
+            val wrapper = canvasContainer.getChildAt(i) as? FrameLayout
+            val liveMapView = wrapper?.findViewById<FrameLayout>(R.id.widget_content_frame)
+                ?.getChildAt(0) as? LiveMapView
+            liveMapView?.setMapOrientationMode(isMapBearingMode)
+        }
     }
 
     private fun updateEditModeVisuals() {
@@ -606,6 +626,7 @@ class DashboardEditorFragment : Fragment() {
                 }
             } else if (widgetView is LiveMapView) {
                 widgetView.isEditMode = isEditMode
+                android.util.Log.d("DashboardEditor", "LiveMapView created: widget.gridW=${widget.gridW}, widget.gridH=${widget.gridH}, expected size: ${widget.gridW * gridSizePx}x${widget.gridH * gridSizePx}")
             }
 
             contentFrame.addView(widgetView, FrameLayout.LayoutParams(
@@ -640,6 +661,7 @@ class DashboardEditorFragment : Fragment() {
             wrapper.layoutParams = lp
             wrapper.x = (widget.gridX * gridSizePx).toFloat()
             wrapper.y = (widget.gridY * gridSizePx).toFloat()
+            android.util.Log.d("DashboardEditor", "Widget wrapper sized: widget.id=${widget.id.take(8)}, gridW=${widget.gridW}, gridH=${widget.gridH}, size: ${widget.gridW * gridSizePx}x${widget.gridH * gridSizePx}")
 
             if (isEditMode) {
                 val isMoveResize = moveResizeWidgetId == widget.id
@@ -966,16 +988,23 @@ class DashboardEditorFragment : Fragment() {
      * Updates the vehicle position on the map and pushes corner metric values.
      */
     private fun startLiveMapDataJob(widgetId: String, liveMapView: LiveMapView): Job {
+        android.util.Log.d("LiveMapDataJob", "Starting live data job for widget $widgetId, liveMapView: $liveMapView")
         return viewLifecycleOwner.lifecycleScope.launch {
             // Collect GPS location for vehicle position and bearing
             launch {
                 GpsDataSource.getInstance(requireContext()).gpsData.collect { item ->
                     item ?: return@collect
-                    liveMapView.updateLocation(
-                        lat = item.latitude,
-                        lon = item.longitude,
-                        bearingDeg = item.bearingDeg
-                    )
+                    android.util.Log.d("LiveMapDataJob", "Received GPS: lat=${item.latitude}, lon=${item.longitude}, bearing=${item.bearingDeg}, calling updateLocation...")
+                    try {
+                        liveMapView.updateLocation(
+                            lat = item.latitude,
+                            lon = item.longitude,
+                            bearingDeg = item.bearingDeg
+                        )
+                        android.util.Log.d("LiveMapDataJob", "updateLocation called successfully")
+                    } catch (e: Exception) {
+                        android.util.Log.e("LiveMapDataJob", "Error calling updateLocation", e)
+                    }
                 }
             }
 

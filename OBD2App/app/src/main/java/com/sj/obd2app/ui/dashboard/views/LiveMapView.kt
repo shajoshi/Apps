@@ -7,13 +7,16 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
+import android.os.Bundle
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import com.sj.obd2app.R
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -37,6 +40,7 @@ class LiveMapView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private val mapView: MapView
+    private var isBearingMode = false // Map orientation: false = north-up, true = bearing-up
     private val cornerTLContainer: LinearLayout
     private val valueTL: TextView
     private val unitTL: TextView
@@ -95,18 +99,31 @@ class LiveMapView @JvmOverloads constructor(
         scaleBarOverlay = ScaleBarOverlay(mapView)
         mapView.overlays.add(scaleBarOverlay)
 
+        // Ensure map repository is initialized even in edit mode
+        mapView.post {
+            android.util.Log.d("LiveMapView", "Map repository initialized: ${mapView.repository != null}")
+        }
+
         updateEditMode()
     }
 
     private fun updateEditMode() {
         if (isEditMode) {
             // In edit mode, hide the MapView and show a placeholder to prevent touch event consumption
-            mapView.visibility = View.GONE
+            // Use INVISIBLE instead of GONE to allow repository initialization
+            mapView.visibility = View.INVISIBLE
             scaleBarOverlay.setEnabled(false)
         } else {
             // In view mode, show the MapView for map rendering and interaction
             mapView.visibility = View.VISIBLE
             scaleBarOverlay.setEnabled(true)
+            // Ensure repository is initialized when switching to view mode
+            if (mapView.repository == null) {
+                android.util.Log.d("LiveMapView", "Switching to view mode, forcing repository initialization")
+                mapView.post {
+                    android.util.Log.d("LiveMapView", "Repository after view mode switch: ${mapView.repository != null}")
+                }
+            }
         }
     }
 
@@ -115,15 +132,46 @@ class LiveMapView @JvmOverloads constructor(
      * Centres the map on the new position without changing the user's zoom level.
      */
     fun updateLocation(lat: Double, lon: Double, bearingDeg: Float?) {
-        if (lat == 0.0 && lon == 0.0) return // Ignore invalid coordinates
+        android.util.Log.e("LiveMapView", "!!! updateLocation CALLED !!!")
+        android.util.Log.e("LiveMapView", "lat=$lat, lon=$lon, bearing=$bearingDeg")
+        android.util.Log.e("LiveMapView", "isEditMode=$isEditMode, mapVisible=${mapView.visibility == View.VISIBLE}")
+        android.util.Log.e("LiveMapView", "view dimensions: ${width}x${height}, mapView dimensions: ${mapView.width}x${mapView.height}")
+        android.util.Log.e("LiveMapView", "repository: ${mapView.repository != null}, vehicleMarker: ${vehicleMarker != null}")
+
+        if (lat == 0.0 && lon == 0.0) {
+            android.util.Log.e("LiveMapView", "Ignoring invalid coordinates (0, 0)")
+            return
+        }
+
+        // Force layout if view has zero dimensions
+        if (width == 0 || height == 0) {
+            android.util.Log.e("LiveMapView", "View has zero dimensions, forcing layout...")
+            measure(
+                View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY)
+            )
+            layout(0, 0, 240, 240)
+            android.util.Log.e("LiveMapView", "After force layout, view dimensions: ${width}x${height}")
+        }
 
         val point = GeoPoint(lat, lon)
         lastBearingDeg = bearingDeg
 
         // Ensure the MapView repository is initialised before creating markers
         if (mapView.repository == null) {
-            mapView.post { updateLocation(lat, lon, bearingDeg) }
-            return
+            android.util.Log.e("LiveMapView", "Map repository not initialized, forcing layout...")
+            // Force layout to ensure repository initializes
+            mapView.measure(
+                View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY)
+            )
+            mapView.layout(0, 0, 100, 100)
+            android.util.Log.e("LiveMapView", "After force layout, repository: ${mapView.repository != null}")
+            if (mapView.repository == null) {
+                android.util.Log.e("LiveMapView", "Repository still null, retrying...")
+                mapView.post { updateLocation(lat, lon, bearingDeg) }
+                return
+            }
         }
 
         if (vehicleMarker == null) {
@@ -132,13 +180,30 @@ class LiveMapView @JvmOverloads constructor(
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 setInfoWindow(null)
             }
-            mapView.overlays.add(vehicleMarker)
+            mapView.overlays.add(0, vehicleMarker) // Add at beginning to draw on top
+            android.util.Log.e("LiveMapView", "Created vehicle marker at index 0")
         }
 
-        vehicleMarker?.position = point
-        vehicleMarker?.icon = createVehicleIcon(bearingDeg)
-        mapView.controller.animateTo(point)
-        mapView.invalidate()
+        mapView.controller.setCenter(point)
+        // Use custom vehicle arrow drawable
+        val arrowIcon = ContextCompat.getDrawable(context, R.drawable.ic_vehicle_arrow)
+        vehicleMarker?.icon = arrowIcon
+        // Rotate the arrow based on bearing (0 degrees = pointing up)
+        if (bearingDeg != null) {
+            vehicleMarker?.rotation = bearingDeg
+            // Rotate map to follow bearing if in bearing mode
+            if (isBearingMode) {
+                mapView.mapOrientation = -bearingDeg // Negative to rotate map opposite to bearing
+            }
+        }
+        android.util.Log.e("LiveMapView", "Using custom vehicle arrow icon, bearing: $bearingDeg, bearingMode: $isBearingMode")
+        // Position marker after map is rendered to ensure projection is ready
+        mapView.post {
+            vehicleMarker?.position = point
+            android.util.Log.e("LiveMapView", "Marker position set in post: ${vehicleMarker?.position}")
+            mapView.postInvalidate()
+        }
+        android.util.Log.e("LiveMapView", "Map centered to position: $point")
     }
 
     /**
@@ -174,6 +239,19 @@ class LiveMapView @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Sets the map orientation mode.
+     * @param bearingMode true = map rotates to follow bearing, false = north-up mode
+     */
+    fun setMapOrientationMode(bearingMode: Boolean) {
+        isBearingMode = bearingMode
+        // Reset map rotation if switching to north-up mode
+        if (!bearingMode) {
+            mapView.mapOrientation = 0f
+            mapView.invalidate()
+        }
+    }
+
     // ── Lifecycle pass-through ─────────────────────────────────────────────
 
     fun onResume() {
@@ -198,7 +276,7 @@ class LiveMapView @JvmOverloads constructor(
                 intrinsicHeight = size
                 paint.isAntiAlias = true
                 paint.style = Paint.Style.FILL
-                paint.color = Color.parseColor("#2979FF")
+                paint.color = Color.parseColor("#FF0000") // Changed to red for visibility
                 setBounds(0, 0, size, size)
             }
 
