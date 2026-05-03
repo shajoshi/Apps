@@ -93,7 +93,8 @@ class LiveMapView @JvmOverloads constructor(
 
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
-        mapView.controller.setZoom(17.0)
+        // Increase zoom level to make street labels appear larger (17 -> 18 doubles the scale)
+        mapView.controller.setZoom(22.0)
 
         // Add scale bar overlay
         scaleBarOverlay = ScaleBarOverlay(mapView)
