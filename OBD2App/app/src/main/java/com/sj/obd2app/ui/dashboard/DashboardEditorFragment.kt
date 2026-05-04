@@ -988,20 +988,19 @@ class DashboardEditorFragment : Fragment() {
      * Updates the vehicle position on the map and pushes corner metric values.
      */
     private fun startLiveMapDataJob(widgetId: String, liveMapView: LiveMapView): Job {
-        android.util.Log.d("LiveMapDataJob", "Starting live data job for widget $widgetId, liveMapView: $liveMapView")
+        android.util.Log.d("LiveMapDataJob", "Starting live data job for widget $widgetId")
         return viewLifecycleOwner.lifecycleScope.launch {
             // Collect GPS location for vehicle position and bearing
             launch {
                 GpsDataSource.getInstance(requireContext()).gpsData.collect { item ->
                     item ?: return@collect
-                    android.util.Log.d("LiveMapDataJob", "Received GPS: lat=${item.latitude}, lon=${item.longitude}, bearing=${item.bearingDeg}, calling updateLocation...")
                     try {
                         liveMapView.updateLocation(
                             lat = item.latitude,
                             lon = item.longitude,
-                            bearingDeg = item.bearingDeg
+                            bearingDeg = item.bearingDeg,
+                            speedKmh = item.speedKmh
                         )
-                        android.util.Log.d("LiveMapDataJob", "updateLocation called successfully")
                     } catch (e: Exception) {
                         android.util.Log.e("LiveMapDataJob", "Error calling updateLocation", e)
                     }

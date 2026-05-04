@@ -129,30 +129,38 @@ class LiveMapView @JvmOverloads constructor(
     }
 
     /**
-     * Updates the vehicle position and bearing on the map.
-     * Centres the map on the new position without changing the user's zoom level.
+     * Returns the appropriate zoom level for a given speed in km/h.
+     * Faster speed = lower zoom (wider area visible).
      */
-    fun updateLocation(lat: Double, lon: Double, bearingDeg: Float?) {
-        android.util.Log.e("LiveMapView", "!!! updateLocation CALLED !!!")
-        android.util.Log.e("LiveMapView", "lat=$lat, lon=$lon, bearing=$bearingDeg")
-        android.util.Log.e("LiveMapView", "isEditMode=$isEditMode, mapVisible=${mapView.visibility == View.VISIBLE}")
-        android.util.Log.e("LiveMapView", "view dimensions: ${width}x${height}, mapView dimensions: ${mapView.width}x${mapView.height}")
-        android.util.Log.e("LiveMapView", "repository: ${mapView.repository != null}, vehicleMarker: ${vehicleMarker != null}")
+    private fun zoomForSpeed(speedKmh: Float): Double = when {
+        speedKmh < 25f   -> 19.0  // Stationary / walking
+        speedKmh < 45f  -> 18.0  // Slow / residential
+        speedKmh < 70f  -> 17.0  // Urban
+        speedKmh < 100f -> 16.0  // Highway
+        speedKmh < 150f -> 14.0  // Fast highway
+        else            -> 13.0  // Very fast
+    }
+
+    /**
+     * Updates the vehicle position and bearing on the map.
+     * Centres the map on the new position and adjusts zoom based on speed.
+     */
+    fun updateLocation(lat: Double, lon: Double, bearingDeg: Float?, speedKmh: Float? = null) {
+        android.util.Log.d("LiveMapView", "updateLocation: lat=$lat, lon=$lon, bearing=$bearingDeg, speed=$speedKmh")
 
         if (lat == 0.0 && lon == 0.0) {
-            android.util.Log.e("LiveMapView", "Ignoring invalid coordinates (0, 0)")
+            android.util.Log.d("LiveMapView", "Ignoring invalid coordinates (0, 0)")
             return
         }
 
         // Force layout if view has zero dimensions
         if (width == 0 || height == 0) {
-            android.util.Log.e("LiveMapView", "View has zero dimensions, forcing layout...")
+            android.util.Log.d("LiveMapView", "View has zero dimensions, forcing layout...")
             measure(
                 View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(240, View.MeasureSpec.EXACTLY)
             )
             layout(0, 0, 240, 240)
-            android.util.Log.e("LiveMapView", "After force layout, view dimensions: ${width}x${height}")
         }
 
         val point = GeoPoint(lat, lon)
@@ -160,17 +168,16 @@ class LiveMapView @JvmOverloads constructor(
 
         // Ensure the MapView repository is initialised before creating markers
         if (mapView.repository == null) {
-            android.util.Log.e("LiveMapView", "Map repository not initialized, forcing layout...")
+            android.util.Log.d("LiveMapView", "Map repository not initialized, forcing layout...")
             // Force layout to ensure repository initializes
             mapView.measure(
                 View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY)
             )
             mapView.layout(0, 0, 100, 100)
-            android.util.Log.e("LiveMapView", "After force layout, repository: ${mapView.repository != null}")
             if (mapView.repository == null) {
-                android.util.Log.e("LiveMapView", "Repository still null, retrying...")
-                mapView.post { updateLocation(lat, lon, bearingDeg) }
+                android.util.Log.d("LiveMapView", "Repository still null, retrying...")
+                mapView.post { updateLocation(lat, lon, bearingDeg, speedKmh) }
                 return
             }
         }
@@ -182,10 +189,14 @@ class LiveMapView @JvmOverloads constructor(
                 setInfoWindow(null)
             }
             mapView.overlays.add(0, vehicleMarker) // Add at beginning to draw on top
-            android.util.Log.e("LiveMapView", "Created vehicle marker at index 0")
+            android.util.Log.d("LiveMapView", "Created vehicle marker")
         }
 
         mapView.controller.setCenter(point)
+        // Auto-zoom based on speed
+        if (speedKmh != null) {
+            mapView.controller.setZoom(zoomForSpeed(speedKmh))
+        }
         // Use custom vehicle arrow drawable
         val arrowIcon = ContextCompat.getDrawable(context, R.drawable.ic_vehicle_arrow)
         vehicleMarker?.icon = arrowIcon
@@ -195,18 +206,17 @@ class LiveMapView @JvmOverloads constructor(
                 vehicleMarker?.rotation = 0f
                 mapView.mapOrientation = -bearingDeg
             } else {
-                // North-up mode: rotate the arrow to point in the bearing direction
-                vehicleMarker?.rotation = bearingDeg
+                // North-up mode: osmdroid Marker.rotation is counter-clockwise, GPS bearing is clockwise
+                // Negate bearing to convert from clockwise to counter-clockwise
+                vehicleMarker?.rotation = -bearingDeg
             }
         }
-        android.util.Log.e("LiveMapView", "Using custom vehicle arrow icon, bearing: $bearingDeg, bearingMode: $isBearingMode")
+        android.util.Log.d("LiveMapView", "Arrow bearing: $bearingDeg, mode: ${if (isBearingMode) "bearing-up" else "north-up"}")
         // Position marker after map is rendered to ensure projection is ready
         mapView.post {
             vehicleMarker?.position = point
-            android.util.Log.e("LiveMapView", "Marker position set in post: ${vehicleMarker?.position}")
             mapView.postInvalidate()
         }
-        android.util.Log.e("LiveMapView", "Map centered to position: $point")
     }
 
     /**
