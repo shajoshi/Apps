@@ -27,11 +27,11 @@
           "unit": "rpm"
         }
       },
-      "minorTickCount": 4,
-      "rangeMax": 8000.0,
+      "minorTickCount": 3,
+      "rangeMax": 9000.0,
       "rangeMin": 0.0,
       "type": "DIAL",
-      "warningThreshold": 6000.0,
+      "warningThreshold": 7500.0,
       "zOrder": 0
     },
     {
@@ -41,7 +41,7 @@
       "gridH": 5,
       "gridW": 18,
       "gridX": 0,
-      "gridY": 10,
+      "gridY": 12,
       "id": "c49e3f2f-a873-4fca-baa2-5c6fbbe55dbf",
       "majorTickInterval": 25.0,
       "metric": {
@@ -61,12 +61,12 @@
     },
     {
       "alpha": 1.0,
-      "decimalPlaces": 1,
+      "decimalPlaces": 0,
       "displayUnit": "km/L",
       "gridH": 5,
       "gridW": 18,
       "gridX": 0,
-      "gridY": 13,
+      "gridY": 15,
       "id": "34a36a60-0cb5-4f07-a353-2eb54f2be7c4",
       "majorTickInterval": 5.0,
       "metric": {
@@ -81,61 +81,62 @@
       "rangeMax": 180.0,
       "rangeMin": 0.0,
       "type": "BAR_GAUGE_H",
-      "warningThreshold": 40.0,
+      "warningThreshold": 50.0,
       "zOrder": 2
     },
     {
       "alpha": 1.0,
-      "decimalPlaces": 2,
-      "displayUnit": "g/s",
+      "decimalPlaces": 1,
+      "displayUnit": "bhp",
       "gridH": 5,
       "gridW": 18,
       "gridX": 0,
-      "gridY": 16,
+      "gridY": 18,
       "id": "a7e15581-44cf-4e43-8e05-3782876d0f97",
-      "majorTickInterval": 100.0,
+      "majorTickInterval": 50.0,
       "metric": {
-        "type": "Obd2Pid",
+        "type": "DerivedMetric",
         "data": {
-          "name": "MAF Air Flow Rate",
-          "pid": "0110",
-          "unit": "g/s"
+          "key": "DERIVED_POWER_THERMO_BHP",
+          "name": "Power (Thermo)",
+          "unit": "bhp"
         }
       },
       "minorTickCount": 4,
-      "rangeMax": 40.0,
+      "rangeMax": 20.0,
       "rangeMin": 0.0,
       "type": "BAR_GAUGE_H",
+      "warningThreshold": 10.0,
       "zOrder": 3
     },
     {
       "alpha": 1.0,
       "decimalPlaces": 0,
       "displayUnit": "km/h",
-      "gridH": 8,
-      "gridW": 9,
+      "gridH": 4,
+      "gridW": 8,
       "gridX": 0,
-      "gridY": 20,
+      "gridY": 23,
       "id": "71b60c6b-51fa-430f-b7b7-feffd0b2b607",
       "majorTickInterval": 20.0,
       "metric": {
         "type": "GpsSpeed"
       },
       "minorTickCount": 4,
-      "rangeMax": 120.0,
+      "rangeMax": 140.0,
       "rangeMin": 0.0,
       "type": "SEVEN_SEGMENT",
-      "warningThreshold": 60.0,
+      "warningThreshold": 180.0,
       "zOrder": 4
     },
     {
       "alpha": 1.0,
       "decimalPlaces": 0,
       "displayUnit": "°C",
-      "gridH": 8,
-      "gridW": 9,
-      "gridX": 9,
-      "gridY": 20,
+      "gridH": 4,
+      "gridW": 10,
+      "gridX": 8,
+      "gridY": 23,
       "id": "d3ce06aa-a83f-4151-b29f-69b35e32f19b",
       "majorTickInterval": 20.0,
       "metric": {
@@ -157,10 +158,10 @@
       "alpha": 1.0,
       "decimalPlaces": 1,
       "displayUnit": "km/L",
-      "gridH": 6,
+      "gridH": 5,
       "gridW": 9,
       "gridX": 0,
-      "gridY": 28,
+      "gridY": 27,
       "id": "4adf3b98-0297-41f8-b962-d549ab570364",
       "majorTickInterval": 5.0,
       "metric": {
@@ -180,13 +181,38 @@
     },
     {
       "alpha": 1.0,
-      "decimalPlaces": 0,
-      "displayUnit": "m",
-      "gridH": 6,
+      "decimalPlaces": 1,
+      "displayUnit": "km/h",
+      "gridH": 5,
       "gridW": 9,
       "gridX": 9,
-      "gridY": 28,
+      "gridY": 27,
       "id": "f34f489d-e5fc-4746-866c-b0df5bf13fbb",
+      "majorTickInterval": 30.0,
+      "metric": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_AVG_SPD",
+          "name": "Trip Avg Speed",
+          "unit": "km/h"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 80.0,
+      "rangeMin": 0.0,
+      "type": "NUMERIC_DISPLAY",
+      "warningThreshold": 40.0,
+      "zOrder": 7
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 0,
+      "displayUnit": "m",
+      "gridH": 3,
+      "gridW": 6,
+      "gridX": 12,
+      "gridY": 11,
+      "id": "a77e2b1b-1edb-496e-a5c2-04ca87726288",
       "majorTickInterval": 500.0,
       "metric": {
         "type": "GpsAltitude"
@@ -195,8 +221,31 @@
       "rangeMax": 7000.0,
       "rangeMin": -500.0,
       "type": "NUMERIC_DISPLAY",
-      "warningThreshold": 1000.0,
-      "zOrder": 7
+      "zOrder": -1
+    },
+    {
+      "alpha": 1.0,
+      "decimalPlaces": 1,
+      "displayUnit": "km",
+      "gridH": 3,
+      "gridW": 6,
+      "gridX": 0,
+      "gridY": 11,
+      "id": "30979314-9e1e-4e73-b34d-dd3ca2467522",
+      "majorTickInterval": 100.0,
+      "metric": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_TRIP_DIST",
+          "name": "Trip Distance",
+          "unit": "km"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 200.0,
+      "rangeMin": 0.0,
+      "type": "NUMERIC_DISPLAY",
+      "zOrder": -2
     }
   ]
 }

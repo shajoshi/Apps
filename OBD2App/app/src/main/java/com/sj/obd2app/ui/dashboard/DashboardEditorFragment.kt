@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -696,6 +697,11 @@ class DashboardEditorFragment : Fragment() {
             // Wire live data
             if (widgetView is LiveMapView) {
                 liveDataJobs[widget.id] = startLiveMapDataJob(widget.id, widgetView)
+                // Fragment.onResume() fires before renderCanvas() on first load, so the
+                // LiveMapView misses it. Call onResume() here if the fragment is already resumed.
+                if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    widgetView.onResume()
+                }
             } else if (widgetView is DashboardGaugeView) {
                 liveDataJobs[widget.id] = startLiveDataJob(widget, widgetView)
             }
@@ -867,6 +873,8 @@ class DashboardEditorFragment : Fragment() {
         updateCorner(widget.cornerMetricTR, LiveMapView.Corner.TOP_RIGHT)
         updateCorner(widget.cornerMetricBL, LiveMapView.Corner.BOTTOM_LEFT)
         updateCorner(widget.cornerMetricBR, LiveMapView.Corner.BOTTOM_RIGHT)
+        updateCorner(widget.cornerMetricML, LiveMapView.Corner.MID_LEFT)
+        updateCorner(widget.cornerMetricMR, LiveMapView.Corner.MID_RIGHT)
     }
 
     /** Applies all DashboardWidget settings (scale, unit, colours) to a gauge view. */
@@ -1065,6 +1073,8 @@ class DashboardEditorFragment : Fragment() {
                     updateCorner(widget.cornerMetricTR, LiveMapView.Corner.TOP_RIGHT)
                     updateCorner(widget.cornerMetricBL, LiveMapView.Corner.BOTTOM_LEFT)
                     updateCorner(widget.cornerMetricBR, LiveMapView.Corner.BOTTOM_RIGHT)
+                    updateCorner(widget.cornerMetricML, LiveMapView.Corner.MID_LEFT)
+                    updateCorner(widget.cornerMetricMR, LiveMapView.Corner.MID_RIGHT)
                 }
             }
         }

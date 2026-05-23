@@ -150,7 +150,9 @@ class DashboardEditorViewModel : ViewModel() {
         cornerMetricTL: DashboardMetric? = null,
         cornerMetricTR: DashboardMetric? = null,
         cornerMetricBL: DashboardMetric? = null,
-        cornerMetricBR: DashboardMetric? = null
+        cornerMetricBR: DashboardMetric? = null,
+        cornerMetricML: DashboardMetric? = null,
+        cornerMetricMR: DashboardMetric? = null
     ) {
         val layout = _currentLayout.value
         val newZ = (layout.widgets.maxOfOrNull { it.zOrder } ?: -1) + 1
@@ -175,7 +177,9 @@ class DashboardEditorViewModel : ViewModel() {
             cornerMetricTL = cornerMetricTL,
             cornerMetricTR = cornerMetricTR,
             cornerMetricBL = cornerMetricBL,
-            cornerMetricBR = cornerMetricBR
+            cornerMetricBR = cornerMetricBR,
+            cornerMetricML = cornerMetricML,
+            cornerMetricMR = cornerMetricMR
         )
 
         _currentLayout.value = layout.copy(widgets = layout.widgets + newWidget)
@@ -345,7 +349,9 @@ class DashboardEditorViewModel : ViewModel() {
         cornerMetricTL: DashboardMetric? = null,
         cornerMetricTR: DashboardMetric? = null,
         cornerMetricBL: DashboardMetric? = null,
-        cornerMetricBR: DashboardMetric? = null
+        cornerMetricBR: DashboardMetric? = null,
+        cornerMetricML: DashboardMetric? = null,
+        cornerMetricMR: DashboardMetric? = null
     ) {
         snapshot()  // Create undo point before editing
         val layout = _currentLayout.value
@@ -368,7 +374,9 @@ class DashboardEditorViewModel : ViewModel() {
                 cornerMetricTL    = cornerMetricTL,
                 cornerMetricTR    = cornerMetricTR,
                 cornerMetricBL    = cornerMetricBL,
-                cornerMetricBR    = cornerMetricBR
+                cornerMetricBR    = cornerMetricBR,
+                cornerMetricML    = cornerMetricML,
+                cornerMetricMR    = cornerMetricMR
             ) else w
         }
         _currentLayout.value = layout.copy(widgets = updated)

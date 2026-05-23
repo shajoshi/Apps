@@ -33,5 +33,8 @@ data class DashboardWidget(
     var cornerMetricTL: DashboardMetric? = null,
     var cornerMetricTR: DashboardMetric? = null,
     var cornerMetricBL: DashboardMetric? = null,
-    var cornerMetricBR: DashboardMetric? = null
+    var cornerMetricBR: DashboardMetric? = null,
+    // Mid-edge metric overlays for LIVE_MAP (centre of left and right edges)
+    var cornerMetricML: DashboardMetric? = null,
+    var cornerMetricMR: DashboardMetric? = null
 )

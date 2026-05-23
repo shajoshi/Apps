@@ -242,4 +242,120 @@
             android:text="" />
     </LinearLayout>
 
+    <!-- Mid-Left -->
+    <LinearLayout
+        android:id="@+id/corner_ml_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|start"
+        android:layout_margin="8dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="65dp"
+                android:layout_height="65dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_corner_circle" />
+
+                <TextView
+                    android:id="@+id/value_ml"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="#2196F3"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:text="" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/unit_ml"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="#2196F3"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:text="" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/label_ml"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#2196F3"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+
+    <!-- Mid-Right -->
+    <LinearLayout
+        android:id="@+id/corner_mr_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical|end"
+        android:layout_margin="8dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <FrameLayout
+                android:layout_width="65dp"
+                android:layout_height="65dp">
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_corner_circle" />
+
+                <TextView
+                    android:id="@+id/value_mr"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="#2196F3"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:text="" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/unit_mr"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:textColor="#2196F3"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:text="" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/label_mr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#2196F3"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:text="" />
+    </LinearLayout>
+
 </FrameLayout>

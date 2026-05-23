@@ -57,6 +57,14 @@ class LiveMapView @JvmOverloads constructor(
     private val valueBR: TextView
     private val unitBR: TextView
     private val labelBR: TextView
+    private val cornerMLContainer: LinearLayout
+    private val valueML: TextView
+    private val unitML: TextView
+    private val labelML: TextView
+    private val cornerMRContainer: LinearLayout
+    private val valueMR: TextView
+    private val unitMR: TextView
+    private val labelMR: TextView
     private val scaleBarOverlay: ScaleBarOverlay
 
     private var vehicleMarker: Marker? = null
@@ -69,7 +77,7 @@ class LiveMapView @JvmOverloads constructor(
         }
 
     /** Corner identifiers used by [updateCornerValue]. */
-    enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+    enum class Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, MID_LEFT, MID_RIGHT }
 
     init {
         LayoutInflater.from(context).inflate(R.layout.view_live_map, this, true)
@@ -90,6 +98,14 @@ class LiveMapView @JvmOverloads constructor(
         valueBR = findViewById(R.id.value_br)
         unitBR = findViewById(R.id.unit_br)
         labelBR = findViewById(R.id.label_br)
+        cornerMLContainer = findViewById(R.id.corner_ml_container)
+        valueML = findViewById(R.id.value_ml)
+        unitML = findViewById(R.id.unit_ml)
+        labelML = findViewById(R.id.label_ml)
+        cornerMRContainer = findViewById(R.id.corner_mr_container)
+        valueMR = findViewById(R.id.value_mr)
+        unitMR = findViewById(R.id.unit_mr)
+        labelMR = findViewById(R.id.label_mr)
 
         mapView.setTileSource(TileSourceFactory.MAPNIK)
         mapView.setMultiTouchControls(true)
@@ -248,6 +264,18 @@ class LiveMapView @JvmOverloads constructor(
                 unitBR.text = unit
                 labelBR.text = label
                 cornerBRContainer.visibility = if (label.isNotEmpty() || value.isNotEmpty()) View.VISIBLE else View.GONE
+            }
+            Corner.MID_LEFT -> {
+                valueML.text = value
+                unitML.text = unit
+                labelML.text = label
+                cornerMLContainer.visibility = if (label.isNotEmpty() || value.isNotEmpty()) View.VISIBLE else View.GONE
+            }
+            Corner.MID_RIGHT -> {
+                valueMR.text = value
+                unitMR.text = unit
+                labelMR.text = label
+                cornerMRContainer.visibility = if (label.isNotEmpty() || value.isNotEmpty()) View.VISIBLE else View.GONE
             }
         }
     }

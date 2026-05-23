@@ -1,0 +1,81 @@
+{
+  "colorScheme": {
+    "accent": -11549705,
+    "background": -15066578,
+    "surface": -14013890,
+    "text": -5592372,
+    "warning": -36797
+  },
+  "name": "Map",
+  "orientation": "PORTRAIT",
+  "widgets": [
+    {
+      "alpha": 1.0,
+      "cornerMetricBL": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_TRIP_DIST",
+          "name": "Trip Distance",
+          "unit": "km"
+        }
+      },
+      "cornerMetricBR": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "Engine Coolant Temperature",
+          "pid": "0105",
+          "unit": "°C"
+        }
+      },
+      "cornerMetricML": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_POWER_THERMO_BHP",
+          "name": "Power (Thermo)",
+          "unit": "bhp"
+        }
+      },
+      "cornerMetricMR": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_TRIP_TIME",
+          "name": "Trip Time",
+          "unit": "sec"
+        }
+      },
+      "cornerMetricTL": {
+        "type": "DerivedMetric",
+        "data": {
+          "key": "DERIVED_AVG_KPL",
+          "name": "Trip Avg Efficiency",
+          "unit": "km/L"
+        }
+      },
+      "cornerMetricTR": {
+        "type": "GpsAltitude"
+      },
+      "decimalPlaces": 0,
+      "displayUnit": "°C",
+      "gridH": 34,
+      "gridW": 18,
+      "gridX": 0,
+      "gridY": 0,
+      "id": "e58687bd-d08b-43c5-a7c0-45d9ca18fafe",
+      "majorTickInterval": 20.0,
+      "metric": {
+        "type": "Obd2Pid",
+        "data": {
+          "name": "Engine Coolant Temperature",
+          "pid": "0105",
+          "unit": "°C"
+        }
+      },
+      "minorTickCount": 4,
+      "rangeMax": 180.0,
+      "rangeMin": -40.0,
+      "type": "LIVE_MAP",
+      "warningThreshold": 130.0,
+      "zOrder": 0
+    }
+  ]
+}

@@ -70,6 +70,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     private lateinit var tvCornerTR: TextView
     private lateinit var tvCornerBL: TextView
     private lateinit var tvCornerBR: TextView
+    private lateinit var tvCornerML: TextView
+    private lateinit var tvCornerMR: TextView
     private var metricSelectionDialog: androidx.appcompat.app.AlertDialog? = null
     private var cornerSelectionDialog: androidx.appcompat.app.AlertDialog? = null
     private var selectedCorner: String? = null
@@ -95,6 +97,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
     private var cornerMetricTR: DashboardMetric? = null
     private var cornerMetricBL: DashboardMetric? = null
     private var cornerMetricBR: DashboardMetric? = null
+    private var cornerMetricML: DashboardMetric? = null
+    private var cornerMetricMR: DashboardMetric? = null
 
     private var selectedPreset: SizePreset = SizePreset.MEDIUM
     private val presetButtonIds = listOf(
@@ -144,6 +148,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         tvCornerTR        = view.findViewById(R.id.tv_corner_tr)
         tvCornerBL        = view.findViewById(R.id.tv_corner_bl)
         tvCornerBR        = view.findViewById(R.id.tv_corner_br)
+        tvCornerML        = view.findViewById(R.id.tv_corner_ml)
+        tvCornerMR        = view.findViewById(R.id.tv_corner_mr)
 
         // Initialise working copy from widget
         currentMetric     = widget.metric
@@ -160,6 +166,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         cornerMetricTR    = widget.cornerMetricTR
         cornerMetricBL    = widget.cornerMetricBL
         cornerMetricBR    = widget.cornerMetricBR
+        cornerMetricML    = widget.cornerMetricML
+        cornerMetricMR    = widget.cornerMetricMR
         
         // Setup metric selection
         updateMetricDisplay()
@@ -171,6 +179,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         tvCornerTR.setOnClickListener { showCornerMetricSelectionDialog("TR") }
         tvCornerBL.setOnClickListener { showCornerMetricSelectionDialog("BL") }
         tvCornerBR.setOnClickListener { showCornerMetricSelectionDialog("BR") }
+        tvCornerML.setOnClickListener { showCornerMetricSelectionDialog("ML") }
+        tvCornerMR.setOnClickListener { showCornerMetricSelectionDialog("MR") }
 
         // Setup unit spinner
         unitOptions = resources.getStringArray(R.array.display_unit_options)
@@ -262,7 +272,9 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                 cornerMetricTL    = cornerMetricTL,
                 cornerMetricTR    = cornerMetricTR,
                 cornerMetricBL    = cornerMetricBL,
-                cornerMetricBR    = cornerMetricBR
+                cornerMetricBR    = cornerMetricBR,
+                cornerMetricML    = cornerMetricML,
+                cornerMetricMR    = cornerMetricMR
             )
             dismiss()
         }
@@ -325,6 +337,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
         tvCornerTR.text = formatMetricName(cornerMetricTR) ?: "None"
         tvCornerBL.text = formatMetricName(cornerMetricBL) ?: "None"
         tvCornerBR.text = formatMetricName(cornerMetricBR) ?: "None"
+        tvCornerML.text = formatMetricName(cornerMetricML) ?: "None"
+        tvCornerMR.text = formatMetricName(cornerMetricMR) ?: "None"
     }
 
     private fun formatMetricName(metric: DashboardMetric?): String? = when (metric) {
@@ -414,6 +428,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
             "TR" -> cornerMetricTR
             "BL" -> cornerMetricBL
             "BR" -> cornerMetricBR
+            "ML" -> cornerMetricML
+            "MR" -> cornerMetricMR
             else -> null
         }
 
@@ -430,6 +446,8 @@ class EditWidgetSheet : BottomSheetDialogFragment() {
                     "TR" -> cornerMetricTR = metric
                     "BL" -> cornerMetricBL = metric
                     "BR" -> cornerMetricBR = metric
+                    "ML" -> cornerMetricML = metric
+                    "MR" -> cornerMetricMR = metric
                 }
                 updateCornerMetricDisplay()
                 cornerSelectionDialog?.dismiss()
