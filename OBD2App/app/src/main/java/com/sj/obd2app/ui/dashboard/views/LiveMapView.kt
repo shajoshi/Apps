@@ -133,12 +133,12 @@ class LiveMapView @JvmOverloads constructor(
      * Faster speed = lower zoom (wider area visible).
      */
     private fun zoomForSpeed(speedKmh: Float): Double = when {
-        speedKmh < 25f   -> 19.0  // Stationary / walking
-        speedKmh < 45f  -> 18.0  // Slow / residential
-        speedKmh < 70f  -> 17.0  // Urban
-        speedKmh < 100f -> 16.0  // Highway
-        speedKmh < 150f -> 14.0  // Fast highway
-        else            -> 13.0  // Very fast
+        speedKmh < 20f  -> 20.0  // Stationary / walking
+        speedKmh < 40f  -> 19.0  // Slow / residential
+        speedKmh < 60f  -> 18.0  // City
+        speedKmh < 85f  -> 17.0  // Highway
+        speedKmh < 100f -> 16.0  // Highway Fast
+        else            -> 14.0  // Very fast
     }
 
     /**
