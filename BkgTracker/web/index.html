@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BkgTracker — Family Dashboard</title>
+
+  <!-- Leaflet map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Firebase SDK (v10 modular CDN) -->
+  <script type="module">
+    import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+                                    from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
+    import { getFirestore, collection, query, limit, getDocs }
+                                    from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+
+    // ─── REPLACE with your Firebase Web App config from Firebase Console ───────
+    // Your web app's Firebase configuration
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBJpJK8VGgH17HryVUUSWtCGOEIHvE42lU",
+  authDomain: "bkgtracker.firebaseapp.com",
+  projectId: "bkgtracker",
+  storageBucket: "bkgtracker.firebasestorage.app",
+  messagingSenderId: "152667479080",
+  appId: "1:152667479080:web:a637e47da7fa1939c8a91d"
+  };
+
+    // ────────────────────────────────────────────────────────────────────────────
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    // ── Map setup ────────────────────────────────────────────────────────────────
+    const map = L.map("map").setView([20, 78], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap contributors"
+    }).addTo(map);
+
+    // Colour palette — one per user email
+    const COLOURS = ["#1565C0","#C62828","#2E7D32","#F57F17","#6A1B9A","#00838F"];
+    const userColours = {};
+    let colourIdx = 0;
+    function colourFor(email) {
+      if (!userColours[email]) userColours[email] = COLOURS[colourIdx++ % COLOURS.length];
+      return userColours[email];
+    }
+
+    // ── Auth state ───────────────────────────────────────────────────────────────
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        document.getElementById("auth-section").style.display = "none";
+        document.getElementById("main-section").style.display = "flex";
+        document.getElementById("user-email").textContent = user.email;
+        loadLocations();
+      } else {
+        document.getElementById("auth-section").style.display = "flex";
+        document.getElementById("main-section").style.display = "none";
+      }
+    });
+
+    window.signInWithGoogle = async function () {
+      try {
+        const provider = new GoogleAuthProvider();
+        await signInWithPopup(auth, provider);
+      } catch (e) {
+        alert("Sign-in failed: " + e.message);
+      }
+    };
+
+    window.signOutUser = async function () {
+      await signOut(auth);
+    };
+
+    // ── Load and render locations ─────────────────────────────────────────────────
+    let markers = [];
+    let polylines = [];
+
+    async function loadLocations() {
+      const hoursBack = parseInt(document.getElementById("hours-select").value, 10);
+      const since     = Date.now() - hoursBack * 3600 * 1000;
+
+      document.getElementById("status").textContent = "Loading…";
+
+      // Clear previous overlays
+      markers.forEach(m => map.removeLayer(m));
+      polylines.forEach(p => map.removeLayer(p));
+      markers = []; polylines = [];
+
+      // Step 1: list all user documents under /locations to get UIDs
+      let userDocs;
+      try {
+        userDocs = await getDocs(collection(db, "locations"));
+      } catch (e) {
+        document.getElementById("status").textContent = "Error listing users: " + e.message;
+        return;
+      }
+
+      // Step 2: fetch each user's records subcollection directly
+      const byUser = {};
+      let totalPoints = 0;
+      await Promise.all(userDocs.docs.map(async userDoc => {
+        const uid = userDoc.id;
+        const recRef = collection(db, "locations", uid, "records");
+        const q = query(recRef, limit(2000));
+        try {
+          const snap = await getDocs(q);
+          snap.forEach(d => {
+            const data = d.data();
+            const raw = data.timestamp;
+            const tsMs = raw?.toMillis
+              ? raw.toMillis()
+              : Number(raw);
+            if (tsMs < since) return;
+            data._tsMs = tsMs;
+            const key = data.email || uid;
+            if (!byUser[key]) byUser[key] = [];
+            byUser[key].push(data);
+            totalPoints++;
+          });
+        } catch (e) {
+          console.warn("Could not fetch records for uid", uid, e.message);
+        }
+      }));
+
+      const bounds = [];
+      const legend = document.getElementById("legend-list");
+      legend.innerHTML = "";
+
+      Object.entries(byUser).forEach(([email, points]) => {
+        points.sort((a, b) => a._tsMs - b._tsMs);
+        const colour = colourFor(email);
+        const latLngs = points.map(p => [p.lat, p.lon]);
+
+        // Polyline trail
+        const pl = L.polyline(latLngs, { color: colour, weight: 3, opacity: 0.7 }).addTo(map);
+        polylines.push(pl);
+        bounds.push(...latLngs);
+
+        // Latest position marker
+        const last = points[points.length - 1];
+        const icon = L.divIcon({
+          className: "",
+          html: `<div style="width:14px;height:14px;border-radius:50%;background:${colour};
+                 border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>`,
+          iconAnchor: [7, 7]
+        });
+        const m = L.marker([last.lat, last.lon], { icon }).addTo(map);
+        const ts = new Date(last._tsMs).toLocaleString();
+        const spd = last.speed != null ? `${last.speed.toFixed(1)} km/h` : "?";
+        const alt = last.altitude != null ? `${last.altitude.toFixed(0)} m` : "?";
+        m.bindPopup(`<b>${email}</b><br>±${last.accuracy?.toFixed(0) ?? "?"}m  ${spd}  alt ${alt}<br>${ts}`);
+        markers.push(m);
+
+        // Legend entry
+        const li = document.createElement("li");
+        li.style.color = colour;
+        li.innerHTML = `<span style="font-weight:600">${email}</span> — ${points.length} pts`;
+        legend.appendChild(li);
+      });
+
+      if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
+      const userCount = Object.keys(byUser).length;
+      document.getElementById("status").textContent = userCount === 0
+        ? "No data found for selected time range."
+        : `Loaded ${totalPoints} points for ${userCount} user(s).`;
+    }
+
+    window.loadLocations = loadLocations;
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           background: #f0f4f8; color: #1a1c1e; height: 100vh; display: flex; flex-direction: column; }
+    header { background: #1565c0; color: white; padding: 12px 20px;
+             display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: .5px; }
+    header span { font-size: .85rem; opacity: .85; }
+    header button { background: rgba(255,255,255,.15); border: none; border-radius: 6px;
+                    color: white; padding: 6px 14px; cursor: pointer; font-size: .85rem; }
+    header button:hover { background: rgba(255,255,255,.25); }
+    #auth-section { flex: 1; display: flex; flex-direction: column;
+                    align-items: center; justify-content: center; gap: 16px; }
+    #auth-section h2 { font-size: 1.3rem; color: #1565c0; }
+    #auth-section button { padding: 12px 28px; background: #1565c0; color: white;
+                           border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    #auth-section button:hover { background: #0d47a1; }
+    #main-section { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    #controls { background: white; border-bottom: 1px solid #e0e0e0;
+                padding: 8px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    #controls label { font-size: .85rem; color: #555; }
+    #controls select, #controls button { padding: 6px 12px; border-radius: 6px;
+                                          border: 1px solid #ccc; font-size: .85rem; cursor: pointer; }
+    #controls button { background: #1565c0; color: white; border-color: #1565c0; }
+    #controls button:hover { background: #0d47a1; }
+    #status { font-size: .8rem; color: #777; margin-left: auto; }
+    #map { flex: 1; }
+    #legend { background: white; border-top: 1px solid #e0e0e0;
+              padding: 8px 16px; font-size: .82rem; max-height: 80px; overflow-y: auto; }
+    #legend-list { display: flex; gap: 16px; list-style: none; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📍 BkgTracker — Family Map</h1>
+    <div id="header-user" style="display:flex;align-items:center;gap:10px">
+      <span id="user-email"></span>
+      <button onclick="signOutUser()">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- Sign-in state -->
+  <div id="auth-section">
+    <h2>BkgTracker Family Dashboard</h2>
+    <p style="color:#555;font-size:.95rem">Sign in with a family Google account to view locations.</p>
+    <button onclick="signInWithGoogle()">Sign in with Google</button>
+  </div>
+
+  <!-- Main dashboard -->
+  <div id="main-section">
+    <div id="controls">
+      <label for="hours-select">Show last</label>
+      <select id="hours-select">
+        <option value="1">1 hour</option>
+        <option value="6">6 hours</option>
+        <option value="24" selected>24 hours</option>
+        <option value="72">3 days</option>
+        <option value="168">7 days</option>
+      </select>
+      <button onclick="loadLocations()">Refresh</button>
+      <span id="status"></span>
+    </div>
+    <div id="map"></div>
+    <div id="legend">
+      <ul id="legend-list"></ul>
+    </div>
+  </div>
+</body>
+</html>

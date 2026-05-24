@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BkgTracker</string>
+    <string name="notification_channel_name">Location Tracking</string>
+    <string name="notification_channel_desc">Shows active GPS tracking status</string>
+    <string name="tracking_active">Tracking Active</string>
+    <string name="tracking_inactive">Tracking Inactive</string>
+</resources>

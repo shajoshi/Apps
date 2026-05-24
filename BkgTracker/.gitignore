@@ -1,0 +1,28 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Firebase — contains API keys, never commit
+google-services.json
+.firebase/
+.firebaserc
+firebase-debug.log
+
+# Keystore / signing
+*.jks
+*.keystore
+keystore.properties
+
+# Kotlin incremental build cache
+.kotlin/
+
+# Version properties — auto-incremented, avoid merge conflicts
+# (comment this out if you want to track build numbers in git)
+# app/version.properties
