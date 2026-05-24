@@ -16,20 +16,7 @@
                                     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
     import { getFirestore, collection, query, limit, getDocs }
                                     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
-
-    // ─── REPLACE with your Firebase Web App config from Firebase Console ───────
-    // Your web app's Firebase configuration
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBJpJK8VGgH17HryVUUSWtCGOEIHvE42lU",
-  authDomain: "bkgtracker.firebaseapp.com",
-  projectId: "bkgtracker",
-  storageBucket: "bkgtracker.firebasestorage.app",
-  messagingSenderId: "152667479080",
-  appId: "1:152667479080:web:a637e47da7fa1939c8a91d"
-  };
-
-    // ────────────────────────────────────────────────────────────────────────────
+    import { firebaseConfig } from "./firebase-config.js";
 
     const app  = initializeApp(firebaseConfig);
     const auth = getAuth(app);

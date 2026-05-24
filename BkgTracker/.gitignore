@@ -11,6 +11,7 @@ local.properties
 
 # Firebase — contains API keys, never commit
 google-services.json
+web/firebase-config.js
 .firebase/
 .firebaserc
 firebase-debug.log
