@@ -135,6 +135,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 onSignIn = ::launchGoogleSignIn,
                                 onSignOut = { viewModel.onIntent(MainIntent.SignOut) },
+                                onManualSync = { viewModel.manualSync() },
                                 onRequestFineLocation = {
                                     fineLocationLauncher.launch(
                                         arrayOf(

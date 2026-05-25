@@ -16,7 +16,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 
     override suspend fun doWork(): Result {
-        val records = LocationCache.drainAll()
+        val records = LocationCache.drainAll(applicationContext)
         if (records.isEmpty()) {
             Log.d(TAG, "Nothing to sync")
             return Result.success()
@@ -30,8 +30,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 Result.success()
             },
             onFailure = { e ->
-                Log.w(TAG, "Upload failed: ${e.message}")
-                LocationCache.requeue(records)
+                Log.e(TAG, "Upload failed: ${e.javaClass.simpleName}: ${e.message}", e)
+                LocationCache.requeue(applicationContext, records)
                 SyncPrefs.updateLastSync(applicationContext, success = false)
                 Result.retry()
             }

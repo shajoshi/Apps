@@ -64,7 +64,7 @@ class LocationForegroundService : Service() {
                 altitudeM   = altitudeM,
                 bearingDeg  = bearingDeg
             )
-            LocationCache.add(record)
+            LocationCache.add(this@LocationForegroundService, record)
             updateNotification(loc.latitude, loc.longitude, loc.accuracy, speedKmh)
             Log.d(TAG, "Fix: ${loc.latitude}, ${loc.longitude}  ±${loc.accuracy}m  ${speedKmh}km/h  alt=${altitudeM}m  cache=${LocationCache.cacheSize.value}")
         }

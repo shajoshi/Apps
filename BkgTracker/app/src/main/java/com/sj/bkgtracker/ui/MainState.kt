@@ -10,6 +10,7 @@ data class MainState(
     val cacheSize: Int = 0,
     val lastSyncTime: Long = 0L,
     val lastSyncSuccess: Boolean = false,
+    val isSyncing: Boolean = false,
     val fineLocationGranted: Boolean = false,
     val backgroundLocationGranted: Boolean = false,
     val notificationPermissionGranted: Boolean = false
@@ -21,4 +22,5 @@ sealed class MainIntent {
     object RequestFineLocation : MainIntent()
     object RequestBackgroundLocation : MainIntent()
     object RequestNotificationPermission : MainIntent()
+    object ManualSync : MainIntent()
 }

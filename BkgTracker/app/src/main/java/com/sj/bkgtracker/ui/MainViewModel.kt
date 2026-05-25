@@ -9,6 +9,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.sj.bkgtracker.data.local.LocationCache
 import com.sj.bkgtracker.data.local.SyncPrefs
 import com.sj.bkgtracker.data.local.TrackingStateHolder
+import com.sj.bkgtracker.data.repository.LocationRepositoryImpl
 import com.sj.bkgtracker.service.LocationForegroundService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,7 +71,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onIntent(intent: MainIntent) {
         when (intent) {
             MainIntent.SignOut -> signOut()
+            MainIntent.ManualSync -> manualSync()
             else -> { /* navigation intents handled in Activity */ }
+        }
+    }
+
+    fun manualSync() {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            val records = LocationCache.drainAll(ctx)
+            if (records.isEmpty()) return@launch
+            _state.update { it.copy(isSyncing = true) }
+            LocationRepositoryImpl().uploadBatch(records).fold(
+                onSuccess = {
+                    SyncPrefs.updateLastSync(ctx, success = true)
+                },
+                onFailure = {
+                    LocationCache.requeue(ctx, records)
+                    SyncPrefs.updateLastSync(ctx, success = false)
+                }
+            )
+            _state.update { it.copy(isSyncing = false) }
         }
     }
 

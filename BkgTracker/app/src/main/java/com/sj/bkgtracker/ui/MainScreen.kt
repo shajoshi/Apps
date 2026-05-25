@@ -19,10 +19,12 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,7 +47,8 @@ fun MainScreen(
     onSignOut: () -> Unit,
     onRequestFineLocation: () -> Unit,
     onRequestBackgroundLocation: () -> Unit,
-    onRequestNotificationPermission: () -> Unit
+    onRequestNotificationPermission: () -> Unit,
+    onManualSync: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -84,7 +87,9 @@ fun MainScreen(
             CacheSyncCard(
                 cacheSize       = state.cacheSize,
                 lastSyncTime    = state.lastSyncTime,
-                lastSyncSuccess = state.lastSyncSuccess
+                lastSyncSuccess = state.lastSyncSuccess,
+                isSyncing       = state.isSyncing,
+                onManualSync    = onManualSync
             )
         }
     }
@@ -231,10 +236,33 @@ private fun LastLocationCard(location: LocationRecord?) {
 }
 
 @Composable
-private fun CacheSyncCard(cacheSize: Int, lastSyncTime: Long, lastSyncSuccess: Boolean) {
+private fun CacheSyncCard(
+    cacheSize: Int,
+    lastSyncTime: Long,
+    lastSyncSuccess: Boolean,
+    isSyncing: Boolean = false,
+    onManualSync: () -> Unit = {}
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Upload Status", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Upload Status", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (isSyncing) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    OutlinedButton(
+                        onClick = onManualSync,
+                        enabled = cacheSize > 0,
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Sync Now", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
             InfoRow("Cached Points", "$cacheSize")
             if (lastSyncTime > 0L) {
                 InfoRow("Last Sync", formatTimestamp(lastSyncTime))

@@ -1,14 +1,12 @@
 package com.sj.bkgtracker.data.local
 
+import android.content.Context
 import com.sj.bkgtracker.domain.model.LocationRecord
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.concurrent.ConcurrentLinkedQueue
 
 object LocationCache {
-
-    private val queue = ConcurrentLinkedQueue<LocationRecord>()
 
     private val _cacheSize = MutableStateFlow(0)
     val cacheSize: StateFlow<Int> = _cacheSize.asStateFlow()
@@ -16,23 +14,33 @@ object LocationCache {
     private val _lastLocation = MutableStateFlow<LocationRecord?>(null)
     val lastLocation: StateFlow<LocationRecord?> = _lastLocation.asStateFlow()
 
-    fun add(record: LocationRecord) {
-        queue.offer(record)
-        _cacheSize.value = queue.size
-        _lastLocation.value = record
+    private var inMemoryCache = mutableListOf<LocationRecord>()
+
+    /** Must be called once at app startup (e.g., in Application.onCreate) */
+    fun initialise(context: Context) {
+        inMemoryCache = AppSettings.loadCache(context).toMutableList()
+        _cacheSize.value = inMemoryCache.size
+        _lastLocation.value = inMemoryCache.lastOrNull()
     }
 
-    fun drainAll(): List<LocationRecord> {
-        val drained = mutableListOf<LocationRecord>()
-        while (queue.isNotEmpty()) {
-            queue.poll()?.let { drained.add(it) }
-        }
+    fun add(context: Context, record: LocationRecord) {
+        inMemoryCache.add(record)
+        _cacheSize.value = inMemoryCache.size
+        _lastLocation.value = record
+        AppSettings.appendRecord(context, record) // O(1) append, not full rewrite
+    }
+
+    fun drainAll(context: Context): List<LocationRecord> {
+        val drained = inMemoryCache.toList()
+        inMemoryCache.clear()
         _cacheSize.value = 0
+        AppSettings.saveCache(context, emptyList())
         return drained
     }
 
-    fun requeue(records: List<LocationRecord>) {
-        records.forEach { queue.offer(it) }
-        _cacheSize.value = queue.size
+    fun requeue(context: Context, records: List<LocationRecord>) {
+        inMemoryCache.addAll(0, records)
+        _cacheSize.value = inMemoryCache.size
+        AppSettings.saveCache(context, inMemoryCache)
     }
 }
