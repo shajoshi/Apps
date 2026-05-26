@@ -24,10 +24,25 @@
 
     // ── Map setup ────────────────────────────────────────────────────────────────
     const map = L.map("map").setView([20, 78], 5);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+
+    // Try ESRI World Street Map (very reliable, used by many enterprise apps)
+    const tiles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
       maxZoom: 19,
-      attribution: "© OpenStreetMap contributors"
-    }).addTo(map);
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ',
+      crossOrigin: true
+    });
+
+    tiles.on('tileerror', function(error) {
+      console.error('Tile failed to load:', error);
+      document.getElementById('status').textContent = 'Map tiles error — check console';
+    });
+
+    tiles.on('load', function() {
+      console.log('Tiles loaded successfully');
+    });
+
+    tiles.addTo(map);
+    console.log('Map initialized, tile layer added');
 
     // Colour palette — one per user email
     const COLOURS = ["#1565C0","#C62828","#2E7D32","#F57F17","#6A1B9A","#00838F"];
@@ -44,6 +59,8 @@
         document.getElementById("auth-section").style.display = "none";
         document.getElementById("main-section").style.display = "flex";
         document.getElementById("user-email").textContent = user.email;
+        // CRITICAL: Leaflet needs size recalc after container becomes visible
+        setTimeout(() => { map.invalidateSize(); }, 100);
         loadLocations();
       } else {
         document.getElementById("auth-section").style.display = "flex";
@@ -187,7 +204,8 @@
     #controls button { background: #1565c0; color: white; border-color: #1565c0; }
     #controls button:hover { background: #0d47a1; }
     #status { font-size: .8rem; color: #777; margin-left: auto; }
-    #map { flex: 1; }
+    #map { flex: 1; min-height: 300px; width: 100%; height: 100%; position: relative; }
+    .leaflet-container { height: 100% !important; width: 100% !important; }
     #legend { background: white; border-top: 1px solid #e0e0e0;
               padding: 8px 16px; font-size: .82rem; max-height: 80px; overflow-y: auto; }
     #legend-list { display: flex; gap: 16px; list-style: none; flex-wrap: wrap; }
@@ -214,9 +232,9 @@
     <div id="controls">
       <label for="hours-select">Show last</label>
       <select id="hours-select">
-        <option value="1">1 hour</option>
+        <option value="1" selected>1 hour</option>
         <option value="6">6 hours</option>
-        <option value="24" selected>24 hours</option>
+        <option value="24">24 hours</option>
         <option value="72">3 days</option>
         <option value="168">7 days</option>
       </select>

@@ -23,7 +23,7 @@ data class TrackedUser(
 data class MapState(
     val users: List<TrackedUser> = emptyList(),
     val visibleUsers: Set<String> = emptySet(),
-    val timeWindowHours: Int = 24,
+    val timeWindowHours: Int = 1,
     val isLoading: Boolean = false,
     val error: String? = null
 )

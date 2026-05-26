@@ -32,6 +32,12 @@ class LocationForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "bkg_tracker_location"
 
+        /** Minimum distance (meters) from last saved point to save a new point */
+        private const val MIN_DISTANCE_METERS = 20.0
+
+        /** Accuracy threshold to detect indoor/cell locations vs real GPS (meters) */
+        private const val INDOOR_ACCURACY_THRESHOLD = 100f
+
         fun start(context: Context) {
             val intent = Intent(context, LocationForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -48,10 +54,35 @@ class LocationForegroundService : Service() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var notificationManager: NotificationManager? = null
+    private var lastSavedLocation: android.location.Location? = null
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
+
+            // Indoor detection: skip if poor accuracy (indoor/cell/wifi instead of real GPS)
+            val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
+            if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
+                Log.d(TAG, "Indoor/cell location skipped: accuracy=${accuracy}m (threshold=${INDOOR_ACCURACY_THRESHOLD}m)")
+                return
+            }
+
+            // Distance filter: only save if moved > MIN_DISTANCE_METERS from last saved point
+            val shouldSave = if (lastSavedLocation == null) {
+                true // Always save first point
+            } else {
+                val distance = calculateDistance(
+                    lastSavedLocation!!.latitude, lastSavedLocation!!.longitude,
+                    loc.latitude, loc.longitude
+                )
+                distance >= MIN_DISTANCE_METERS
+            }
+
+            if (!shouldSave) {
+                Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} (within ${MIN_DISTANCE_METERS}m of last saved)")
+                return
+            }
+
             val speedKmh = if (loc.hasSpeed()) loc.speed * 3.6f else 0f
             val altitudeM = if (loc.hasAltitude()) loc.altitude else 0.0
             val bearingDeg = if (loc.hasBearing()) loc.bearing else null
@@ -64,9 +95,11 @@ class LocationForegroundService : Service() {
                 altitudeM   = altitudeM,
                 bearingDeg  = bearingDeg
             )
+
+            lastSavedLocation = loc
             LocationCache.add(this@LocationForegroundService, record)
             updateNotification(loc.latitude, loc.longitude, loc.accuracy, speedKmh)
-            Log.d(TAG, "Fix: ${loc.latitude}, ${loc.longitude}  ±${loc.accuracy}m  ${speedKmh}km/h  alt=${altitudeM}m  cache=${LocationCache.cacheSize.value}")
+            Log.d(TAG, "Saved: ${loc.latitude}, ${loc.longitude}  ±${loc.accuracy}m  ${speedKmh}km/h  alt=${altitudeM}m  cache=${LocationCache.cacheSize.value}")
         }
     }
 
@@ -94,6 +127,21 @@ class LocationForegroundService : Service() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
         TrackingStateHolder.setTracking(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
+    }
+
+    /**
+     * Calculate distance between two GPS coordinates using Haversine formula.
+     * @return Distance in meters.
+     */
+    private fun calculateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val earthRadius = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+                kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+        return earthRadius * c
     }
 
     @SuppressLint("MissingPermission")
