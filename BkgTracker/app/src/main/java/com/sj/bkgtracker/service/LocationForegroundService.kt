@@ -205,7 +205,7 @@ class LocationForegroundService : Service() {
             return
         }
         Log.d(TAG, "Express sync: uploading ${records.size} records")
-        LocationRepositoryImpl().uploadBatch(records).fold(
+        LocationRepositoryImpl(this@LocationForegroundService).uploadBatch(records).fold(
             onSuccess = {
                 Log.d(TAG, "Express sync: upload success")
                 SyncPrefs.updateLastSync(this, success = true)

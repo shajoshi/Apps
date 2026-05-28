@@ -9,18 +9,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedFilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,8 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -72,7 +77,8 @@ fun MapScreen(
 
         Surface(
             tonalElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth()
+            shadowElevation = 4.dp,
+            modifier = Modifier.fillMaxWidth().zIndex(1f)
         ) {
             Row(
                 modifier = Modifier
@@ -199,30 +205,54 @@ fun MapScreen(
                 tonalElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                LazyRow(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(state.users) { user ->
-                        val colour = colourMap[user.email] ?: Color.GRAY
-                        val composeColour = androidx.compose.ui.graphics.Color(colour)
-                        ElevatedFilterChip(
-                            selected = user.email in state.visibleUsers,
-                            onClick = { onToggleUser(user.email) },
-                            label = { Text(user.email.substringBefore("@"), style = MaterialTheme.typography.labelSmall) },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .padding(0.dp)
-                                ) {
-                                    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                                        drawCircle(color = composeColour)
+                Column {
+                    LazyRow(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(state.users) { user ->
+                            val colour = colourMap[user.email] ?: Color.GRAY
+                            val composeColour = androidx.compose.ui.graphics.Color(colour)
+                            val isSelected = user.email in state.visibleUsers
+                            ElevatedFilterChip(
+                                selected = isSelected,
+                                onClick = { onToggleUser(user.email) },
+                                label = {
+                                    Text(
+                                        user.email.substringBefore("@"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                modifier = if (isSelected) Modifier.border(
+                                    width = 2.dp,
+                                    color = composeColour,
+                                    shape = RoundedCornerShape(8.dp)
+                                ) else Modifier,
+                                colors = FilterChipDefaults.elevatedFilterChipColors(
+                                    selectedContainerColor = composeColour.copy(alpha = 0.15f),
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSurface
+                                ),
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(10.dp)
+                                            .padding(0.dp)
+                                    ) {
+                                        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                                            drawCircle(color = composeColour)
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
+                    Text(
+                        text = "${state.totalPoints} points fetched",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                    )
                 }
             }
         }

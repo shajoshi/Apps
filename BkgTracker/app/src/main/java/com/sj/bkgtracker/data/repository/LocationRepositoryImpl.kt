@@ -1,12 +1,14 @@
 package com.sj.bkgtracker.data.repository
 
+import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.sj.bkgtracker.data.local.UsageTracker
 import com.sj.bkgtracker.domain.model.LocationRecord
 import com.sj.bkgtracker.domain.repository.LocationRepository
 import kotlinx.coroutines.tasks.await
 
-class LocationRepositoryImpl : LocationRepository {
+class LocationRepositoryImpl(private val context: Context) : LocationRepository {
 
     private val firestore = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -45,6 +47,9 @@ class LocationRepositoryImpl : LocationRepository {
             }
 
             batch.commit().await()
+            // Track: 1 write for user doc + N writes for records
+            UsageTracker.recordWrites(context, 1 + records.size)
+            UsageTracker.recordPointsUploaded(context, records.size)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -66,6 +71,8 @@ class LocationRepositoryImpl : LocationRepository {
                         "requestedAt" to System.currentTimeMillis()
                     )
                 ).await()
+            UsageTracker.recordWrites(context, 1)
+            UsageTracker.recordCloudFunctionInvocation(context)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -86,6 +93,8 @@ class LocationRepositoryImpl : LocationRepository {
                         "stoppedAt" to System.currentTimeMillis()
                     )
                 ).await()
+            UsageTracker.recordWrites(context, 1)
+            UsageTracker.recordCloudFunctionInvocation(context)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

@@ -9,7 +9,6 @@ data class MainState(
     val lastLocation: LocationRecord? = null,
     val lastSkippedStatus: String? = null,
     val cacheSize: Int = 0,
-    val pointsLast24Hours: Int = 0,
     val lastSyncTime: Long = 0L,
     val lastSyncSuccess: Boolean = false,
     val isSyncing: Boolean = false,

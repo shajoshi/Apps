@@ -23,7 +23,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
 
         Log.d(TAG, "Uploading ${records.size} records")
-        return LocationRepositoryImpl().uploadBatch(records).fold(
+        return LocationRepositoryImpl(applicationContext).uploadBatch(records).fold(
             onSuccess = {
                 Log.d(TAG, "Upload success")
                 SyncPrefs.updateLastSync(applicationContext, success = true)

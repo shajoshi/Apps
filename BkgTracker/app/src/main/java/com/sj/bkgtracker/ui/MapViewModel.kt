@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.sj.bkgtracker.data.local.UsageTracker
 import com.sj.bkgtracker.domain.model.LocationRecord
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,7 @@ data class MapState(
     val users: List<TrackedUser> = emptyList(),
     val visibleUsers: Set<String> = emptySet(),
     val timeWindowHours: Int = 1,
+    val totalPoints: Int = 0,
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -52,6 +54,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 val since = System.currentTimeMillis() - _state.value.timeWindowHours * 3600_000L
 
                 val userDocs = db.collection("locations").get().await()
+                // Track reads: 1 read per user doc in the locations collection
+                UsageTracker.recordReads(getApplication(), userDocs.size())
                 val users = mutableListOf<TrackedUser>()
 
                 for (userDoc in userDocs.documents) {
@@ -63,6 +67,9 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             .limit(2000)
                             .get()
                             .await()
+
+                        // Track reads: 1 read per record document fetched
+                        UsageTracker.recordReads(getApplication(), snap.size())
 
                         val points = snap.documents.mapNotNull { d ->
                             val ts = d.getLong("timestamp") ?: return@mapNotNull null
@@ -94,7 +101,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     currentVisible
                 }
 
-                _state.update { it.copy(users = users, visibleUsers = newVisible, isLoading = false) }
+                val total = users.sumOf { it.points.size }
+                _state.update { it.copy(users = users, visibleUsers = newVisible, totalPoints = total, isLoading = false) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load locations", e)
                 _state.update { it.copy(isLoading = false, error = e.message) }

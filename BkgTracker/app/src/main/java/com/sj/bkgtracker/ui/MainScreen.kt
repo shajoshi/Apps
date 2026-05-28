@@ -99,7 +99,6 @@ fun MainScreen(
             )
             CacheSyncCard(
                 cacheSize         = state.cacheSize,
-                pointsLast24Hours = state.pointsLast24Hours,
                 lastSyncTime      = state.lastSyncTime,
                 lastSyncSuccess   = state.lastSyncSuccess,
                 isSyncing         = state.isSyncing,
@@ -310,7 +309,6 @@ private fun LastLocationCard(
 @Composable
 private fun CacheSyncCard(
     cacheSize: Int,
-    pointsLast24Hours: Int,
     lastSyncTime: Long,
     lastSyncSuccess: Boolean,
     isSyncing: Boolean = false,
@@ -337,7 +335,6 @@ private fun CacheSyncCard(
                 }
             }
             InfoRow("Cached Points", "$cacheSize")
-            InfoRow("Points (24h)", "$pointsLast24Hours")
             if (lastSyncTime > 0L) {
                 InfoRow("Last Sync", formatTimestamp(lastSyncTime))
                 InfoRow("Result", if (lastSyncSuccess) "✓ Success" else "✗ Failed — will retry")

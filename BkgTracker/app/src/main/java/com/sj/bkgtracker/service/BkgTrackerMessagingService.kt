@@ -4,6 +4,7 @@ import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.sj.bkgtracker.data.local.ExpressSyncManager
+import com.sj.bkgtracker.data.local.UsageTracker
 
 class BkgTrackerMessagingService : FirebaseMessagingService() {
 
@@ -14,6 +15,7 @@ class BkgTrackerMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         Log.d(TAG, "FCM received: $data")
+        UsageTracker.recordFcmMessage(applicationContext)
 
         when (data["type"]) {
             "express_sync" -> {

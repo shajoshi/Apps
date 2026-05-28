@@ -13,8 +13,13 @@ import androidx.activity.viewModels
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -23,15 +28,25 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.sj.bkgtracker.data.local.UsageTracker
 import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -92,6 +107,55 @@ class MainActivity : ComponentActivity() {
                 val mapState by mapViewModel.state.collectAsState()
                 var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
+                var showMenu by remember { mutableStateOf(false) }
+                var showSignOutDialog by remember { mutableStateOf(false) }
+                var showUsageDialog by remember { mutableStateOf(false) }
+
+                if (showUsageDialog) {
+                    val usage = UsageTracker.getTodayUsage(this@MainActivity)
+                    AlertDialog(
+                        onDismissRequest = { showUsageDialog = false },
+                        title = { Text("Cloud Usage Today", fontWeight = FontWeight.SemiBold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Date: ${usage.date}", style = MaterialTheme.typography.bodySmall)
+                                HorizontalDivider()
+                                UsageRow("Points uploaded", "${usage.pointsUploaded}")
+                                UsageRow("Firestore writes", "${usage.firestoreWrites} / 20,000  (${usage.writeUtilisation()}%)")
+                                UsageRow("Firestore reads", "${usage.firestoreReads} / 50,000  (${usage.readUtilisation()}%)")
+                                UsageRow("FCM messages", "${usage.fcmMessages}")
+                                UsageRow("Cloud Functions", "${usage.cloudFunctionInvocations}")
+                                HorizontalDivider()
+                                Text(
+                                    text = "Est. cost: ${usage.estimatedCost()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showUsageDialog = false }) { Text("Close") }
+                        }
+                    )
+                }
+
+                if (showSignOutDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showSignOutDialog = false },
+                        title = { Text("Sign Out") },
+                        text = { Text("Do you really want to sign out? Tracking will stop.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showSignOutDialog = false
+                                viewModel.onIntent(MainIntent.SignOut)
+                            }) { Text("Sign Out") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showSignOutDialog = false }) { Text("Cancel") }
+                        }
+                    )
+                }
+
                 Scaffold(
                     topBar = {
                         TopAppBar(
@@ -103,8 +167,27 @@ class MainActivity : ComponentActivity() {
                             ),
                             actions = {
                                 if (state.isSignedIn) {
-                                    TextButton(onClick = { viewModel.onIntent(MainIntent.SignOut) }) {
-                                        Text("Sign Out", color = MaterialTheme.colorScheme.onPrimary)
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                                    }
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Usage") },
+                                            onClick = {
+                                                showMenu = false
+                                                showUsageDialog = true
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Sign Out") },
+                                            onClick = {
+                                                showMenu = false
+                                                showSignOutDialog = true
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -254,5 +337,14 @@ class MainActivity : ComponentActivity() {
             Log.d(TAG, "Starting location service")
             LocationForegroundService.start(this)
         }
+    }
+}
+
+@Composable
+private fun UsageRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
     }
 }

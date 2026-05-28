@@ -57,22 +57,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 LocationCache.cacheSize,
                 LocationCache.lastLocation,
                 LocationCache.lastSkippedStatus,
-                LocationCache.pointsLast24Hours,
                 TrackingStateHolder.isTracking,
                 SyncPrefs.syncState
             ) { values ->
                 val size = values[0] as Int
                 val lastLoc = values[1] as LocationRecord?
                 val skipStatus = values[2] as String?
-                val points24h = values[3] as Int
-                val tracking = values[4] as Boolean
-                val sync = values[5] as SyncPrefs.SyncStatus
+                val tracking = values[3] as Boolean
+                val sync = values[4] as SyncPrefs.SyncStatus
                 _state.update { current ->
                     current.copy(
                         cacheSize         = size,
                         lastLocation      = lastLoc,
                         lastSkippedStatus = skipStatus,
-                        pointsLast24Hours = points24h,
                         isTracking        = tracking,
                         lastSyncTime      = sync.lastSyncTime,
                         lastSyncSuccess   = sync.success
@@ -98,7 +95,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val records = LocationCache.drainAll(ctx)
             if (records.isEmpty()) return@launch
             _state.update { it.copy(isSyncing = true) }
-            LocationRepositoryImpl().uploadBatch(records).fold(
+            LocationRepositoryImpl(ctx).uploadBatch(records).fold(
                 onSuccess = {
                     SyncPrefs.updateLastSync(ctx, success = true)
                 },
@@ -150,7 +147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun requestExpressSync() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
-            LocationRepositoryImpl().requestExpressSync().fold(
+            LocationRepositoryImpl(ctx).requestExpressSync().fold(
                 onSuccess = {
                     // Also activate locally immediately (don't wait for FCM round-trip)
                     val expiresAt = System.currentTimeMillis() + 3_600_000L
@@ -165,7 +162,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun stopExpressSync() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
-            LocationRepositoryImpl().stopExpressSync().fold(
+            LocationRepositoryImpl(ctx).stopExpressSync().fold(
                 onSuccess = {
                     val email = FirebaseAuth.getInstance().currentUser?.email
                     ExpressSyncManager.stopByUser(ctx, email)
