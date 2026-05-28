@@ -313,3 +313,58 @@ erDiagram
 - **Cache**: MutableList in memory + JSON file persistence
 - **Auth**: Google Sign-In → Firebase Auth token → Firestore security rules
 - **Boot Resilience**: BootReceiver restarts foreground service after reboot if signed in
+
+---
+
+## Firebase Free Tier (Spark Plan) Usage Estimate
+
+Assumptions: **4 devices**, **~4 hours express mode/day**, **~10 start/stop button clicks/day**, **~20 hours normal mode/day**.
+
+### Firestore Writes (Free limit: 20K/day)
+
+| Operation | Calculation | Daily Writes |
+|---|---|---:|
+| Normal mode GPS saves | 4 devices × 20h × 60 fixes/hr × ~30% pass filter | ~1,440 |
+| Express mode GPS saves | 4 devices × 4h × 360 fixes/hr (10s, no filter) | ~5,760 |
+| Express sync uploads | 4 devices × 4h × 60 syncs/hr (batch writes) | ~5,760 |
+| Normal sync uploads | 4 devices × 20h ÷ 0.25h × ~4.5 records | ~1,440 |
+| Express start/stop docs | 10 clicks × 1 write | 10 |
+| **Total** | | **~14,410** |
+
+**~72% of free limit — safe with headroom** |
+
+### Firestore Reads (Free limit: 50K/day)
+
+| Operation | Calculation | Daily Reads |
+|---|---|---:|
+| Web dashboard | ~4 users × few refreshes × ~100 docs | ~400 |
+| Cloud Function triggers | ~10 reads | 10 |
+| **Total** | | **~410** |
+
+**< 1% of free limit** |
+
+### Cloud Functions (Free limit: 125K invocations/month, 40K GB-seconds/month)
+
+| Metric | Calculation | Monthly |
+|---|---|---:|
+| Invocations | 10/day × 30 days | 300 |
+| Compute | ~100ms × 256MB per invocation | ~0.75 GB-s |
+
+**< 1% of free limits** |
+
+### Firebase Cloud Messaging
+
+**Completely free** — no limits on data messages. ~10 topic messages/day = no cost.
+
+### Summary
+
+| Service | Daily Usage | Free Limit | Utilisation |
+|---|---|---|---:|
+| Firestore writes | ~14.4K | 20K | ~72% |
+| Firestore reads | ~410 | 50K | < 1% |
+| Cloud Functions | ~10/day | ~4.1K/day | < 1% |
+| FCM | 10 msgs | Unlimited | 0% |
+
+> **Verdict**: Comfortably within free tier. The tightest constraint is Firestore writes at ~72%.
+> Adding more devices or increasing express usage could approach the limit — at that point
+> consider upgrading to Blaze pay-as-you-go ($0.18 per 100K writes).
