@@ -8,12 +8,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -51,6 +54,14 @@ class LocationForegroundService : Service() {
         private const val NORMAL_INTERVAL_MS = 60_000L
         /** Express mode: GPS fix every 10 seconds */
         private const val EXPRESS_INTERVAL_MS = 10_000L
+        /** Idle/stationary mode: GPS fix every 5 minutes */
+        private const val IDLE_INTERVAL_MS = 300_000L
+
+        /** Consecutive distance-skips before entering idle mode */
+        private const val STATIONARY_SKIP_THRESHOLD = 3
+
+        /** Minimum interval between notification updates in normal mode (5 min) */
+        private const val NOTIFICATION_THROTTLE_MS = 300_000L
 
         fun start(context: Context) {
             val intent = Intent(context, LocationForegroundService::class.java)
@@ -71,6 +82,13 @@ class LocationForegroundService : Service() {
     private var lastSavedLocation: android.location.Location? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var expressSyncJob: Job? = null
+
+    /** Consecutive distance-filter skips for stationary detection */
+    private var consecutiveSkips = 0
+    private var isIdleMode = false
+
+    /** Timestamp of last notification update for throttling */
+    private var lastNotificationUpdateMs = 0L
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -100,11 +118,22 @@ class LocationForegroundService : Service() {
                 }
 
                 if (!shouldSave) {
+                    consecutiveSkips++
                     val reason = "within ${MIN_DISTANCE_METERS.toInt()}m of last saved"
                     LocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
-                    Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} ($reason)")
+                    Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} ($reason) [skip $consecutiveSkips]")
+                    // Enter idle mode after threshold consecutive skips
+                    if (!isIdleMode && consecutiveSkips >= STATIONARY_SKIP_THRESHOLD) {
+                        enterIdleMode()
+                    }
                     return
                 }
+
+                // Movement detected — exit idle mode if active
+                if (isIdleMode) {
+                    exitIdleMode()
+                }
+                consecutiveSkips = 0
             }
 
             val speedKmh = if (loc.hasSpeed()) loc.speed * 3.6f else 0f
@@ -122,8 +151,20 @@ class LocationForegroundService : Service() {
 
             lastSavedLocation = loc
             LocationCache.add(this@LocationForegroundService, record)
-            updateNotification(loc.latitude, loc.longitude, loc.accuracy, speedKmh)
+            throttledNotificationUpdate(loc.latitude, loc.longitude, loc.accuracy, speedKmh)
             Log.d(TAG, "Saved: ${loc.latitude}, ${loc.longitude}  ±${loc.accuracy}m  ${speedKmh}km/h  alt=${altitudeM}m  cache=${LocationCache.cacheSize.value}")
+        }
+
+        override fun onLocationAvailability(availability: LocationAvailability) {
+            if (!availability.isLocationAvailable) {
+                Log.w(TAG, "GPS unavailable (location off or airplane mode)")
+                notificationManager?.notify(NOTIFICATION_ID,
+                    buildNotification("GPS unavailable", "Waiting for location…"))
+            } else {
+                Log.d(TAG, "GPS available again")
+                notificationManager?.notify(NOTIFICATION_ID,
+                    buildNotification("GPS active", ""))
+            }
         }
     }
 
@@ -159,7 +200,11 @@ class LocationForegroundService : Service() {
     private fun observeExpressMode() {
         serviceScope.launch {
             ExpressSyncManager.isExpressMode.collect { isExpress ->
-                // Switch GPS interval based on mode
+                // Express mode overrides idle mode
+                if (isExpress) {
+                    isIdleMode = false
+                    consecutiveSkips = 0
+                }
                 switchLocationInterval(isExpress)
                 if (isExpress) {
                     startExpressSyncTimer()
@@ -169,6 +214,47 @@ class LocationForegroundService : Service() {
                 }
             }
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enterIdleMode() {
+        isIdleMode = true
+        Log.d(TAG, "Stationary detected — entering idle mode (${IDLE_INTERVAL_MS / 1000}s interval)")
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, IDLE_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(IDLE_INTERVAL_MS / 2)
+            .build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        notificationManager?.notify(NOTIFICATION_ID,
+            buildNotification("Stationary — low power", "GPS every ${IDLE_INTERVAL_MS / 60_000} min"))
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun exitIdleMode() {
+        isIdleMode = false
+        Log.d(TAG, "Movement detected — resuming normal GPS interval")
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(30_000L)
+            .build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+    }
+
+    private fun throttledNotificationUpdate(lat: Double, lon: Double, acc: Float, speedKmh: Float) {
+        val isExpress = ExpressSyncManager.isExpressMode.value
+        val now = System.currentTimeMillis()
+        // Always update in express mode; throttle in normal mode
+        if (isExpress || now - lastNotificationUpdateMs >= NOTIFICATION_THROTTLE_MS) {
+            lastNotificationUpdateMs = now
+            updateNotification(lat, lon, acc, speedKmh)
+        }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     @SuppressLint("MissingPermission")
@@ -199,6 +285,10 @@ class LocationForegroundService : Service() {
     }
 
     private suspend fun performSync() {
+        if (!isNetworkAvailable()) {
+            Log.d(TAG, "Express sync: no network — skipping upload, data stays cached")
+            return
+        }
         val records = LocationCache.drainAll(this)
         if (records.isEmpty()) {
             Log.d(TAG, "Express sync: nothing to upload")

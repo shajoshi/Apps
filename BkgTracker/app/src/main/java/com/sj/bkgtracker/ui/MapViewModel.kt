@@ -1,7 +1,10 @@
 package com.sj.bkgtracker.ui
 
 import android.app.Application
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
@@ -49,6 +52,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            if (!isNetworkAvailable(ctx)) {
+                Toast.makeText(ctx, "No network — cannot load map data", Toast.LENGTH_SHORT).show()
+                _state.update { it.copy(isLoading = false, error = "No network") }
+                return@launch
+            }
             _state.update { it.copy(isLoading = true, error = null) }
             try {
                 val since = System.currentTimeMillis() - _state.value.timeWindowHours * 3600_000L
@@ -121,5 +130,12 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     fun setTimeWindowHours(hours: Int) {
         _state.update { it.copy(timeWindowHours = hours) }
         refresh()
+    }
+
+    private fun isNetworkAvailable(context: Application): Boolean {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }

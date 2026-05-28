@@ -2,6 +2,9 @@ package com.sj.bkgtracker.ui
 
 import android.app.Application
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -13,7 +16,6 @@ import com.sj.bkgtracker.data.local.TrackingStateHolder
 import com.sj.bkgtracker.data.repository.LocationRepositoryImpl
 import com.sj.bkgtracker.domain.model.LocationRecord
 import com.sj.bkgtracker.service.LocationForegroundService
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,6 +94,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun manualSync() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
+            if (!isNetworkAvailable(ctx)) {
+                Toast.makeText(ctx, "No network — sync skipped", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
             val records = LocationCache.drainAll(ctx)
             if (records.isEmpty()) return@launch
             _state.update { it.copy(isSyncing = true) }
@@ -110,43 +116,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun observeExpressMode() {
         viewModelScope.launch {
-            while (true) {
+            combine(
+                ExpressSyncManager.isExpressMode,
+                ExpressSyncManager.requestedBy,
+                ExpressSyncManager.statusMessage,
+                ExpressSyncManager.expiresAt
+            ) { isExpress, requestedBy, statusMsg, _ ->
                 val ctx = getApplication<Application>()
-                ExpressSyncManager.checkExpiry(ctx)
+                if (isExpress) ExpressSyncManager.checkExpiry(ctx)
                 _state.update { current ->
                     current.copy(
                         isExpressMode = ExpressSyncManager.isExpressMode.value,
                         expressMinutesRemaining = ExpressSyncManager.minutesRemaining(),
-                        expressRequestedBy = ExpressSyncManager.requestedBy.value,
-                        expressStatusMessage = ExpressSyncManager.statusMessage.value
+                        expressRequestedBy = requestedBy,
+                        expressStatusMessage = statusMsg
                     )
                 }
-                delay(30_000L) // refresh every 30s
-            }
-        }
-        // Also observe statusMessage reactively for immediate updates from FCM
-        viewModelScope.launch {
-            ExpressSyncManager.statusMessage.collect { msg ->
-                _state.update { it.copy(expressStatusMessage = msg) }
-            }
-        }
-        viewModelScope.launch {
-            ExpressSyncManager.isExpressMode.collect { isExpress ->
-                val ctx = getApplication<Application>()
-                _state.update { current ->
-                    current.copy(
-                        isExpressMode = isExpress,
-                        expressMinutesRemaining = ExpressSyncManager.minutesRemaining(),
-                        expressRequestedBy = ExpressSyncManager.requestedBy.value
-                    )
-                }
-            }
+            }.collect {}
         }
     }
 
     private fun requestExpressSync() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
+            if (!isNetworkAvailable(ctx)) {
+                Toast.makeText(ctx, "No network — Express Sync requires internet", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
             LocationRepositoryImpl(ctx).requestExpressSync().fold(
                 onSuccess = {
                     // Also activate locally immediately (don't wait for FCM round-trip)
@@ -154,7 +150,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val email = FirebaseAuth.getInstance().currentUser?.email
                     ExpressSyncManager.activate(ctx, expiresAt, email)
                 },
-                onFailure = { /* silent fail, will show in logs */ }
+                onFailure = { e ->
+                    Toast.makeText(ctx, "Express Sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             )
         }
     }
@@ -162,12 +160,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun stopExpressSync() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
+            if (!isNetworkAvailable(ctx)) {
+                Toast.makeText(ctx, "No network — cannot stop Express Sync remotely", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
             LocationRepositoryImpl(ctx).stopExpressSync().fold(
                 onSuccess = {
                     val email = FirebaseAuth.getInstance().currentUser?.email
                     ExpressSyncManager.stopByUser(ctx, email)
                 },
-                onFailure = { /* silent fail, will show in logs */ }
+                onFailure = { e ->
+                    Toast.makeText(ctx, "Stop Express Sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             )
         }
     }
@@ -185,5 +189,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         LocationForegroundService.stop(getApplication())
         FirebaseAuth.getInstance().signOut()
         _state.update { it.copy(isSignedIn = false, userEmail = "", isTracking = false) }
+    }
+
+    private fun isNetworkAvailable(context: Application): Boolean {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }
