@@ -50,4 +50,45 @@ class LocationRepositoryImpl : LocationRepository {
             Result.failure(e)
         }
     }
+
+    suspend fun requestExpressSync(): Result<Unit> {
+        val user = auth.currentUser
+            ?: return Result.failure(Exception("User not signed in"))
+
+        return try {
+            val expiresAt = System.currentTimeMillis() + 3_600_000L // 1 hour
+            firestore.collection("express_sync")
+                .document(user.uid)
+                .set(
+                    mapOf(
+                        "requestedBy" to (user.email ?: ""),
+                        "expiresAt" to expiresAt,
+                        "requestedAt" to System.currentTimeMillis()
+                    )
+                ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun stopExpressSync(): Result<Unit> {
+        val user = auth.currentUser
+            ?: return Result.failure(Exception("User not signed in"))
+
+        return try {
+            firestore.collection("express_sync")
+                .document(user.uid)
+                .set(
+                    mapOf(
+                        "action" to "stop",
+                        "stoppedBy" to (user.email ?: ""),
+                        "stoppedAt" to System.currentTimeMillis()
+                    )
+                ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

@@ -20,10 +20,19 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.sj.bkgtracker.R
+import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.LocationCache
+import com.sj.bkgtracker.data.local.SyncPrefs
 import com.sj.bkgtracker.data.local.TrackingStateHolder
+import com.sj.bkgtracker.data.repository.LocationRepositoryImpl
 import com.sj.bkgtracker.domain.model.LocationRecord
 import com.sj.bkgtracker.ui.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class LocationForegroundService : Service() {
 
@@ -37,6 +46,11 @@ class LocationForegroundService : Service() {
 
         /** Accuracy threshold to detect indoor/cell locations vs real GPS (meters) */
         private const val INDOOR_ACCURACY_THRESHOLD = 100f
+
+        /** Normal mode: GPS fix every 60 seconds */
+        private const val NORMAL_INTERVAL_MS = 60_000L
+        /** Express mode: GPS fix every 10 seconds */
+        private const val EXPRESS_INTERVAL_MS = 10_000L
 
         fun start(context: Context) {
             val intent = Intent(context, LocationForegroundService::class.java)
@@ -55,32 +69,42 @@ class LocationForegroundService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var notificationManager: NotificationManager? = null
     private var lastSavedLocation: android.location.Location? = null
+    private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+    private var expressSyncJob: Job? = null
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
+            val isExpress = ExpressSyncManager.isExpressMode.value
 
-            // Indoor detection: skip if poor accuracy (indoor/cell/wifi instead of real GPS)
-            val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
-            if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
-                Log.d(TAG, "Indoor/cell location skipped: accuracy=${accuracy}m (threshold=${INDOOR_ACCURACY_THRESHOLD}m)")
-                return
-            }
+            // In express mode, bypass accuracy and distance filters
+            if (!isExpress) {
+                // Indoor detection: skip if poor accuracy (indoor/cell/wifi instead of real GPS)
+                val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
+                if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
+                    val reason = "indoor accuracy ${accuracy.toInt()}m > ${INDOOR_ACCURACY_THRESHOLD.toInt()}m"
+                    LocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
+                    Log.d(TAG, "Indoor/cell location skipped: $reason")
+                    return
+                }
 
-            // Distance filter: only save if moved > MIN_DISTANCE_METERS from last saved point
-            val shouldSave = if (lastSavedLocation == null) {
-                true // Always save first point
-            } else {
-                val distance = calculateDistance(
-                    lastSavedLocation!!.latitude, lastSavedLocation!!.longitude,
-                    loc.latitude, loc.longitude
-                )
-                distance >= MIN_DISTANCE_METERS
-            }
+                // Distance filter: only save if moved > MIN_DISTANCE_METERS from last saved point
+                val shouldSave = if (lastSavedLocation == null) {
+                    true // Always save first point
+                } else {
+                    val distance = calculateDistance(
+                        lastSavedLocation!!.latitude, lastSavedLocation!!.longitude,
+                        loc.latitude, loc.longitude
+                    )
+                    distance >= MIN_DISTANCE_METERS
+                }
 
-            if (!shouldSave) {
-                Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} (within ${MIN_DISTANCE_METERS}m of last saved)")
-                return
+                if (!shouldSave) {
+                    val reason = "within ${MIN_DISTANCE_METERS.toInt()}m of last saved"
+                    LocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
+                    Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} ($reason)")
+                    return
+                }
             }
 
             val speedKmh = if (loc.hasSpeed()) loc.speed * 3.6f else 0f
@@ -112,6 +136,7 @@ class LocationForegroundService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("Acquiring GPS fix…", ""))
         startLocationUpdates()
         TrackingStateHolder.setTracking(true)
+        observeExpressMode()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -125,8 +150,72 @@ class LocationForegroundService : Service() {
         super.onDestroy()
         Log.d(TAG, "Service onDestroy")
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        expressSyncJob?.cancel()
+        serviceScope.cancel()
         TrackingStateHolder.setTracking(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
+    }
+
+    private fun observeExpressMode() {
+        serviceScope.launch {
+            ExpressSyncManager.isExpressMode.collect { isExpress ->
+                // Switch GPS interval based on mode
+                switchLocationInterval(isExpress)
+                if (isExpress) {
+                    startExpressSyncTimer()
+                } else {
+                    expressSyncJob?.cancel()
+                    expressSyncJob = null
+                }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun switchLocationInterval(express: Boolean) {
+        val interval = if (express) EXPRESS_INTERVAL_MS else NORMAL_INTERVAL_MS
+        val minInterval = if (express) 5_000L else 30_000L
+        Log.d(TAG, "Switching GPS interval to ${interval / 1000}s (express=$express)")
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
+            .setMinUpdateIntervalMillis(minInterval)
+            .build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+    }
+
+    private fun startExpressSyncTimer() {
+        expressSyncJob?.cancel()
+        expressSyncJob = serviceScope.launch {
+            Log.d(TAG, "Express sync timer started (60s interval)")
+            while (true) {
+                delay(60_000L)
+                if (!ExpressSyncManager.checkExpiry(this@LocationForegroundService)) {
+                    Log.d(TAG, "Express mode expired, stopping timer")
+                    break
+                }
+                performSync()
+            }
+        }
+    }
+
+    private suspend fun performSync() {
+        val records = LocationCache.drainAll(this)
+        if (records.isEmpty()) {
+            Log.d(TAG, "Express sync: nothing to upload")
+            return
+        }
+        Log.d(TAG, "Express sync: uploading ${records.size} records")
+        LocationRepositoryImpl().uploadBatch(records).fold(
+            onSuccess = {
+                Log.d(TAG, "Express sync: upload success")
+                SyncPrefs.updateLastSync(this, success = true)
+            },
+            onFailure = { e ->
+                Log.e(TAG, "Express sync: upload failed: ${e.message}")
+                LocationCache.requeue(this, records)
+                SyncPrefs.updateLastSync(this, success = false)
+            }
+        )
     }
 
     /**
@@ -146,8 +235,10 @@ class LocationForegroundService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 30_000L)
-            .setMinUpdateIntervalMillis(15_000L)
+        val interval = if (ExpressSyncManager.isExpressMode.value) EXPRESS_INTERVAL_MS else NORMAL_INTERVAL_MS
+        val minInterval = if (ExpressSyncManager.isExpressMode.value) 5_000L else 30_000L
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
+            .setMinUpdateIntervalMillis(minInterval)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
     }

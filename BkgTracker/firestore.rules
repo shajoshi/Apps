@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Location records: users can write their own, all authenticated can read
+    match /locations/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+
+      match /records/{recordId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // Express sync: any authenticated user can read/write (family broadcast)
+    match /express_sync/{docId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

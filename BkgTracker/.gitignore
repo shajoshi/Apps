@@ -15,6 +15,12 @@ web/firebase-config.js
 .firebase/
 .firebaserc
 firebase-debug.log
+ui-debug.log
+
+# Cloud Functions — Node.js
+functions/node_modules/
+functions/.env
+functions/.env.local
 
 # Keystore / signing
 *.jks

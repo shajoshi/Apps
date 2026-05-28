@@ -44,6 +44,15 @@ android {
         buildConfigField("String", "FIREBASE_WEB_CLIENT_ID", "\"152667479080-h18un2l6n8o028ma6og4vseobcmfd94h.apps.googleusercontent.com\"")
     }
 
+    signingConfigs {
+        create("shared") {
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -51,6 +60,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("shared")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 
@@ -114,6 +127,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+    implementation("com.google.firebase:firebase-messaging-ktx")
 
     implementation(libs.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)

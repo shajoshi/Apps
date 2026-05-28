@@ -136,6 +136,8 @@ class MainActivity : ComponentActivity() {
                                 onSignIn = ::launchGoogleSignIn,
                                 onSignOut = { viewModel.onIntent(MainIntent.SignOut) },
                                 onManualSync = { viewModel.manualSync() },
+                                onExpressSync = { viewModel.onIntent(MainIntent.ExpressSync) },
+                                onStopExpressSync = { viewModel.onIntent(MainIntent.StopExpressSync) },
                                 onRequestFineLocation = {
                                     fineLocationLauncher.launch(
                                         arrayOf(
@@ -170,7 +172,38 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         viewModel.refreshAuthState()
         viewModel.refreshPermissions()
+        requestPermissionsIfNeeded()
         startTrackingIfPermitted()
+    }
+
+    private fun requestPermissionsIfNeeded() {
+        // Request location permissions on first launch
+        val fineGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        if (!fineGranted) {
+            fineLocationLauncher.launch(arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ))
+            return
+        }
+
+        // Request background location after fine is granted
+        val bgGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        if (!bgGranted) {
+            backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            return
+        }
+
+        // Request notification permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val notifGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                    PackageManager.PERMISSION_GRANTED
+            if (!notifGranted) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 
     private fun launchGoogleSignIn() {

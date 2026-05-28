@@ -48,7 +48,9 @@ fun MainScreen(
     onRequestFineLocation: () -> Unit,
     onRequestBackgroundLocation: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
-    onManualSync: () -> Unit = {}
+    onManualSync: () -> Unit = {},
+    onExpressSync: () -> Unit = {},
+    onStopExpressSync: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -82,14 +84,26 @@ fun MainScreen(
                 )
             }
 
-            TrackingStatusCard(isTracking = state.isTracking)
-            LastLocationCard(location = state.lastLocation)
+            TrackingStatusCard(
+                isTracking = state.isTracking,
+                isExpressMode = state.isExpressMode,
+                expressMinutesRemaining = state.expressMinutesRemaining,
+                expressRequestedBy = state.expressRequestedBy,
+                expressStatusMessage = state.expressStatusMessage,
+                onExpressSync = onExpressSync,
+                onStopExpressSync = onStopExpressSync
+            )
+            LastLocationCard(
+                location = state.lastLocation,
+                skippedStatus = state.lastSkippedStatus
+            )
             CacheSyncCard(
-                cacheSize       = state.cacheSize,
-                lastSyncTime    = state.lastSyncTime,
-                lastSyncSuccess = state.lastSyncSuccess,
-                isSyncing       = state.isSyncing,
-                onManualSync    = onManualSync
+                cacheSize         = state.cacheSize,
+                pointsLast24Hours = state.pointsLast24Hours,
+                lastSyncTime      = state.lastSyncTime,
+                lastSyncSuccess   = state.lastSyncSuccess,
+                isSyncing         = state.isSyncing,
+                onManualSync      = onManualSync
             )
         }
     }
@@ -174,7 +188,15 @@ private fun PermissionCard(title: String, body: String, onRequest: () -> Unit) {
 }
 
 @Composable
-private fun TrackingStatusCard(isTracking: Boolean) {
+private fun TrackingStatusCard(
+    isTracking: Boolean,
+    isExpressMode: Boolean = false,
+    expressMinutesRemaining: Int = 0,
+    expressRequestedBy: String? = null,
+    expressStatusMessage: String? = null,
+    onExpressSync: () -> Unit = {},
+    onStopExpressSync: () -> Unit = {}
+) {
     val containerColor = if (isTracking)
         Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surfaceVariant
     val statusColor = if (isTracking) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
@@ -183,35 +205,76 @@ private fun TrackingStatusCard(isTracking: Boolean) {
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color = if (isTracking) Color(0xFF2E7D32) else Color(0xFF9E9E9E),
-                modifier = Modifier.size(10.dp)
-            ) {}
-            Spacer(Modifier.width(12.dp))
-            Column {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = if (isTracking) Color(0xFF2E7D32) else Color(0xFF9E9E9E),
+                    modifier = Modifier.size(10.dp)
+                ) {}
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isTracking) "Tracking Active" else "Tracking Inactive",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = statusColor
+                    )
+                    Text(
+                        text = if (!isTracking) "Start the app or reboot to resume"
+                               else if (isExpressMode) "GPS updates every 10 seconds (express)"
+                               else "GPS updates every 60 seconds",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = statusColor.copy(alpha = 0.7f)
+                    )
+                }
+            }
+            if (!expressStatusMessage.isNullOrBlank()) {
                 Text(
-                    text = if (isTracking) "Tracking Active" else "Tracking Inactive",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = statusColor
-                )
-                Text(
-                    text = if (isTracking) "GPS updates every 30 seconds" else "Start the app or reboot to resume",
+                    text = expressStatusMessage,
                     style = MaterialTheme.typography.bodySmall,
-                    color = statusColor.copy(alpha = 0.7f)
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE65100)
                 )
+            }
+            if (isTracking) {
+                if (isExpressMode) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = onStopExpressSync,
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Stop Express Sync", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(
+                            onClick = onExpressSync,
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Extend 1h", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onExpressSync,
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Express Sync", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun LastLocationCard(location: LocationRecord?) {
+private fun LastLocationCard(
+    location: LocationRecord?,
+    skippedStatus: String? = null
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -231,6 +294,15 @@ private fun LastLocationCard(location: LocationRecord?) {
                 InfoRow("Altitude",  "%.0f m".format(location.altitudeM))
                 InfoRow("Time",      formatTimestamp(location.timestampMs))
             }
+            // Show skipped status if present (indoor accuracy or distance filter)
+            if (skippedStatus != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = skippedStatus,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }
@@ -238,6 +310,7 @@ private fun LastLocationCard(location: LocationRecord?) {
 @Composable
 private fun CacheSyncCard(
     cacheSize: Int,
+    pointsLast24Hours: Int,
     lastSyncTime: Long,
     lastSyncSuccess: Boolean,
     isSyncing: Boolean = false,
@@ -264,6 +337,7 @@ private fun CacheSyncCard(
                 }
             }
             InfoRow("Cached Points", "$cacheSize")
+            InfoRow("Points (24h)", "$pointsLast24Hours")
             if (lastSyncTime > 0L) {
                 InfoRow("Last Sync", formatTimestamp(lastSyncTime))
                 InfoRow("Result", if (lastSyncSuccess) "✓ Success" else "✗ Failed — will retry")
