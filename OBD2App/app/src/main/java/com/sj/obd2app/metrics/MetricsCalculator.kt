@@ -316,10 +316,10 @@ class MetricsCalculator private constructor(private val context: Context) {
                 fuelCostEstimate = null,
                 avgCo2gPerKm = null,
                 tripDistanceKm = tripState.tripDistanceKm,
-                tripTimeSec = (System.currentTimeMillis() - tripState.tripStartMs) / 1000L,
+                tripTimeSec = if (_tripPhase.value == TripPhase.RUNNING) (System.currentTimeMillis() - tripState.tripStartMs) / 1000L else 0L,
                 movingTimeSec = 0L,
                 stoppedTimeSec = tripState.stoppedTimeSec,
-                tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, (System.currentTimeMillis() - tripState.tripStartMs) / 1000L),
+                tripAvgSpeedKmh = tripCalculator.averageSpeed(tripState.tripDistanceKm, if (_tripPhase.value == TripPhase.RUNNING) (System.currentTimeMillis() - tripState.tripStartMs) / 1000L else 0L),
                 tripMaxSpeedKmh = tripState.maxSpeedKmh,
                 spdDiffKmh = null,
                 pctCity = 0f,
@@ -512,9 +512,11 @@ class MetricsCalculator private constructor(private val context: Context) {
         // CO2
         val co2: Float? = fuelCalculator.co2(tripAvgLpk, fuelType.co2Factor)
 
-        // Trip time
+        // Trip time - only count when trip is RUNNING
         val now = System.currentTimeMillis()
-        val tripTimeSec = ((now - tripState.tripStartMs) / 1000L).coerceAtLeast(0L)
+        val tripTimeSec = if (_tripPhase.value == TripPhase.RUNNING) {
+            ((now - tripState.tripStartMs) / 1000L).coerceAtLeast(0L)
+        } else 0L
 
         // Moving time reflects total trip time minus stopped time.
         val movingTimeSec = (tripTimeSec - tripState.stoppedTimeSec).coerceAtLeast(0L)

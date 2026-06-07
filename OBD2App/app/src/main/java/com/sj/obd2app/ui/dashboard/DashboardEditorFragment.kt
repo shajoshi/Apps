@@ -1031,6 +1031,23 @@ class DashboardEditorFragment : Fragment() {
                         String.format("%.${decimals}f", it)
                     } ?: ""
 
+                    fun formatTripTime(seconds: Float?): String {
+                        if (seconds == null) return ""
+                        val totalSecs = seconds.toLong()
+                        val tenMinInSecs = 600L
+                        return if (totalSecs < tenMinInSecs) {
+                            // Less than 10 min: M:SS (e.g., 5:30)
+                            val minutes = totalSecs / 60
+                            val secs = totalSecs % 60
+                            String.format("%d:%02d", minutes, secs)
+                        } else {
+                            // 10 min or more: H:MM (e.g., 0:10, 1:25)
+                            val hours = totalSecs / 3600
+                            val minutes = (totalSecs % 3600) / 60
+                            String.format("%d:%02d", hours, minutes)
+                        }
+                    }
+
                     fun updateCorner(metric: DashboardMetric?, corner: LiveMapView.Corner) {
                         if (metric == null) {
                             liveMapView.updateCornerValue(corner, "", "", "")
@@ -1049,6 +1066,7 @@ class DashboardEditorFragment : Fragment() {
                                 m.canSignalValues[key]?.toFloat()
                             }
                         }
+                        val isTripTime = metric is DashboardMetric.DerivedMetric && metric.key == "DERIVED_TRIP_TIME"
                         liveMapView.updateCornerValue(
                             corner = corner,
                             label = when (metric) {
@@ -1058,12 +1076,12 @@ class DashboardEditorFragment : Fragment() {
                                 is DashboardMetric.DerivedMetric -> metric.name
                                 is DashboardMetric.CanSignal -> metric.name
                             },
-                            value = formatValue(value),
+                            value = if (isTripTime) formatTripTime(value) else formatValue(value),
                             unit = when (metric) {
                                 is DashboardMetric.Obd2Pid -> metric.unit
                                 DashboardMetric.GpsSpeed -> "km/h"
                                 DashboardMetric.GpsAltitude -> "m"
-                                is DashboardMetric.DerivedMetric -> metric.unit
+                                is DashboardMetric.DerivedMetric -> if (isTripTime) "" else metric.unit
                                 is DashboardMetric.CanSignal -> metric.unit
                             }
                         )
