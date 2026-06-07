@@ -97,6 +97,13 @@ class MainActivity : ComponentActivity() {
         viewModel.refreshPermissions()
     }
 
+    private val activityRecognitionPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        viewModel.refreshPermissions()
+        startTrackingIfPermitted()
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -117,16 +124,16 @@ class MainActivity : ComponentActivity() {
                     val cacheStats = UnifiedLocationCache.cacheStats.collectAsState().value
                     AlertDialog(
                         onDismissRequest = { showUsageDialog = false },
-                        title = { Text("Cloud Usage Today", fontWeight = FontWeight.SemiBold) },
+                        title = { Text("Cloud Usage", fontWeight = FontWeight.SemiBold) },
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("Date: ${usage.date}", style = MaterialTheme.typography.bodySmall)
                                 HorizontalDivider()
                                 UsageRow("Points uploaded", "${usage.pointsUploaded}")
-                                UsageRow("Firestore writes", "${usage.firestoreWrites} / 20,000  (${usage.writeUtilisation()}%)")
-                                UsageRow("Firestore reads", "${usage.firestoreReads} / 50,000  (${usage.readUtilisation()}%)")
-                                UsageRow("FCM messages", "${usage.fcmMessages}")
-                                UsageRow("Cloud Functions", "${usage.cloudFunctionInvocations}")
+                                UsageRow("Firestore writes", "${usage.firestoreWrites} / 20,000 daily (${usage.writeUtilisation()}%)")
+                                UsageRow("Firestore reads", "${usage.firestoreReads} / 50,000 daily (${usage.readUtilisation()}%)")
+                                UsageRow("FCM messages", "${usage.fcmMessages} / 100,000 monthly (~${usage.fcmUtilisation()}%)")
+                                UsageRow("Cloud Functions", "${usage.cloudFunctionInvocations} / 2,000,000 monthly (~${usage.cfUtilisation()}%)")
                                 HorizontalDivider()
                                 UsageRow("Cached users", "${cacheStats.cachedUserCount}")
                                 UsageRow("Cached points", "${cacheStats.totalCachedPoints}")
@@ -253,6 +260,11 @@ class MainActivity : ComponentActivity() {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                     }
+                                },
+                                onRequestActivityRecognition = {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                        activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                                    }
                                 }
                             )
                             1 -> MapScreen(
@@ -309,6 +321,15 @@ class MainActivity : ComponentActivity() {
                     PackageManager.PERMISSION_GRANTED
             if (!notifGranted) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val activityGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
+                    PackageManager.PERMISSION_GRANTED
+            if (!activityGranted) {
+                activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
             }
         }
     }
@@ -356,8 +377,15 @@ class MainActivity : ComponentActivity() {
         val fineGranted = ContextCompat.checkSelfPermission(
             this, Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
+        val activityGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACTIVITY_RECOGNITION
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
 
-        if (auth.currentUser != null && fineGranted) {
+        if (auth.currentUser != null && fineGranted && activityGranted) {
             Log.d(TAG, "Starting location service")
             LocationForegroundService.start(this)
         }

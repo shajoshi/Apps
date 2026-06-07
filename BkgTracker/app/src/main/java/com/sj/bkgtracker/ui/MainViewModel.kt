@@ -12,7 +12,6 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.GpsStateHolder
-import com.sj.bkgtracker.data.local.MapDataCache
 import com.sj.bkgtracker.data.local.SyncPrefs
 import com.sj.bkgtracker.data.local.TrackingStateHolder
 import com.sj.bkgtracker.data.local.UnifiedLocationCache
@@ -65,7 +64,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) ==
                     PackageManager.PERMISSION_GRANTED
         } else true
-        _state.update { it.copy(fineLocationGranted = fine, backgroundLocationGranted = bg, notificationPermissionGranted = notif) }
+        val activity = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.ACTIVITY_RECOGNITION) ==
+                    PackageManager.PERMISSION_GRANTED
+        } else true
+        _state.update { it.copy(fineLocationGranted = fine, backgroundLocationGranted = bg, notificationPermissionGranted = notif, activityRecognitionGranted = activity) }
     }
 
     private fun observeFlows() {

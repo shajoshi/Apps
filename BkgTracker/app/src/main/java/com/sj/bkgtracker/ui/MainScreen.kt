@@ -49,6 +49,7 @@ fun MainScreen(
     onRequestFineLocation: () -> Unit,
     onRequestBackgroundLocation: () -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    onRequestActivityRecognition: () -> Unit,
     onManualSync: () -> Unit = {},
     onExpressSync: () -> Unit = {},
     onStopExpressSync: () -> Unit = {}
@@ -82,6 +83,12 @@ fun MainScreen(
                     title = "Notification Permission Required",
                     body = "Notifications are required to keep the tracking service running.",
                     onRequest = onRequestNotificationPermission
+                )
+            } else if (!state.activityRecognitionGranted) {
+                PermissionCard(
+                    title = "Activity Permission Required",
+                    body = "Physical activity access is required to wake GPS tracking from deep idle when movement starts.",
+                    onRequest = onRequestActivityRecognition
                 )
             }
 

@@ -1,6 +1,7 @@
 package com.sj.bkgtracker.service
 
 import android.annotation.SuppressLint
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,6 +9,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -16,6 +18,11 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.ActivityRecognition
+import com.google.android.gms.location.ActivityRecognitionClient
+import com.google.android.gms.location.ActivityTransition
+import com.google.android.gms.location.ActivityTransitionRequest
+import com.google.android.gms.location.DetectedActivity
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
@@ -34,6 +41,7 @@ import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import com.sj.bkgtracker.data.repository.LocationRepositoryImpl
 import com.google.firebase.auth.FirebaseAuth
 import com.sj.bkgtracker.domain.model.LocationRecord
+import com.sj.bkgtracker.receiver.ActivityTransitionReceiver
 import com.sj.bkgtracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +63,8 @@ class LocationForegroundService : Service() {
         private const val TAG = "LocationFgService"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "bkg_tracker_location"
+        private const val ACTION_ACTIVITY_WAKE = "com.sj.bkgtracker.ACTION_ACTIVITY_WAKE"
+        private const val ACTIVITY_WAKE_REQUEST_CODE = 2001
 
         /** Minimum distance (meters) from last saved point to save a new point */
         private const val MIN_DISTANCE_METERS = 20.0
@@ -92,13 +102,27 @@ class LocationForegroundService : Service() {
         fun stop(context: Context) {
             context.stopService(Intent(context, LocationForegroundService::class.java))
         }
+
+        fun startForActivityWake(context: Context) {
+            val intent = Intent(context, LocationForegroundService::class.java).apply {
+                action = ACTION_ACTIVITY_WAKE
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
     }
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
+    private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private var notificationManager: NotificationManager? = null
     private var lastSavedLocation: android.location.Location? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var expressSyncJob: Job? = null
+    private var acquisitionTimeoutJob: Job? = null
+    private var activityTransitionsRegistered = false
 
     /** GPS State Machine tracking */
     private var currentGpsState = GpsState.DEEP_IDLE
@@ -131,10 +155,9 @@ class LocationForegroundService : Service() {
         }
         
         override fun onStopped() {
-            Log.d(TAG, "GPS satellites lost - entering deep idle")
-            if (currentGpsState != GpsState.EXPRESS) {
-                enterDeepIdleMode()
-            }
+            Log.d(TAG, "GPS engine stopped (normal between fixes)")
+            // Don't enter deep idle here - let distance filter or timeout handle it
+            // onStopped fires between every location fix when FLP pauses GNSS
         }
         
         override fun onSatelliteStatusChanged(status: GnssStatus) {
@@ -239,6 +262,7 @@ class LocationForegroundService : Service() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        activityRecognitionClient = ActivityRecognition.getClient(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Initializing", "Starting GPS service"))
@@ -267,6 +291,12 @@ class LocationForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service onStartCommand")
+        if (intent?.action == ACTION_ACTIVITY_WAKE) {
+            Log.d(TAG, "Activity Recognition wake received")
+            if (currentGpsState == GpsState.DEEP_IDLE && !ExpressSyncManager.isExpressMode.value) {
+                enterAcquisitionMode()
+            }
+        }
         return START_STICKY
     }
 
@@ -276,9 +306,11 @@ class LocationForegroundService : Service() {
         super.onDestroy()
         Log.d(TAG, "Service onDestroy")
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        unregisterActivityTransitions()
         val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
         expressSyncJob?.cancel()
+        acquisitionTimeoutJob?.cancel()
         serviceScope.cancel()
         TrackingStateHolder.setTracking(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -305,6 +337,78 @@ class LocationForegroundService : Service() {
                 }
             }
         }
+    }
+
+    private fun activityTransitionPendingIntent(): PendingIntent {
+        val intent = Intent(this, ActivityTransitionReceiver::class.java)
+        return PendingIntent.getBroadcast(
+            this,
+            ACTIVITY_WAKE_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun hasActivityRecognitionPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
+                    PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun registerActivityTransitions() {
+        if (activityTransitionsRegistered) return
+        if (!hasActivityRecognitionPermission()) {
+            Log.w(TAG, "Activity recognition permission missing; idle wake transitions not registered")
+            return
+        }
+
+        val transitions = listOf(
+            DetectedActivity.IN_VEHICLE,
+            DetectedActivity.ON_BICYCLE,
+            DetectedActivity.ON_FOOT,
+            DetectedActivity.WALKING,
+            DetectedActivity.RUNNING
+        ).map { activityType ->
+            ActivityTransition.Builder()
+                .setActivityType(activityType)
+                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
+                .build()
+        }
+
+        activityRecognitionClient
+            .requestActivityTransitionUpdates(
+                ActivityTransitionRequest(transitions),
+                activityTransitionPendingIntent()
+            )
+            .addOnSuccessListener {
+                activityTransitionsRegistered = true
+                Log.d(TAG, "Activity transitions registered for deep idle wake")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Failed to register activity transitions: ${e.message}", e)
+            }
+    }
+
+    private fun unregisterActivityTransitions() {
+        if (!activityTransitionsRegistered) return
+        if (!hasActivityRecognitionPermission()) {
+            activityTransitionsRegistered = false
+            return
+        }
+
+        activityRecognitionClient
+            .removeActivityTransitionUpdates(activityTransitionPendingIntent())
+            .addOnSuccessListener {
+                activityTransitionsRegistered = false
+                Log.d(TAG, "Activity transitions unregistered")
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Failed to unregister activity transitions: ${e.message}", e)
+            }
     }
 
     
@@ -395,6 +499,7 @@ class LocationForegroundService : Service() {
         currentGpsState = GpsState.DEEP_IDLE
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.DEEP_IDLE, 0L)
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        registerActivityTransitions()
         
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("Deep Idle", "Battery saving - GPS off"))
@@ -409,6 +514,7 @@ class LocationForegroundService : Service() {
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACQUISITION, ACQUISITION_INTERVAL_MS)
         acquisitionStartTime = System.currentTimeMillis()
         
+        unregisterActivityTransitions()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, ACQUISITION_INTERVAL_MS)
             .setMinUpdateIntervalMillis(ACQUISITION_INTERVAL_MS / 2)
@@ -418,6 +524,16 @@ class LocationForegroundService : Service() {
         
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("Acquiring GPS", "Waiting for first fix"))
+        
+        // Start acquisition timeout - return to deep idle if no movement detected
+        acquisitionTimeoutJob?.cancel()
+        acquisitionTimeoutJob = serviceScope.launch {
+            delay(ACQUISITION_TIMEOUT_MS)
+            if (currentGpsState == GpsState.ACQUISITION) {
+                Log.d(TAG, "Acquisition timeout - no movement detected, returning to deep idle")
+                enterDeepIdleMode()
+            }
+        }
     }
     
     @SuppressLint("MissingPermission")
@@ -429,6 +545,11 @@ class LocationForegroundService : Service() {
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACTIVE, NORMAL_INTERVAL_MS)
         consecutiveSkips = 0
         
+        // Cancel acquisition timeout - we detected movement
+        acquisitionTimeoutJob?.cancel()
+        acquisitionTimeoutJob = null
+        
+        unregisterActivityTransitions()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
             .setMinUpdateIntervalMillis(30_000L)
@@ -448,6 +569,7 @@ class LocationForegroundService : Service() {
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.EXPRESS, EXPRESS_INTERVAL_MS)
         consecutiveSkips = 0
         
+        unregisterActivityTransitions()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, EXPRESS_INTERVAL_MS)
             .setMinUpdateIntervalMillis(5_000L)

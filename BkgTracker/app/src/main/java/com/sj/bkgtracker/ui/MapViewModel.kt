@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import com.sj.bkgtracker.data.local.UsageTracker
 import com.sj.bkgtracker.domain.model.LocationRecord
@@ -96,39 +97,78 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         var fromFirebase = false
                         var userEmail: String? = null
 
-                        // Check if we have valid cache for this user
-                        if (UnifiedLocationCache.hasValidCache(uid)) {
-                            // Use cached data
-                            val (cachedPoints, _) = UnifiedLocationCache.getCachedPoints(uid, since)
+                        // Get user email first (from cache or Firebase)
+                        userEmail = UnifiedLocationCache.getCachedEmail(uid)
+                        if (userEmail == null) {
+                            // Try to get email from user document
+                            try {
+                                val userDoc = db.collection("locations").document(uid).get().await()
+                                UsageTracker.recordReads(getApplication(), 1)
+                                userEmail = userDoc.getString("email") ?: uid
+                                if (userEmail != uid) {
+                                    UnifiedLocationCache.setEmail(uid, userEmail)
+                                }
+                            } catch (e: Exception) {
+                                userEmail = uid
+                            }
+                        }
+
+                        // Check if cache covers the requested time window
+                        if (UnifiedLocationCache.cacheCoversTimeWindow(uid, since)) {
+                            // Cache covers the full window - use cached data and optionally fetch newer points
+                            val (cachedPoints, lastFirebaseFetch) = UnifiedLocationCache.getCachedPoints(uid, since)
                             points = cachedPoints
                             cachePointsCount += points.size
-                            userEmail = UnifiedLocationCache.getCachedEmail(uid) ?: uid // Use cached email or fallback to uid
-                            Log.d(TAG, "Using cached data for $uid: ${points.size} points")
-                        } else {
-                            // Fetch from Firebase (with optimization for current user)
-                            val queryLimit = getQueryLimit(_state.value.timeWindowHours)
-                            var query = db.collection("locations")
-                                .document(uid)
-                                .collection("records")
-                                .limit(queryLimit.toLong())
-
-                            // If this is the current user and we have some cache, only fetch new points
-                            if (uid == currentUserId) {
-                                val lastFetch = UnifiedLocationCache.getLastFetchTime(uid)
-                                if (lastFetch > 0) {
-                                    query = query.whereGreaterThan("timestamp", lastFetch)
-                                    Log.d(TAG, "Fetching new points for current user $uid since $lastFetch")
+                            
+                            // For current user with cache, also fetch any new points from Firebase since last fetch
+                            if (uid == currentUserId && lastFirebaseFetch > 0) {
+                                val queryLimit = getQueryLimit(_state.value.timeWindowHours)
+                                val newPointsQuery = db.collection("locations")
+                                    .document(uid)
+                                    .collection("records")
+                                    .whereGreaterThan("timestamp", lastFirebaseFetch)
+                                    .orderBy("timestamp", Query.Direction.DESCENDING)
+                                    .limit(queryLimit.toLong())
+                                
+                                try {
+                                    val newSnap = newPointsQuery.get().await()
+                                    UsageTracker.recordReads(getApplication(), newSnap.size())
+                                    if (newSnap.size() > 0) {
+                                        val newPoints = newSnap.documents.mapNotNull { d ->
+                                            val ts = d.getLong("timestamp") ?: return@mapNotNull null
+                                            LocationRecord(
+                                                latitude    = d.getDouble("lat")      ?: 0.0,
+                                                longitude   = d.getDouble("lon")      ?: 0.0,
+                                                timestampMs = ts,
+                                                accuracyM   = (d.getDouble("accuracy") ?: 0.0).toFloat(),
+                                                speedKmh    = (d.getDouble("speed")    ?: 0.0).toFloat(),
+                                                altitudeM   = d.getDouble("altitude")  ?: 0.0,
+                                                bearingDeg  = d.getDouble("bearing")?.toFloat()
+                                            )
+                                        }
+                                        // Merge and update
+                                        points = (cachedPoints + newPoints).sortedBy { it.timestampMs }
+                                        UnifiedLocationCache.addPoints(uid, newPoints)
+                                        Log.d(TAG, "Fetched ${newPoints.size} new points for current user $uid since $lastFirebaseFetch")
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Could not fetch new points for $uid: ${e.message}")
                                 }
                             }
+                            
+                            Log.d(TAG, "Using cached data for $uid: ${points.size} points (covers full window)")
+                        } else {
+                            // Cache doesn't cover window - fetch full time window from Firebase
+                            val queryLimit = getQueryLimit(_state.value.timeWindowHours)
+                            val query = db.collection("locations")
+                                .document(uid)
+                                .collection("records")
+                                .whereGreaterThanOrEqualTo("timestamp", since)
+                                .orderBy("timestamp", Query.Direction.DESCENDING)
+                                .limit(queryLimit.toLong())
 
                             val snap = query.get().await()
                             UsageTracker.recordReads(getApplication(), snap.size())
-                            userEmail = snap.documents.firstOrNull()?.getString("email") ?: uid
-                            
-                            // Store email in cache for future use
-                            if (userEmail != uid) {
-                                UnifiedLocationCache.setEmail(uid, userEmail)
-                            }
 
                             val newPoints = snap.documents.mapNotNull { d ->
                                 val ts = d.getLong("timestamp") ?: return@mapNotNull null
@@ -143,17 +183,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                 )
                             }
 
-                            // If we fetched partial data for current user, merge with cache
-                            if (uid == currentUserId && UnifiedLocationCache.hasValidCache(uid)) {
-                                val (cachedPoints, _) = UnifiedLocationCache.getCachedPoints(uid, since)
-                                points = (cachedPoints + newPoints).sortedBy { it.timestampMs }
-                                Log.d(TAG, "Merged ${cachedPoints.size} cached + ${newPoints.size} new for current user")
-                            } else {
-                                points = newPoints.sortedBy { it.timestampMs }
-                            }
+                            points = newPoints.sortedBy { it.timestampMs }
 
                             // Update cache with fetched data
-                            UnifiedLocationCache.addPoints(uid, points)
+                            UnifiedLocationCache.addPoints(uid, newPoints)
                             fromFirebase = true
                             firebasePointsCount += points.size
                             Log.d(TAG, "Fetched from Firebase for $uid: ${points.size} points")

@@ -20,6 +20,7 @@ data class MainState(
     val fineLocationGranted: Boolean = false,
     val backgroundLocationGranted: Boolean = false,
     val notificationPermissionGranted: Boolean = false,
+    val activityRecognitionGranted: Boolean = false,
     val gpsState: GpsStateHolder.GpsState = GpsStateHolder.GpsState.DEEP_IDLE,
     val gpsIntervalMs: Long = 0L,
     val totalCacheSize: Int = 0
@@ -31,6 +32,7 @@ sealed class MainIntent {
     object RequestFineLocation : MainIntent()
     object RequestBackgroundLocation : MainIntent()
     object RequestNotificationPermission : MainIntent()
+    object RequestActivityRecognition : MainIntent()
     object ManualSync : MainIntent()
     object ExpressSync : MainIntent()
     object StopExpressSync : MainIntent()

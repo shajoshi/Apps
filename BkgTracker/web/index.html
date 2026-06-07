@@ -14,7 +14,7 @@
     import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
                                     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
-    import { getFirestore, collection, query, limit, getDocs }
+    import { getFirestore, collection, query, where, orderBy, limit, getDocs }
                                     from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
     import { firebaseConfig } from "./firebase-config.js";
 
@@ -84,6 +84,41 @@
     // ── Load and render locations ─────────────────────────────────────────────────
     let markers = [];
     let polylines = [];
+    
+    // Track which users are visible (email -> boolean)
+    let visibleUsers = new Set();
+    let allUsers = []; // Store all discovered users
+    
+    function toggleUser(email) {
+      if (visibleUsers.has(email)) {
+        visibleUsers.delete(email);
+      } else {
+        visibleUsers.add(email);
+      }
+      updateUserToggles();
+      loadLocations();
+    }
+    window.toggleUser = toggleUser;
+    
+    function updateUserToggles() {
+      const container = document.getElementById('user-toggles');
+      if (!container) return;
+      
+      container.innerHTML = '';
+      allUsers.forEach(email => {
+        const isVisible = visibleUsers.has(email);
+        const colour = userColours[email] || COLOURS[0];
+        const btn = document.createElement('button');
+        btn.className = `user-toggle ${isVisible ? 'active' : 'inactive'}`;
+        btn.style.borderColor = colour;
+        btn.style.background = isVisible ? colour : 'transparent';
+        btn.style.color = isVisible ? 'white' : colour;
+        btn.textContent = email.split('@')[0]; // Show just username part
+        btn.title = email;
+        btn.onclick = () => toggleUser(email);
+        container.appendChild(btn);
+      });
+    }
 
     async function loadLocations() {
       const hoursBack = parseInt(document.getElementById("hours-select").value, 10);
@@ -108,12 +143,33 @@
       // Step 2: fetch each user's records subcollection directly
       const byUser = {};
       let totalPoints = 0;
+      const discoveredUsers = [];
+      
+      // Dynamic query limits based on time window (matching Android app)
+      function getQueryLimit(hours) {
+        switch(hours) {
+          case 1: return 240;     // 1 hour = 4 points/min × 60 min
+          case 6: return 1000;    // 6 hours buffer
+          case 24: return 1500;   // 24 hours
+          case 72: return 3000;   // 3 days
+          case 168: return 5000;  // 7 days
+          default: return 240;
+        }
+      }
+      const queryLimit = getQueryLimit(hoursBack);
+      
       await Promise.all(userDocs.docs.map(async userDoc => {
         const uid = userDoc.id;
         const recRef = collection(db, "locations", uid, "records");
-        // Dynamic query limits based on time window (default to 24 hours)
-    const queryLimit = 1500; // 24 hours = 1500 points max
-    const q = query(recRef, limit(queryLimit));
+        
+        // Query with server-side timestamp filtering (matching Android app)
+        const q = query(
+          recRef,
+          where("timestamp", ">=", since),
+          orderBy("timestamp", "desc"),
+          limit(queryLimit)
+        );
+        
         try {
           const snap = await getDocs(q);
           snap.forEach(d => {
@@ -122,9 +178,11 @@
             const tsMs = raw?.toMillis
               ? raw.toMillis()
               : Number(raw);
-            if (tsMs < since) return;
             data._tsMs = tsMs;
             const key = data.email || uid;
+            if (!discoveredUsers.includes(key)) {
+              discoveredUsers.push(key);
+            }
             if (!byUser[key]) byUser[key] = [];
             byUser[key].push(data);
             totalPoints++;
@@ -134,11 +192,22 @@
         }
       }));
 
+      // Update user list and toggles if we discovered new users
+      const newUsers = discoveredUsers.filter(u => !allUsers.includes(u));
+      if (newUsers.length > 0) {
+        allUsers = [...allUsers, ...newUsers];
+        // Auto-enable new users
+        newUsers.forEach(u => visibleUsers.add(u));
+        updateUserToggles();
+      }
+
       const bounds = [];
       const legend = document.getElementById("legend-list");
       legend.innerHTML = "";
 
       Object.entries(byUser).forEach(([email, points]) => {
+        // Skip if user is not selected for display
+        if (!visibleUsers.has(email)) return;
         points.sort((a, b) => a._tsMs - b._tsMs);
         const colour = colourFor(email);
         const latLngs = points.map(p => [p.lat, p.lon]);
@@ -211,6 +280,12 @@
     #legend { background: white; border-top: 1px solid #e0e0e0;
               padding: 8px 16px; font-size: .82rem; max-height: 80px; overflow-y: auto; }
     #legend-list { display: flex; gap: 16px; list-style: none; flex-wrap: wrap; }
+    #user-toggles { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    #user-toggles button { padding: 4px 10px; border-radius: 12px; border: 2px solid; font-size: .75rem; cursor: pointer; transition: all 0.2s; }
+    #user-toggles button:hover { opacity: 0.8; }
+    .user-toggle.active { font-weight: 600; }
+    .user-toggle.inactive { opacity: 0.5; }
+    #toggle-label { font-size: .85rem; color: #555; margin-right: 4px; }
   </style>
 </head>
 <body>
@@ -241,6 +316,8 @@
         <option value="168">7 days</option>
       </select>
       <button onclick="loadLocations()">Refresh</button>
+      <span id="toggle-label">Users:</span>
+      <span id="user-toggles"></span>
       <span id="status"></span>
     </div>
     <div id="map"></div>

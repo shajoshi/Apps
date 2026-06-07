@@ -81,6 +81,7 @@ object UsageTracker {
         val fcmMessages: Int,
         val cloudFunctionInvocations: Int
     ) {
+        // Firestore limits (DAILY free tier)
         fun estimatedCost(): String {
             val extraWrites = maxOf(0, firestoreWrites - 20_000)
             val extraReads = maxOf(0, firestoreReads - 50_000)
@@ -90,6 +91,15 @@ object UsageTracker {
             return if (total < 0.001) "Within free tier" else "~\$%.4f".format(total)
         }
 
+        // Cloud Functions limits (MONTHLY free tier: 2M requests)
+        fun cfUtilisation(): Int =
+            if (cloudFunctionInvocations == 0) 0 else minOf(100, cloudFunctionInvocations * 100 / 2_000_000)
+
+        // FCM limits (MONTHLY free tier: 10GB, but we track message count)
+        fun fcmUtilisation(): Int =
+            if (fcmMessages == 0) 0 else minOf(100, fcmMessages * 100 / 100_000)  // Approximate: assume 100KB avg per message
+
+        // Firestore daily limits
         fun writeUtilisation(): Int =
             if (firestoreWrites == 0) 0 else minOf(100, firestoreWrites * 100 / 20_000)
 

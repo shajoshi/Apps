@@ -8,10 +8,10 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.firebase.messaging.FirebaseMessaging
+import com.google.firebase.auth.FirebaseAuth
 import com.sj.bkgtracker.data.local.ExpressSyncManager
-import com.sj.bkgtracker.data.local.LocationCache
-import com.sj.bkgtracker.data.local.MapDataCache
 import com.sj.bkgtracker.data.local.SyncPrefs
+import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import com.sj.bkgtracker.worker.SyncWorker
 import java.util.concurrent.TimeUnit
 
@@ -25,8 +25,14 @@ class BkgTrackerApp : Application() {
         super.onCreate()
         Log.d(TAG, "Application onCreate")
         SyncPrefs.load(this)
-        LocationCache.initialise(this)
         ExpressSyncManager.initialise(this)
+        
+        // Initialize UnifiedLocationCache if user is signed in
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            UnifiedLocationCache.setCurrentUser(currentUser.uid)
+            UnifiedLocationCache.initialise(this, currentUser.uid)
+        }
         subscribeFcmTopic()
         scheduleSync()
     }
