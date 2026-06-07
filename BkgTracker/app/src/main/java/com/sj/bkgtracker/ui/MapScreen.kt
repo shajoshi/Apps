@@ -27,6 +27,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.ScaleBarOverlay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,7 +70,14 @@ fun MapScreen(
     state: MapState,
     onRefresh: () -> Unit,
     onToggleUser: (String) -> Unit,
-    onSetTimeWindow: (Int) -> Unit
+    onSetTimeWindow: (Int) -> Unit,
+    onEnableTimeline: () -> Unit = {},
+    onDisableTimeline: () -> Unit = {},
+    onSetTimelineIndex: (Int) -> Unit = {},
+    onGoToStart: () -> Unit = {},
+    onGoToEnd: () -> Unit = {},
+    onGoToPrevious: () -> Unit = {},
+    onGoToNext: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val mapViewRef = remember { mutableStateOf<MapView?>(null) }
@@ -103,6 +112,149 @@ fun MapScreen(
             }
         }
 
+        // Timeline Slider - Always visible
+        Surface(
+            tonalElevation = 2.dp,
+            shadowElevation = 4.dp,
+            modifier = Modifier.fillMaxWidth().zIndex(1f)
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Timeline",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (state.users.isNotEmpty()) {
+                            if (!state.timelineEnabled) {
+                                // Enable timeline button
+                                IconButton(
+                                    onClick = onEnableTimeline,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Refresh,
+                                        contentDescription = "Enable Timeline",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            } else {
+                                // Timeline navigation controls
+                                IconButton(
+                                    onClick = onGoToStart,
+                                    enabled = state.timelineIndex > 0,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text(
+                                        text = "|◀",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(2.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onGoToPrevious,
+                                    enabled = state.timelineIndex > 0,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text(
+                                        text = "◀",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(2.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onGoToNext,
+                                    enabled = state.timelineIndex < state.timelineTotal - 1,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text(
+                                        text = "▶",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(2.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onGoToEnd,
+                                    enabled = state.timelineIndex < state.timelineTotal - 1,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text(
+                                        text = "▶|",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(2.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = onDisableTimeline,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Text(
+                                        text = "✕",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (state.timelineEnabled && state.timelineTotal > 0) {
+                    // Timeline slider
+                    Column {
+                        Slider(
+                            value = state.timelineIndex.toFloat(),
+                            onValueChange = { value -> onSetTimelineIndex(value.toInt()) },
+                            valueRange = 0f..(state.timelineTotal - 1).toFloat(),
+                            steps = if (state.timelineTotal > 2) state.timelineTotal - 2 else 0,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        // Timeline info
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            state.currentTimelinePoint?.let { point ->
+                                val sdf = SimpleDateFormat("dd-MMM HH:mm:ss", Locale.getDefault())
+                                val timeStr = sdf.format(Date(point.timestampMs))
+                                Text(
+                                    text = "Point ${state.timelineIndex + 1}/${state.timelineTotal}: $timeStr",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    text = "%.1f km/h".format(point.speedKmh),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            } ?: run {
+                                Text(
+                                    text = "No data",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                } else if (state.users.isNotEmpty()) {
+                    Text(
+                        text = "Click refresh to enable timeline",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+            }
+        }
+
         Box(modifier = Modifier.weight(1f)) {
             AndroidView(
                 factory = { ctx ->
@@ -115,11 +267,22 @@ fun MapScreen(
                         mv.setMultiTouchControls(true)
                         mv.controller.setZoom(5.0)
                         mv.controller.setCenter(GeoPoint(20.0, 78.0))
+                        
+                        // Add scale bar overlay
+                        val scaleBarOverlay = ScaleBarOverlay(mv)
+                        scaleBarOverlay.setCentred(true)
+                        scaleBarOverlay.setScaleBarOffset(context.resources.displayMetrics.widthPixels / 2 - 100, 20)
+                        mv.overlays.add(scaleBarOverlay)
+                        
                         mapViewRef.value = mv
                     }
                 },
                 update = { mapView ->
+                    // Clear overlays but preserve scale bar
+                    val scaleBarOverlay = mapView.overlays.find { it is ScaleBarOverlay }
                     mapView.overlays.clear()
+                    scaleBarOverlay?.let { mapView.overlays.add(it) }
+                    
                     val allPoints = mutableListOf<GeoPoint>()
                     val colourMap = state.users.mapIndexed { i, u -> u.email to TRACK_COLOURS[i % TRACK_COLOURS.size] }.toMap()
 
@@ -159,6 +322,32 @@ fun MapScreen(
                             }
                             mapView.overlays.add(marker)
                         }
+                    }
+
+                    // Add timeline marker if enabled
+                    if (state.timelineEnabled && state.currentTimelinePoint != null) {
+                        val timelineMarker = Marker(mapView).apply {
+                            position = GeoPoint(
+                                state.currentTimelinePoint!!.latitude,
+                                state.currentTimelinePoint!!.longitude
+                            )
+                            val dot = ShapeDrawable(OvalShape()).apply {
+                                paint.color = Color.RED
+                                paint.style = Paint.Style.FILL
+                                intrinsicWidth = 48
+                                intrinsicHeight = 48
+                            }
+                            icon = dot
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            val sdf = SimpleDateFormat("dd-MMM HH:mm:ss", Locale.getDefault())
+                            val ts = sdf.format(Date(state.currentTimelinePoint!!.timestampMs))
+                            val spd = "%.1f km/h".format(state.currentTimelinePoint!!.speedKmh)
+                            val alt = "%.0f m".format(state.currentTimelinePoint!!.altitudeM)
+                            val acc = "±%.0f m".format(state.currentTimelinePoint!!.accuracyM)
+                            title = "Timeline Position"
+                            snippet = "$ts  $spd  alt $alt  $acc"
+                        }
+                        mapView.overlays.add(timelineMarker)
                     }
 
                     if (allPoints.size > 1) {
@@ -248,7 +437,7 @@ fun MapScreen(
                         }
                     }
                     Text(
-                        text = "${state.totalPoints} points fetched",
+                        text = "${state.totalPoints} points displayed (${state.firebasePoints} fetched from Firebase, ${state.cachePoints} from cache)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)

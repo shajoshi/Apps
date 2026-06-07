@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.sj.bkgtracker.data.local.GpsStateHolder
 import com.sj.bkgtracker.domain.model.LocationRecord
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -86,6 +87,8 @@ fun MainScreen(
 
             TrackingStatusCard(
                 isTracking = state.isTracking,
+                gpsState = state.gpsState,
+                gpsIntervalMs = state.gpsIntervalMs,
                 isExpressMode = state.isExpressMode,
                 expressMinutesRemaining = state.expressMinutesRemaining,
                 expressRequestedBy = state.expressRequestedBy,
@@ -98,7 +101,8 @@ fun MainScreen(
                 skippedStatus = state.lastSkippedStatus
             )
             CacheSyncCard(
-                cacheSize         = state.cacheSize,
+                unsavedSize       = state.unsavedSize,
+                totalCacheSize    = state.totalCacheSize,
                 lastSyncTime      = state.lastSyncTime,
                 lastSyncSuccess   = state.lastSyncSuccess,
                 isSyncing         = state.isSyncing,
@@ -189,6 +193,8 @@ private fun PermissionCard(title: String, body: String, onRequest: () -> Unit) {
 @Composable
 private fun TrackingStatusCard(
     isTracking: Boolean,
+    gpsState: GpsStateHolder.GpsState = GpsStateHolder.GpsState.DEEP_IDLE,
+    gpsIntervalMs: Long = 0L,
     isExpressMode: Boolean = false,
     expressMinutesRemaining: Int = 0,
     expressRequestedBy: String? = null,
@@ -196,9 +202,18 @@ private fun TrackingStatusCard(
     onExpressSync: () -> Unit = {},
     onStopExpressSync: () -> Unit = {}
 ) {
-    val containerColor = if (isTracking)
-        Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surfaceVariant
-    val statusColor = if (isTracking) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
+    val containerColor = when (gpsState) {
+        GpsStateHolder.GpsState.DEEP_IDLE -> MaterialTheme.colorScheme.surfaceVariant
+        GpsStateHolder.GpsState.ACQUISITION -> Color(0xFFFFF3E0) // Light orange
+        GpsStateHolder.GpsState.ACTIVE -> Color(0xFFE8F5E8) // Light green
+        GpsStateHolder.GpsState.EXPRESS -> Color(0xFFE3F2FD) // Light blue
+    }
+    val statusColor = when (gpsState) {
+        GpsStateHolder.GpsState.DEEP_IDLE -> Color(0xFF9E9E9E) // Gray
+        GpsStateHolder.GpsState.ACQUISITION -> Color(0xFFFF9800) // Orange
+        GpsStateHolder.GpsState.ACTIVE -> Color(0xFF2E7D32) // Green
+        GpsStateHolder.GpsState.EXPRESS -> Color(0xFF1976D2) // Blue
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -208,21 +223,31 @@ private fun TrackingStatusCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = if (isTracking) Color(0xFF2E7D32) else Color(0xFF9E9E9E),
+                    color = statusColor,
                     modifier = Modifier.size(10.dp)
                 ) {}
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (isTracking) "Tracking Active" else "Tracking Inactive",
+                        text = when (gpsState) {
+                            GpsStateHolder.GpsState.DEEP_IDLE -> "Deep Idle - Battery Saving"
+                            GpsStateHolder.GpsState.ACQUISITION -> "Acquiring GPS Fix"
+                            GpsStateHolder.GpsState.ACTIVE -> "GPS Active"
+                            GpsStateHolder.GpsState.EXPRESS -> "Express Mode Active"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = statusColor
                     )
                     Text(
-                        text = if (!isTracking) "Start the app or reboot to resume"
-                               else if (isExpressMode) "GPS updates every 10 seconds (express)"
-                               else "GPS updates every 60 seconds",
+                        text = when {
+                            !isTracking -> "Start the app or reboot to resume"
+                            gpsIntervalMs == 0L -> "GPS off - waiting for satellites"
+                            gpsIntervalMs <= 5_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (acquisition)"
+                            gpsIntervalMs <= 10_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (express)"
+                            gpsIntervalMs <= 15_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (normal)"
+                            else -> "GPS updates every ${gpsIntervalMs / 1000}s"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = statusColor.copy(alpha = 0.7f)
                     )
@@ -308,7 +333,8 @@ private fun LastLocationCard(
 
 @Composable
 private fun CacheSyncCard(
-    cacheSize: Int,
+    unsavedSize: Int,
+    totalCacheSize: Int,
     lastSyncTime: Long,
     lastSyncSuccess: Boolean,
     isSyncing: Boolean = false,
@@ -327,14 +353,15 @@ private fun CacheSyncCard(
                 } else {
                     OutlinedButton(
                         onClick = onManualSync,
-                        enabled = cacheSize > 0,
+                        enabled = unsavedSize > 0,
                         modifier = Modifier.height(32.dp)
                     ) {
-                        Text("Sync Now", style = MaterialTheme.typography.labelSmall)
+                        Text("Save Now", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
-            InfoRow("Cached Points", "$cacheSize")
+            InfoRow("Unsaved Points", "$unsavedSize")
+            InfoRow("Saved locally", "$totalCacheSize points")
             if (lastSyncTime > 0L) {
                 InfoRow("Last Sync", formatTimestamp(lastSyncTime))
                 InfoRow("Result", if (lastSyncSuccess) "✓ Success" else "✗ Failed — will retry")

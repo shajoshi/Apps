@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import com.google.firebase.messaging.FirebaseMessaging
 import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.LocationCache
+import com.sj.bkgtracker.data.local.MapDataCache
 import com.sj.bkgtracker.data.local.SyncPrefs
 import com.sj.bkgtracker.worker.SyncWorker
 import java.util.concurrent.TimeUnit

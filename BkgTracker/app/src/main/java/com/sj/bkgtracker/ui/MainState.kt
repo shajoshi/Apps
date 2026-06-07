@@ -1,5 +1,6 @@
 package com.sj.bkgtracker.ui
 
+import com.sj.bkgtracker.data.local.GpsStateHolder
 import com.sj.bkgtracker.domain.model.LocationRecord
 
 data class MainState(
@@ -8,7 +9,7 @@ data class MainState(
     val isTracking: Boolean = false,
     val lastLocation: LocationRecord? = null,
     val lastSkippedStatus: String? = null,
-    val cacheSize: Int = 0,
+    val unsavedSize: Int = 0,
     val lastSyncTime: Long = 0L,
     val lastSyncSuccess: Boolean = false,
     val isSyncing: Boolean = false,
@@ -18,7 +19,10 @@ data class MainState(
     val expressStatusMessage: String? = null,
     val fineLocationGranted: Boolean = false,
     val backgroundLocationGranted: Boolean = false,
-    val notificationPermissionGranted: Boolean = false
+    val notificationPermissionGranted: Boolean = false,
+    val gpsState: GpsStateHolder.GpsState = GpsStateHolder.GpsState.DEEP_IDLE,
+    val gpsIntervalMs: Long = 0L,
+    val totalCacheSize: Int = 0
 )
 
 sealed class MainIntent {

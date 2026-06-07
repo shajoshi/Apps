@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.sj.bkgtracker.data.local.UsageTracker
+import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import androidx.core.content.ContextCompat
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -113,6 +114,7 @@ class MainActivity : ComponentActivity() {
 
                 if (showUsageDialog) {
                     val usage = UsageTracker.getTodayUsage(this@MainActivity)
+                    val cacheStats = UnifiedLocationCache.cacheStats.collectAsState().value
                     AlertDialog(
                         onDismissRequest = { showUsageDialog = false },
                         title = { Text("Cloud Usage Today", fontWeight = FontWeight.SemiBold) },
@@ -126,6 +128,13 @@ class MainActivity : ComponentActivity() {
                                 UsageRow("FCM messages", "${usage.fcmMessages}")
                                 UsageRow("Cloud Functions", "${usage.cloudFunctionInvocations}")
                                 HorizontalDivider()
+                                UsageRow("Cached users", "${cacheStats.cachedUserCount}")
+                                UsageRow("Cached points", "${cacheStats.totalCachedPoints}")
+                                Text(
+                                    text = UnifiedLocationCache.getCacheInfo(),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                HorizontalDivider()
                                 Text(
                                     text = "Est. cost: ${usage.estimatedCost()}",
                                     style = MaterialTheme.typography.bodySmall,
@@ -135,6 +144,14 @@ class MainActivity : ComponentActivity() {
                         },
                         confirmButton = {
                             TextButton(onClick = { showUsageDialog = false }) { Text("Close") }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    UnifiedLocationCache.clearCache()
+                                    Toast.makeText(this@MainActivity, "Cache cleared", Toast.LENGTH_SHORT).show()
+                                }
+                            ) { Text("Clear Cache") }
                         }
                     )
                 }
@@ -242,7 +259,14 @@ class MainActivity : ComponentActivity() {
                                 state         = mapState,
                                 onRefresh     = { mapViewModel.refresh() },
                                 onToggleUser  = { mapViewModel.toggleUser(it) },
-                                onSetTimeWindow = { mapViewModel.setTimeWindowHours(it) }
+                                onSetTimeWindow = { mapViewModel.setTimeWindowHours(it) },
+                                onEnableTimeline = { mapViewModel.enableTimeline() },
+                                onDisableTimeline = { mapViewModel.disableTimeline() },
+                                onSetTimelineIndex = { mapViewModel.setTimelineIndex(it) },
+                                onGoToStart = { mapViewModel.goToStart() },
+                                onGoToEnd = { mapViewModel.goToEnd() },
+                                onGoToPrevious = { mapViewModel.goToPrevious() },
+                                onGoToNext = { mapViewModel.goToNext() }
                             )
                         }
                     }

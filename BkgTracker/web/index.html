@@ -111,7 +111,9 @@
       await Promise.all(userDocs.docs.map(async userDoc => {
         const uid = userDoc.id;
         const recRef = collection(db, "locations", uid, "records");
-        const q = query(recRef, limit(2000));
+        // Dynamic query limits based on time window (default to 24 hours)
+    const queryLimit = 1500; // 24 hours = 1500 points max
+    const q = query(recRef, limit(queryLimit));
         try {
           const snap = await getDocs(q);
           snap.forEach(d => {

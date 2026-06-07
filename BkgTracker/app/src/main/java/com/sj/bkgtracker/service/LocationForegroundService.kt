@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
@@ -22,12 +23,16 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import android.location.GnssStatus
+import android.location.LocationManager
 import com.sj.bkgtracker.R
 import com.sj.bkgtracker.data.local.ExpressSyncManager
-import com.sj.bkgtracker.data.local.LocationCache
+import com.sj.bkgtracker.data.local.GpsStateHolder
 import com.sj.bkgtracker.data.local.SyncPrefs
 import com.sj.bkgtracker.data.local.TrackingStateHolder
+import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import com.sj.bkgtracker.data.repository.LocationRepositoryImpl
+import com.google.firebase.auth.FirebaseAuth
 import com.sj.bkgtracker.domain.model.LocationRecord
 import com.sj.bkgtracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +45,13 @@ import kotlinx.coroutines.launch
 class LocationForegroundService : Service() {
 
     companion object {
+        /** GPS State Machine for Battery Optimization */
+        enum class GpsState {
+            DEEP_IDLE,      // GPS completely off, minimal battery drain
+            ACQUISITION,    // Fast GPS startup when satellites detected
+            ACTIVE,         // Normal GPS tracking with movement
+            EXPRESS         // High-frequency tracking (overrides all)
+        }
         private const val TAG = "LocationFgService"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "bkg_tracker_location"
@@ -50,15 +62,20 @@ class LocationForegroundService : Service() {
         /** Accuracy threshold to detect indoor/cell locations vs real GPS (meters) */
         private const val INDOOR_ACCURACY_THRESHOLD = 100f
 
-        /** Normal mode: GPS fix every 60 seconds */
-        private const val NORMAL_INTERVAL_MS = 60_000L
+        /** Normal mode: GPS fix every 15 seconds */
+        private const val NORMAL_INTERVAL_MS = 15_000L
         /** Express mode: GPS fix every 10 seconds */
         private const val EXPRESS_INTERVAL_MS = 10_000L
         /** Idle/stationary mode: GPS fix every 5 minutes */
         private const val IDLE_INTERVAL_MS = 300_000L
 
+        /** Acquisition mode: Fast GPS fix every 5 seconds when satellites detected */
+        private const val ACQUISITION_INTERVAL_MS = 5_000L
+        /** Acquisition timeout: Return to deep idle if no movement in 60 seconds */
+        private const val ACQUISITION_TIMEOUT_MS = 60_000L
+
         /** Consecutive distance-skips before entering idle mode */
-        private const val STATIONARY_SKIP_THRESHOLD = 3
+        private const val STATIONARY_SKIP_THRESHOLD = 6
 
         /** Minimum interval between notification updates in normal mode (5 min) */
         private const val NOTIFICATION_THROTTLE_MS = 300_000L
@@ -83,12 +100,54 @@ class LocationForegroundService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var expressSyncJob: Job? = null
 
+    /** GPS State Machine tracking */
+    private var currentGpsState = GpsState.DEEP_IDLE
+    private var acquisitionStartTime = 0L
+    
     /** Consecutive distance-filter skips for stationary detection */
     private var consecutiveSkips = 0
     private var isIdleMode = false
 
     /** Timestamp of last notification update for throttling */
     private var lastNotificationUpdateMs = 0L
+
+    /** GnssCallback for battery-efficient GPS detection */
+    private val gnssStatusCallback = object : GnssStatus.Callback() {
+        override fun onStarted() {
+            Log.d(TAG, "GPS satellites detected - waking from deep idle")
+            if (currentGpsState == GpsState.DEEP_IDLE && !ExpressSyncManager.isExpressMode.value) {
+                enterAcquisitionMode()
+            }
+        }
+        
+        override fun onFirstFix(ttffMillis: Int) {
+            Log.d(TAG, "First GPS fix acquired in ${ttffMillis}ms")
+            if (currentGpsState == GpsState.ACQUISITION) {
+                // Always enter active mode on first fix to allow movement detection
+                // The location callback will determine if we should return to idle based on actual movement
+                Log.d(TAG, "Entering active mode to detect movement")
+                enterActiveMode()
+            }
+        }
+        
+        override fun onStopped() {
+            Log.d(TAG, "GPS satellites lost - entering deep idle")
+            if (currentGpsState != GpsState.EXPRESS) {
+                enterDeepIdleMode()
+            }
+        }
+        
+        override fun onSatelliteStatusChanged(status: GnssStatus) {
+            val satelliteCount = status.satelliteCount
+            var usedInFix = 0
+            for (i in 0 until satelliteCount) {
+                if (status.usedInFix(i)) {
+                    usedInFix++
+                }
+            }
+            Log.d(TAG, "Satellites: $usedInFix/$satelliteCount used in fix")
+        }
+    }
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -101,7 +160,7 @@ class LocationForegroundService : Service() {
                 val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
                 if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
                     val reason = "indoor accuracy ${accuracy.toInt()}m > ${INDOOR_ACCURACY_THRESHOLD.toInt()}m"
-                    LocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
+                    UnifiedLocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
                     Log.d(TAG, "Indoor/cell location skipped: $reason")
                     return
                 }
@@ -120,18 +179,23 @@ class LocationForegroundService : Service() {
                 if (!shouldSave) {
                     consecutiveSkips++
                     val reason = "within ${MIN_DISTANCE_METERS.toInt()}m of last saved"
-                    LocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
+                    UnifiedLocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
                     Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} ($reason) [skip $consecutiveSkips]")
-                    // Enter idle mode after threshold consecutive skips
-                    if (!isIdleMode && consecutiveSkips >= STATIONARY_SKIP_THRESHOLD) {
-                        enterIdleMode()
+                    
+                    // In active mode, consecutive skips indicate potential stationary behavior
+                    if (currentGpsState == GpsState.ACTIVE && consecutiveSkips >= STATIONARY_SKIP_THRESHOLD) {
+                        Log.d(TAG, "Stationary behavior detected, returning to deep idle")
+                        enterDeepIdleMode()
                     }
                     return
                 }
 
-                // Movement detected — exit idle mode if active
-                if (isIdleMode) {
-                    exitIdleMode()
+                // Movement detected - ensure we're in appropriate active state
+                if (currentGpsState == GpsState.ACQUISITION) {
+                    enterActiveMode()
+                } else if (currentGpsState == GpsState.DEEP_IDLE) {
+                    // Shouldn't happen in deep idle, but handle gracefully
+                    enterAcquisitionMode()
                 }
                 consecutiveSkips = 0
             }
@@ -150,9 +214,12 @@ class LocationForegroundService : Service() {
             )
 
             lastSavedLocation = loc
-            LocationCache.add(this@LocationForegroundService, record)
+            val userId = FirebaseAuth.getInstance().currentUser?.uid
+            if (userId != null) {
+                UnifiedLocationCache.addPoint(this@LocationForegroundService, userId, record)
+            }
             throttledNotificationUpdate(loc.latitude, loc.longitude, loc.accuracy, speedKmh)
-            Log.d(TAG, "Saved: ${loc.latitude}, ${loc.longitude}  ±${loc.accuracy}m  ${speedKmh}km/h  alt=${altitudeM}m  cache=${LocationCache.cacheSize.value}")
+            Log.d(TAG, "Saved: ${loc.latitude}, ${loc.longitude}  ±${loc.accuracy}m  ${speedKmh}km/h  alt=${altitudeM}m")
         }
 
         override fun onLocationAvailability(availability: LocationAvailability) {
@@ -174,8 +241,26 @@ class LocationForegroundService : Service() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Acquiring GPS fix…", ""))
-        startLocationUpdates()
+        startForeground(NOTIFICATION_ID, buildNotification("Initializing", "Starting GPS service"))
+        
+        // Initialize UnifiedLocationCache if user is signed in
+        val currentUser = FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            UnifiedLocationCache.setCurrentUser(currentUser.uid)
+            UnifiedLocationCache.initialise(this, currentUser.uid)
+        }
+        
+        // Register GnssCallback for battery-efficient GPS detection
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.registerGnssStatusCallback(ContextCompat.getMainExecutor(this), gnssStatusCallback)
+        
+        // Initialize GPS state machine
+        if (ExpressSyncManager.isExpressMode.value) {
+            enterExpressMode()
+        } else {
+            enterDeepIdleMode()
+        }
+        
         TrackingStateHolder.setTracking(true)
         observeExpressMode()
     }
@@ -191,6 +276,8 @@ class LocationForegroundService : Service() {
         super.onDestroy()
         Log.d(TAG, "Service onDestroy")
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
         expressSyncJob?.cancel()
         serviceScope.cancel()
         TrackingStateHolder.setTracking(false)
@@ -200,46 +287,27 @@ class LocationForegroundService : Service() {
     private fun observeExpressMode() {
         serviceScope.launch {
             ExpressSyncManager.isExpressMode.collect { isExpress ->
-                // Express mode overrides idle mode
+                // Express mode overrides all GPS states
                 if (isExpress) {
                     isIdleMode = false
                     consecutiveSkips = 0
-                }
-                switchLocationInterval(isExpress)
-                if (isExpress) {
+                    enterExpressMode()
                     startExpressSyncTimer()
                 } else {
                     expressSyncJob?.cancel()
                     expressSyncJob = null
+                    // Clear express status message when returning to normal mode
+                    ExpressSyncManager.clearStatusMessage()
+                    // Return to appropriate non-express state
+                    if (currentGpsState == GpsState.EXPRESS) {
+                        enterDeepIdleMode()
+                    }
                 }
             }
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun enterIdleMode() {
-        isIdleMode = true
-        Log.d(TAG, "Stationary detected — entering idle mode (${IDLE_INTERVAL_MS / 1000}s interval)")
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, IDLE_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(IDLE_INTERVAL_MS / 2)
-            .build()
-        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-        notificationManager?.notify(NOTIFICATION_ID,
-            buildNotification("Stationary — low power", "GPS every ${IDLE_INTERVAL_MS / 60_000} min"))
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun exitIdleMode() {
-        isIdleMode = false
-        Log.d(TAG, "Movement detected — resuming normal GPS interval")
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(30_000L)
-            .build()
-        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-    }
-
+    
     private fun throttledNotificationUpdate(lat: Double, lon: Double, acc: Float, speedKmh: Float) {
         val isExpress = ExpressSyncManager.isExpressMode.value
         val now = System.currentTimeMillis()
@@ -257,18 +325,7 @@ class LocationForegroundService : Service() {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    @SuppressLint("MissingPermission")
-    private fun switchLocationInterval(express: Boolean) {
-        val interval = if (express) EXPRESS_INTERVAL_MS else NORMAL_INTERVAL_MS
-        val minInterval = if (express) 5_000L else 30_000L
-        Log.d(TAG, "Switching GPS interval to ${interval / 1000}s (express=$express)")
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
-            .setMinUpdateIntervalMillis(minInterval)
-            .build()
-        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-    }
-
+    
     private fun startExpressSyncTimer() {
         expressSyncJob?.cancel()
         expressSyncJob = serviceScope.launch {
@@ -289,7 +346,7 @@ class LocationForegroundService : Service() {
             Log.d(TAG, "Express sync: no network — skipping upload, data stays cached")
             return
         }
-        val records = LocationCache.drainAll(this)
+        val records = UnifiedLocationCache.drainUnsavedPoints(this)
         if (records.isEmpty()) {
             Log.d(TAG, "Express sync: nothing to upload")
             return
@@ -302,7 +359,7 @@ class LocationForegroundService : Service() {
             },
             onFailure = { e ->
                 Log.e(TAG, "Express sync: upload failed: ${e.message}")
-                LocationCache.requeue(this, records)
+                UnifiedLocationCache.requeueUnsavedPoints(this, records)
                 SyncPrefs.updateLastSync(this, success = false)
             }
         )
@@ -323,16 +380,85 @@ class LocationForegroundService : Service() {
         return earthRadius * c
     }
 
+    /** GPS State Machine Methods for Battery Optimization */
+    
+    private fun hasRecentMovement(): Boolean {
+        // Check if we have recent movement data that justifies active tracking
+        return lastSavedLocation != null
+    }
+    
     @SuppressLint("MissingPermission")
-    private fun startLocationUpdates() {
-        val interval = if (ExpressSyncManager.isExpressMode.value) EXPRESS_INTERVAL_MS else NORMAL_INTERVAL_MS
-        val minInterval = if (ExpressSyncManager.isExpressMode.value) 5_000L else 30_000L
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
-            .setMinUpdateIntervalMillis(minInterval)
+    private fun enterDeepIdleMode() {
+        if (currentGpsState == GpsState.DEEP_IDLE) return
+        
+        Log.d(TAG, "Entering deep idle mode - GPS completely off")
+        currentGpsState = GpsState.DEEP_IDLE
+        GpsStateHolder.setGpsState(GpsStateHolder.GpsState.DEEP_IDLE, 0L)
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        
+        notificationManager?.notify(NOTIFICATION_ID,
+            buildNotification("Deep Idle", "Battery saving - GPS off"))
+    }
+    
+    @SuppressLint("MissingPermission")
+    private fun enterAcquisitionMode() {
+        if (currentGpsState == GpsState.ACQUISITION || currentGpsState == GpsState.EXPRESS) return
+        
+        Log.d(TAG, "Entering acquisition mode - fast GPS startup")
+        currentGpsState = GpsState.ACQUISITION
+        GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACQUISITION, ACQUISITION_INTERVAL_MS)
+        acquisitionStartTime = System.currentTimeMillis()
+        
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, ACQUISITION_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(ACQUISITION_INTERVAL_MS / 2)
+            .setMaxUpdateDelayMillis(ACQUISITION_INTERVAL_MS * 2)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        
+        notificationManager?.notify(NOTIFICATION_ID,
+            buildNotification("Acquiring GPS", "Waiting for first fix"))
+    }
+    
+    @SuppressLint("MissingPermission")
+    private fun enterActiveMode() {
+        if (currentGpsState == GpsState.ACTIVE || currentGpsState == GpsState.EXPRESS) return
+        
+        Log.d(TAG, "Entering active mode - normal GPS tracking")
+        currentGpsState = GpsState.ACTIVE
+        GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACTIVE, NORMAL_INTERVAL_MS)
+        consecutiveSkips = 0
+        
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(30_000L)
+            .build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        
+        notificationManager?.notify(NOTIFICATION_ID,
+            buildNotification("GPS Active", "Tracking movement"))
+    }
+    
+    @SuppressLint("MissingPermission")
+    private fun enterExpressMode() {
+        if (currentGpsState == GpsState.EXPRESS) return
+        
+        Log.d(TAG, "Entering express mode - high frequency tracking")
+        currentGpsState = GpsState.EXPRESS
+        GpsStateHolder.setGpsState(GpsStateHolder.GpsState.EXPRESS, EXPRESS_INTERVAL_MS)
+        consecutiveSkips = 0
+        
+        fusedLocationClient.removeLocationUpdates(locationCallback)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, EXPRESS_INTERVAL_MS)
+            .setMinUpdateIntervalMillis(5_000L)
+            .build()
+        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        
+        notificationManager?.notify(NOTIFICATION_ID,
+            buildNotification("Express Mode", "High frequency tracking"))
     }
 
+    
     private fun updateNotification(lat: Double, lon: Double, acc: Float, speedKmh: Float) {
         val coordText = "%.5f, %.5f".format(lat, lon)
         val accText   = "±%.0f m  %.1f km/h".format(acc, speedKmh)
@@ -345,10 +471,18 @@ class LocationForegroundService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        
+        // Get cache stats for notification
+        val cacheStats = UnifiedLocationCache.cacheStats.value
+        val cacheInfo = "Cache: ${cacheStats.unsavedPointsCount} unsaved, ${cacheStats.totalCachedPoints} total"
+        
         val text = if (subtitle.isNotEmpty()) "$title  $subtitle" else title
+        val notificationTitle = "BkgTracker — $title"
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("BkgTracker — GPS Active")
+            .setContentTitle(notificationTitle)
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText("$text\n$cacheInfo"))
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
