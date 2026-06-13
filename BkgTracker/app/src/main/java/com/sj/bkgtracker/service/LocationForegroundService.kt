@@ -33,6 +33,7 @@ import com.google.android.gms.location.Priority
 import android.location.GnssStatus
 import android.location.LocationManager
 import com.sj.bkgtracker.R
+import com.sj.bkgtracker.data.local.ActivityStateHolder
 import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.GpsStateHolder
 import com.sj.bkgtracker.data.local.SyncPrefs
@@ -64,6 +65,8 @@ class LocationForegroundService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "bkg_tracker_location"
         private const val ACTION_ACTIVITY_WAKE = "com.sj.bkgtracker.ACTION_ACTIVITY_WAKE"
+        private const val ACTION_ACTIVITY_END = "com.sj.bkgtracker.ACTION_ACTIVITY_END"
+        private const val EXTRA_ACTIVITY_TYPE = "extra_activity_type"
         private const val ACTIVITY_WAKE_REQUEST_CODE = 2001
 
         /** Minimum distance (meters) from last saved point to save a new point */
@@ -103,15 +106,24 @@ class LocationForegroundService : Service() {
             context.stopService(Intent(context, LocationForegroundService::class.java))
         }
 
-        fun startForActivityWake(context: Context) {
+        fun startForActivityWake(context: Context, activityType: Int = -1) {
             val intent = Intent(context, LocationForegroundService::class.java).apply {
                 action = ACTION_ACTIVITY_WAKE
+                putExtra(EXTRA_ACTIVITY_TYPE, activityType)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
+        }
+
+        fun notifyActivityEnded(context: Context, activityType: Int = -1) {
+            val intent = Intent(context, LocationForegroundService::class.java).apply {
+                action = ACTION_ACTIVITY_END
+                putExtra(EXTRA_ACTIVITY_TYPE, activityType)
+            }
+            context.startService(intent)
         }
     }
 
@@ -131,6 +143,9 @@ class LocationForegroundService : Service() {
     /** Consecutive distance-filter skips for stationary detection */
     private var consecutiveSkips = 0
     private var isIdleMode = false
+    
+    /** Whether we are currently in an activity (walking/running/driving) */
+    private var isInActivity = false
 
     /** Timestamp of last notification update for throttling */
     private var lastNotificationUpdateMs = 0L
@@ -206,7 +221,8 @@ class LocationForegroundService : Service() {
                     Log.d(TAG, "Skipped: ${loc.latitude}, ${loc.longitude} ($reason) [skip $consecutiveSkips]")
                     
                     // In active mode, consecutive skips indicate potential stationary behavior
-                    if (currentGpsState == GpsState.ACTIVE && consecutiveSkips >= STATIONARY_SKIP_THRESHOLD) {
+                    // But do NOT go to deep idle if we're in an activity - stay in GPS mode
+                    if (currentGpsState == GpsState.ACTIVE && consecutiveSkips >= STATIONARY_SKIP_THRESHOLD && !isInActivity) {
                         Log.d(TAG, "Stationary behavior detected, returning to deep idle")
                         enterDeepIdleMode()
                     }
@@ -246,14 +262,12 @@ class LocationForegroundService : Service() {
         }
 
         override fun onLocationAvailability(availability: LocationAvailability) {
+            // Don't update notification here - rely on state machine (enter*Mode functions) instead
+            // This prevents notification from showing incorrect state (e.g., "GPS active" when in DEEP_IDLE)
             if (!availability.isLocationAvailable) {
                 Log.w(TAG, "GPS unavailable (location off or airplane mode)")
-                notificationManager?.notify(NOTIFICATION_ID,
-                    buildNotification("GPS unavailable", "Waiting for location…"))
             } else {
-                Log.d(TAG, "GPS available again")
-                notificationManager?.notify(NOTIFICATION_ID,
-                    buildNotification("GPS active", ""))
+                Log.d(TAG, "GPS available")
             }
         }
     }
@@ -292,9 +306,36 @@ class LocationForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "Service onStartCommand")
         if (intent?.action == ACTION_ACTIVITY_WAKE) {
-            Log.d(TAG, "Activity Recognition wake received")
-            if (currentGpsState == GpsState.DEEP_IDLE && !ExpressSyncManager.isExpressMode.value) {
-                enterAcquisitionMode()
+            val activityType = intent.getIntExtra(EXTRA_ACTIVITY_TYPE, -1)
+            val activityName = ActivityStateHolder.activityName(activityType)
+            
+            if (activityType == DetectedActivity.STILL) {
+                // STILL activity detected - user is stationary, go to deep idle
+                Log.d(TAG, "STILL activity detected - going to deep idle")
+                isInActivity = false
+                ActivityStateHolder.setActivityStarted(activityType)
+                if (currentGpsState != GpsState.EXPRESS) {
+                    enterDeepIdleMode()
+                }
+            } else {
+                // Movement activity detected (walking, driving, etc.)
+                Log.d(TAG, "Activity started: $activityName")
+                isInActivity = true
+                ActivityStateHolder.setActivityStarted(activityType)
+                notificationManager?.notify(NOTIFICATION_ID,
+                    buildNotification("Active: $activityName", "GPS tracking"))
+                if (currentGpsState == GpsState.DEEP_IDLE && !ExpressSyncManager.isExpressMode.value) {
+                    enterAcquisitionMode()
+                }
+            }
+        } else if (intent?.action == ACTION_ACTIVITY_END) {
+            val activityType = intent.getIntExtra(EXTRA_ACTIVITY_TYPE, -1)
+            val activityName = ActivityStateHolder.activityName(activityType)
+            Log.d(TAG, "Activity ended: $activityName")
+            isInActivity = false
+            ActivityStateHolder.setActivityEnded(activityType)
+            if (currentGpsState != GpsState.EXPRESS) {
+                enterDeepIdleMode()
             }
         }
         return START_STICKY
@@ -366,17 +407,25 @@ class LocationForegroundService : Service() {
             return
         }
 
-        val transitions = listOf(
+        val activityTypes = listOf(
             DetectedActivity.IN_VEHICLE,
             DetectedActivity.ON_BICYCLE,
             DetectedActivity.ON_FOOT,
             DetectedActivity.WALKING,
-            DetectedActivity.RUNNING
-        ).map { activityType ->
-            ActivityTransition.Builder()
-                .setActivityType(activityType)
-                .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
-                .build()
+            DetectedActivity.RUNNING,
+            DetectedActivity.STILL
+        )
+        val transitions = activityTypes.flatMap { activityType ->
+            listOf(
+                ActivityTransition.Builder()
+                    .setActivityType(activityType)
+                    .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_ENTER)
+                    .build(),
+                ActivityTransition.Builder()
+                    .setActivityType(activityType)
+                    .setActivityTransition(ActivityTransition.ACTIVITY_TRANSITION_EXIT)
+                    .build()
+            )
         }
 
         activityRecognitionClient
@@ -530,8 +579,14 @@ class LocationForegroundService : Service() {
         acquisitionTimeoutJob = serviceScope.launch {
             delay(ACQUISITION_TIMEOUT_MS)
             if (currentGpsState == GpsState.ACQUISITION) {
-                Log.d(TAG, "Acquisition timeout - no movement detected, returning to deep idle")
-                enterDeepIdleMode()
+                if (isInActivity) {
+                    // Activity still ongoing - move to active mode instead of deep idle
+                    Log.d(TAG, "Acquisition timeout but activity ongoing - entering active mode")
+                    enterActiveMode()
+                } else {
+                    Log.d(TAG, "Acquisition timeout - no movement detected, returning to deep idle")
+                    enterDeepIdleMode()
+                }
             }
         }
     }

@@ -115,18 +115,19 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
                         // Check if cache covers the requested time window
                         if (UnifiedLocationCache.cacheCoversTimeWindow(uid, since)) {
-                            // Cache covers the full window - use cached data and optionally fetch newer points
-                            val (cachedPoints, lastFirebaseFetch) = UnifiedLocationCache.getCachedPoints(uid, since)
+                            // Cache covers the start of window - use cached data + incremental fetch for gap
+                            val (cachedPoints, fetchedWindow) = UnifiedLocationCache.getCachedPoints(uid, since)
                             points = cachedPoints
                             cachePointsCount += points.size
                             
-                            // For current user with cache, also fetch any new points from Firebase since last fetch
-                            if (uid == currentUserId && lastFirebaseFetch > 0) {
+                            // Fetch any new points since the last fetch to fill the gap
+                            if (fetchedWindow != null) {
                                 val queryLimit = getQueryLimit(_state.value.timeWindowHours)
+                                val lastLatest = fetchedWindow.second
                                 val newPointsQuery = db.collection("locations")
                                     .document(uid)
                                     .collection("records")
-                                    .whereGreaterThan("timestamp", lastFirebaseFetch)
+                                    .whereGreaterThan("timestamp", lastLatest)
                                     .orderBy("timestamp", Query.Direction.DESCENDING)
                                     .limit(queryLimit.toLong())
                                 
@@ -146,10 +147,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                                 bearingDeg  = d.getDouble("bearing")?.toFloat()
                                             )
                                         }
-                                        // Merge and update
+                                        // Merge and update - pass 'since' to track the window
                                         points = (cachedPoints + newPoints).sortedBy { it.timestampMs }
-                                        UnifiedLocationCache.addPoints(uid, newPoints)
-                                        Log.d(TAG, "Fetched ${newPoints.size} new points for current user $uid since $lastFirebaseFetch")
+                                        UnifiedLocationCache.addPoints(uid, newPoints, since)
+                                        Log.d(TAG, "Fetched ${newPoints.size} new points for $uid since $lastLatest")
                                     }
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Could not fetch new points for $uid: ${e.message}")
@@ -185,8 +186,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
                             points = newPoints.sortedBy { it.timestampMs }
 
-                            // Update cache with fetched data
-                            UnifiedLocationCache.addPoints(uid, newPoints)
+                            // Update cache with fetched data - pass 'since' to track the window
+                            UnifiedLocationCache.addPoints(uid, newPoints, since)
                             fromFirebase = true
                             firebasePointsCount += points.size
                             Log.d(TAG, "Fetched from Firebase for $uid: ${points.size} points")

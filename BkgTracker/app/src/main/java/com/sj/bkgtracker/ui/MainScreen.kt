@@ -34,6 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.sj.bkgtracker.data.local.ActivityStateHolder
 import com.sj.bkgtracker.data.local.GpsStateHolder
 import com.sj.bkgtracker.domain.model.LocationRecord
 import java.text.SimpleDateFormat
@@ -209,6 +212,9 @@ private fun TrackingStatusCard(
     onExpressSync: () -> Unit = {},
     onStopExpressSync: () -> Unit = {}
 ) {
+    val activityState by ActivityStateHolder.activityState.collectAsState()
+    val isInActivity by ActivityStateHolder.isInActivity.collectAsState()
+    
     val containerColor = when (gpsState) {
         GpsStateHolder.GpsState.DEEP_IDLE -> MaterialTheme.colorScheme.surfaceVariant
         GpsStateHolder.GpsState.ACQUISITION -> Color(0xFFFFF3E0) // Light orange
@@ -259,6 +265,13 @@ private fun TrackingStatusCard(
                         color = statusColor.copy(alpha = 0.7f)
                     )
                 }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = activityState,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isInActivity) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
             }
             if (!expressStatusMessage.isNullOrBlank()) {
                 Text(

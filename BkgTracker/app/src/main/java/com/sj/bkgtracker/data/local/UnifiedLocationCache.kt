@@ -26,8 +26,9 @@ object UnifiedLocationCache {
     // Track when we last successfully fetched data for each user (from Firebase)
     private val lastFetchTimes = mutableMapOf<String, Long>()
     
-    // Track when we last fetched from Firebase specifically (for incremental queries)
-    private val lastFirebaseFetchTimes = mutableMapOf<String, Long>()
+    // Track what time window was actually fetched from Firebase for each user
+    // Maps userId -> Pair<earliestTimestampFetched, latestTimestampFetched>
+    private val fetchedWindows = mutableMapOf<String, Pair<Long, Long>>()
     
     // Current user tracking
     private var currentUserId: String? = null
@@ -66,11 +67,14 @@ object UnifiedLocationCache {
         currentUserId = userId
     }
 
-    /** Add a location record for a user */
+    /** Add a location record for a user (from GPS) */
     fun addPoint(context: Context, userId: String, record: LocationRecord) {
         // Add to user cache for map display
         val userCache = userCaches.getOrPut(userId) { mutableListOf() }
         userCache.add(record)
+        
+        // Note: We do NOT update fetchedWindows here - that's only for tracking what was READ from Firebase
+        // The write pipeline (GPS -> Firebase) is completely separate from the read cache optimization
         
         // Add to upload queue if this is for current user
         if (userId == currentUserId) {
@@ -115,22 +119,34 @@ object UnifiedLocationCache {
     }
 
     /** Get cached points for a user within time window (for map display) 
-     * Returns: (points, lastFirebaseFetchTime) where lastFirebaseFetchTime is when we last fetched from Firebase
+     * Returns: (points, fetchedWindow) where fetchedWindow is Pair<earliest, latest> timestamp fetched from Firebase
      */
-    fun getCachedPoints(userId: String, since: Long): Pair<List<LocationRecord>, Long> {
+    fun getCachedPoints(userId: String, since: Long): Pair<List<LocationRecord>, Pair<Long, Long>?> {
         val points = userCaches[userId]?.filter { it.timestampMs >= since } ?: emptyList()
-        val lastFirebaseFetch = lastFirebaseFetchTimes[userId] ?: 0L
-        return Pair(points, lastFirebaseFetch)
+        val window = fetchedWindows[userId]
+        return Pair(points, window)
     }
 
-    /** Add points for a user (from Firebase sync) - avoids duplicates */
-    fun addPoints(userId: String, points: List<LocationRecord>) {
+    /** Add points for a user (from Firebase sync) - avoids duplicates 
+     * @param since The 'since' timestamp that was queried from Firebase (earliest timestamp in the fetch window)
+     */
+    fun addPoints(userId: String, points: List<LocationRecord>, since: Long) {
         val existing = userCaches.getOrPut(userId) { mutableListOf() }
         val existingTimestamps = existing.map { it.timestampMs }.toSet()
         val newPoints = points.filter { it.timestampMs !in existingTimestamps }
         existing.addAll(newPoints)
         lastFetchTimes[userId] = System.currentTimeMillis()
-        lastFirebaseFetchTimes[userId] = System.currentTimeMillis() // Track Firebase fetch separately
+        
+        // Update fetched window - extend to include the new fetch range
+        val currentWindow = fetchedWindows[userId]
+        val newOldest = minOf(since, currentWindow?.first ?: Long.MAX_VALUE)
+        val newLatest = if (points.isNotEmpty()) {
+            maxOf(points.maxOf { it.timestampMs }, currentWindow?.second ?: 0L)
+        } else {
+            currentWindow?.second ?: System.currentTimeMillis()
+        }
+        fetchedWindows[userId] = Pair(newOldest, newLatest)
+        
         updateCacheStats()
     }
 
@@ -141,14 +157,19 @@ object UnifiedLocationCache {
         return lastFetch > cutoff && userCaches[userId]?.isNotEmpty() == true
     }
 
-    /** Check if cache covers the requested time window (has data from 'since' to now) */
+    /** Check if cache covers the requested time window 
+     * Returns true if cache covers the start of requested window (we'll do incremental fetch for any gap)
+     */
     fun cacheCoversTimeWindow(userId: String, since: Long): Boolean {
         if (!hasValidCache(userId)) return false
+        val window = fetchedWindows[userId] ?: return false
         val userCache = userCaches[userId] ?: return false
         if (userCache.isEmpty()) return false
-        val oldestPoint = userCache.minOfOrNull { it.timestampMs } ?: return false
-        // Cache covers window if oldest point is at or before the requested 'since' time
-        return oldestPoint <= since
+        
+        // Check if fetched window covers the requested start time
+        // window.first = earliest timestamp we fetched from Firebase
+        // As long as we cover the start, we'll use cache + incremental fetch for the gap
+        return window.first <= since
     }
 
     /** Get cached email for a user */
@@ -162,8 +183,8 @@ object UnifiedLocationCache {
     /** Get last fetch time for a user (for cache validity checks) */
     fun getLastFetchTime(userId: String): Long = lastFetchTimes[userId] ?: 0L
     
-    /** Get last Firebase fetch time (for incremental queries) */
-    fun getLastFirebaseFetchTime(userId: String): Long = lastFirebaseFetchTimes[userId] ?: 0L
+    /** Get the fetched window for a user (earliest, latest) timestamps that were fetched from Firebase */
+    fun getFetchedWindow(userId: String): Pair<Long, Long>? = fetchedWindows[userId]
 
     /** Report skipped location (for UI feedback) */
     fun reportSkipped(lat: Double, lon: Double, reason: String) {
@@ -187,7 +208,7 @@ object UnifiedLocationCache {
         userCaches.clear()
         uploadQueue.clear()
         lastFetchTimes.clear()
-        lastFirebaseFetchTimes.clear()
+        fetchedWindows.clear()
         userEmails.clear()
         updateCacheStats()
     }
@@ -205,7 +226,7 @@ object UnifiedLocationCache {
             if (filtered.isEmpty()) {
                 userIterator.remove()
                 lastFetchTimes.remove(uid)
-                lastFirebaseFetchTimes.remove(uid)
+                fetchedWindows.remove(uid)
                 userEmails.remove(uid)
             } else {
                 userCaches[uid] = filtered.toMutableList()

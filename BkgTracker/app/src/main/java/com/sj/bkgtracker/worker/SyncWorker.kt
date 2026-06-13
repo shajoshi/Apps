@@ -36,7 +36,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 SyncPrefs.updateLastSync(applicationContext, success = true)
                 // Add synced points to unified cache
                 if (userId != null && records.isNotEmpty()) {
-                    UnifiedLocationCache.addPoints(userId, records)
+                    // Use oldest record timestamp as 'since' for window tracking
+                    val since = records.minOfOrNull { it.timestampMs } ?: 0L
+                    UnifiedLocationCache.addPoints(userId, records, since)
                     Log.d(TAG, "Added ${records.size} synced points to unified cache for current user")
                 }
                 Result.success()

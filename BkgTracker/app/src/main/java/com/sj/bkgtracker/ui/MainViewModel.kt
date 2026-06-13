@@ -135,7 +135,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Add synced points to map cache for current user
                     val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
                     if (currentUserId != null && records.isNotEmpty()) {
-                        UnifiedLocationCache.addPoints(currentUserId, records)
+                        // Use oldest record timestamp as 'since' for window tracking
+                        val since = records.minOfOrNull { it.timestampMs } ?: 0L
+                        UnifiedLocationCache.addPoints(currentUserId, records, since)
                         Log.d(TAG, "Added ${records.size} synced points to unified cache for current user")
                     }
                 },
