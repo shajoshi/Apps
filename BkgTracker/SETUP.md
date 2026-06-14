@@ -37,26 +37,22 @@ After copying, Android Studio will detect the project and sync Gradle automatica
 
 ### Firestore Security Rules
 
-Paste these rules (replaces the defaults):
+The canonical, hardened rules live in **`firestore.rules`** at the repo root — that
+file is the single source of truth. Do NOT paste ad-hoc rules here; edit `firestore.rules`
+and deploy it instead:
 
-```js
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /locations/{userId}/records/{recordId} {
-      // Only the owning user may write their own records
-      allow write: if request.auth != null && request.auth.uid == userId;
-      // Family members may read all records (list family emails here)
-      allow read: if request.auth != null && request.auth.token.email in [
-        'your@email.com',
-        'family_member@gmail.com'
-      ];
-    }
-  }
-}
+```bash
+firebase deploy --only firestore:rules
 ```
 
-Replace the email addresses with your family's Google accounts.
+The rules enforce:
+- Read/write restricted to the family email allowlist (`isFamily()`).
+- Writers may only write their **own** `locations/{uid}` (owner check).
+- The stored `email` field must match the caller's authenticated email (anti-spoofing).
+- Exact field allowlists + type/range checks on location records; records are append-only.
+- `express_sync` writes limited to the caller's own doc with a validated start/stop payload.
+
+Update the email list inside `firestore.rules` (`isFamily()`) to match your family's Google accounts.
 
 ---
 

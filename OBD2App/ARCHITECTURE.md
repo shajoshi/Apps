@@ -29,9 +29,10 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 ### Root (`com.sj.obd2app`)
 | File | Responsibility |
 |------|---------------|
-| `MainActivity.kt` | Single activity. Initialises `Obd2ServiceProvider`, requests BT/location permissions, owns `ViewPager2` with `MainPagerAdapter`. |
-| `MainPagerAdapter.kt` | ViewPager2 adapter — 5 tabs: Connect (0), Trip (1), Dashboards (2), Details (3), Settings (4). Page constants: `PAGE_CONNECT`, `PAGE_TRIP`, `PAGE_DASHBOARDS`, `PAGE_DETAILS`, `PAGE_SETTINGS`. |
+| `MainActivity.kt` | Single activity. Initialises `Obd2ServiceProvider`, requests BT/location permissions, owns `ViewPager2` with `MainPagerAdapter`. Handles Android 15+ edge-to-edge insets. Keeps screen on (`FLAG_KEEP_SCREEN_ON`) during `RUNNING` trips. |
+| `MainPagerAdapter.kt` | ViewPager2 adapter — **8 pages**: Connect (0), Trip (1), Dashboards (2), Details (3), Trip Summary (4), Map View (5), Settings (6), CAN Bus Reader (7). Pages 4–7 are swipe-blocked — accessible only from overflow menu. Constants: `PAGE_CONNECT`, `PAGE_TRIP`, `PAGE_DASHBOARDS`, `PAGE_DETAILS`, `PAGE_TRIP_SUMMARY`, `PAGE_MAP_VIEW`, `PAGE_SETTINGS`, `PAGE_CAN_READER`. |
 | `DashboardsHostFragment.kt` | Host fragment for the Dashboard tab, switches between layout list and dashboard view. |
+| `OBD2Application.kt` | `Application` subclass. Entry point for app-wide init (declared in `AndroidManifest.xml`). |
 
 ### `gps/`
 | File | Responsibility |
@@ -43,7 +44,8 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 ### `metrics/`
 | File | Responsibility |
 |------|---------------|
-| `MetricsCalculator.kt` | **Central singleton.** Owns `DataOrchestrator`, trip phase state machine, all sub-calculators. `calculate()` returns `VehicleMetrics`. Exposes `StateFlow<VehicleMetrics>`, `StateFlow<TripPhase>`, and `StateFlow<Boolean>` (`dashboardEditMode`). |
+| `MetricsCalculator.kt` | **Central singleton.** Owns `ObdDataOrchestrator`, trip phase state machine, all sub-calculators. `calculate()` returns `VehicleMetrics`. Exposes `StateFlow<VehicleMetrics>`, `StateFlow<TripPhase>`, and `StateFlow<Boolean>` (`dashboardEditMode`). |
+| `TripLifecycleFacade.kt` | **Singleton facade for trip lifecycle transitions.** All UI start/pause/stop/resume calls go here. Routes to either the OBD pipeline or `CanBusScanner` depending on `AppSettings.isCanBusLoggingEnabled`. Starts/stops `TripForegroundService` and `ObdConnectionManager` monitoring. |
 | `VehicleMetrics.kt` | Immutable snapshot of all metrics for one calculation cycle. ~50 nullable fields. |
 | `MetricsLogger.kt` | JSON trip log writer. One JSON file per trip. Header object + one sample object per line. Gated on `AppSettings.isLoggingEnabled`. |
 | `TripPhase.kt` | Enum: `IDLE` / `RUNNING` / `PAUSED`. |
@@ -52,6 +54,8 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 | `AccelMetrics.kt` | Output of `AccelEngine.computeAccelMetrics()`. Vertical + fwd + lat axes, lean angle. |
 | `AccelCalibration.kt` | Tuning parameters for `AccelEngine` (moving average window, peak threshold). |
 | `PowerCalculations.kt` | Pure internal functions (`powerAccelKw`, `powerThermoKw`, `powerOBDKw`) extracted for JVM unit testing. No Android dependencies. |
+| `TrackFileParser.kt` | Reads trip log JSONL files efficiently — extracts only the header and last sample to produce a `TrackFileSummary`. Used by Trip Summary to avoid loading entire large files. |
+| `TrackFileMapParser.kt` | Reads all GPS samples from a trip log file for map rendering in `MapViewFragment`. |
 
 ### `metrics/calculator/`
 | File | Responsibility |
@@ -63,20 +67,28 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 ### `metrics/collector/`
 | File | Responsibility |
 |------|---------------|
-| `DataOrchestrator.kt` | Combines `obd2Data` + `gpsData` flows via `combine(...).debounce(100ms)`. Calls `calculator.calculate()` on each emission. Started automatically when `MetricsCalculator` singleton is first created. |
+| `ObdDataOrchestrator.kt` | Combines `obd2Data` + `gpsData` flows via `combine(...).debounce(100ms)`. Calls `calculator.calculate()` on each emission. Started automatically when `MetricsCalculator` singleton is first created. |
+| `DataOrchestrator.kt` | Legacy/internal orchestrator kept for CAN-mode use. |
 
 ### `obd/`
 | File | Responsibility |
 |------|---------------|
 | `Obd2Service.kt` | Interface: `connectionState`, `obd2Data`, `errorMessage`, `connectedDeviceName`, `connectionLog`, `connect(device?)`, `disconnect()`. `ConnectionState` enum: `DISCONNECTED`, `CONNECTING`, `CONNECTED`, `ERROR`. |
-| `BluetoothObd2Service.kt` | Real hardware implementation. RFCOMM socket, ELM327 AT init sequence, PID bitmask discovery, **tiered polling loop** (fast + slow), **custom PID polling**, connection health monitoring, `sendCommandForDiscovery()` for PID discovery. Singleton. |
-| `MockObd2Service.kt` | Test implementation. Loads baseline from `assets/mock_obd2_data.json` with ±5% jitter. Optionally loads `mock_obd2_enhanced.json` for discovery testing via `MockObd2CommandProcessor`. Provides `sendCommand()`, `setTestScenario()`, `getCurrentHeader()`, `getCurrentHeaderPids()`. |
+| `BluetoothObd2Service.kt` | Real hardware implementation. Uses `TransportFactory` + `Elm327Transport` abstraction. ELM327 AT init sequence, PID bitmask discovery, **tiered polling loop** (fast + slow), **custom PID polling** (manufacturer + user), connection health monitoring, `sendCommandForDiscovery()` for PID discovery. Singleton. |
+| `Elm327Transport.kt` | Interface for ELM327 I/O: `sendCommand(cmd): String`, `close()`. Abstracts Classic vs BLE transport. |
+| `ClassicBluetoothTransport.kt` | `Elm327Transport` implementation over RFCOMM socket (SPP UUID). |
+| `BleTransport.kt` | `Elm327Transport` implementation over BLE GATT (Nordic UART Service). Handles characteristic write + notification-based response. |
+| `TransportFactory.kt` | `fun interface` that creates an `Elm327Transport` for a given device. `DefaultTransportFactory` chooses Classic vs BLE based on `device.type` and `forceBle` user setting. |
+| `ConnectTarget.kt` | Sealed type representing what to connect to: `BluetoothDeviceTarget(device)` or `MockTarget`. |
+| `ConnectionSettingsSource.kt` | Interface providing connection settings (polling delay, command delay, force-BLE flag) to `BluetoothObd2Service`. |
+| `MockObd2Service.kt` | Test implementation. Loads baseline from `assets/mock_obd2_data.json` with ±5% jitter. Optionally loads `mock_obd2_enhanced.json` for discovery testing via `MockObd2CommandProcessor`. |
 | `MockObd2CommandProcessor.kt` | Processes OBD commands for the mock emulator: AT commands, ECU header switching (`AT SH`), PID queries with configurable failure rates and error simulation. |
 | `MockDiscoveryScenario.kt` | Enum of test scenarios for PID discovery: `JAGUAR_XF`, `TOYOTA_HYBRID`, `MIXED_HEADERS`, `EMPTY_DISCOVERY`, `ERROR_HEAVY`. Also defines `DiscoveredPid` data class. |
-| `Obd2ServiceProvider.kt` | Factory object. `useMock` flag selects real vs mock service. `initMock(context)` loads mock assets. Must be set before first `MetricsCalculator.getInstance()`. |
+| `Obd2ServiceProvider.kt` | Factory object. `useMock` flag selects real vs mock service. `initMock(context)` / `initBluetooth(context)` load the appropriate service. Must be called before first `MetricsCalculator.getInstance()`. |
 | `ObdStateManager.kt` | **Centralised OBD state singleton.** Single source of truth for mode (`MOCK`/`REAL`), `connectionState`, `autoConnect`, `connectedDeviceName`. Exposes `StateFlow`s. `initialize()` called at app startup; `switchMode()` called from Settings. Keeps `Obd2ServiceProvider.useMock` in sync. |
 | `ObdConnectionManager.kt` | **Auto-reconnection manager.** Monitors OBD connection during active trips (RUNNING/PAUSED). Adaptive backoff: 5 attempts at 10 s, then 60 s intervals. Resets on success. `startMonitoring()` / `stopMonitoring()` driven by trip lifecycle. `markManualDisconnect()` suppresses auto-reconnect. |
-| `BluetoothConnectionLogger.kt` | Singleton. Writes timestamped BT connection events to `obd_bt_connx.log` in the `.obd` directory. Gated on `AppSettings.isBtLoggingEnabled`. Logs connection attempts, success, failure, disconnection, polling errors, socket health failures, reconnection attempts. |
+| `ManufacturerPidLibrary.kt` | Catalogue of manufacturer-specific preset `CustomPid` lists. Supported families: Suzuki, Fiat/Bosch, Ford, Jaguar (JLR), Bosch Generic. Accessed via `VehicleProfile.manufacturer` enum. |
+| `UserNotifier.kt` | Small interface/helper for surfacing OBD connection events to the UI (Toasts, etc.) without tight coupling to `BluetoothObd2Service`. |
 | `Obd2CommandRegistry.kt` | Defines all supported Mode 01 PIDs (~60 commands) with: `pid` (hex string), `name`, `unit`, `bytesReturned`, and a `parse: (IntArray) -> String` lambda. Formulas per SAE J1979 / ISO 15031-5. |
 | `Obd2Command.kt` | Data class: `pid: String`, `name: String`, `unit: String`, `bytesReturned: Int`, `parse: (IntArray) -> String`. |
 | `Obd2DataItem.kt` | Data class: `pid`, `name`, `value`, `unit` — one polled reading. |
@@ -97,12 +109,14 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 ### `settings/`
 | File | Responsibility |
 |------|---------------|
-| `AppSettings.kt` | **Singleton with pending-settings pattern.** Loads/saves from JSON in `.obd/` (SAF) or SharedPreferences fallback. `SettingsData` inner class holds all fields. `getPendingSettings()` / `updatePendingSettings()` / `savePendingSettings()` / `discardPendingSettings()` for transactional edits. Keys: `obdConnectionEnabled`, `autoConnect`, `loggingEnabled`, `autoShareLog`, `accelerometerEnabled`, `btLoggingEnabled`, `globalPollingDelayMs`, `globalCommandDelayMs`, `activeProfileId`, `defaultLayoutName`, `lastDeviceMac`, `lastDeviceName`. `log_folder_uri` always in SharedPreferences (bootstrap). |
-| `VehicleProfile.kt` | `data class VehicleProfile(id, name, fuelType, tankCapacityL, fuelPricePerLitre, enginePowerBhp, vehicleMassKg, engineDisplacementCc, volumetricEfficiencyPct, availablePids, customPids)`. `FuelType` enum (Petrol, E20, Diesel, CNG) with `mafMlPerGram`, `co2Factor`, `energyDensityMJpL`. `sanitisedName` computed property for filesystem-safe filenames. |
+| `AppSettings.kt` | **Singleton with pending-settings pattern.** Loads/saves from SharedPreferences (primary) with JSON fallback. `SettingsData` inner class holds all fields. `getPendingSettings()` / `updatePendingSettings()` / `savePendingSettings()` / `discardPendingSettings()` for transactional edits. Fields include: `obdConnectionEnabled`, `autoConnect`, `loggingEnabled`, `autoShareLog`, `accelerometerEnabled`, `btLoggingEnabled`, `forceBleConnection`, `globalPollingDelayMs`, `globalCommandDelayMs`, `activeProfileId`, `defaultLayoutName`, `lastDeviceMac`, `lastDeviceName`, `pidCacheMap`, `lastTripSnapshot`, `useCanBusLogging`, `defaultCanProfileId`, `ignoreCachedPids`, `syncTickerHz`. `log_folder_uri` always in SharedPreferences (bootstrap). |
+| `PidCache.kt` | Cached PID discovery results per BT MAC address. Fields: `macAddress`, `discoveredPids: Map<String, CachedPidEntry>`, `timestamp`, `protocolNumber: String?`. Protocol number cached so subsequent connections skip auto-detect and use `ATSP<N>` directly. |
+| `VehicleProfile.kt` | `data class VehicleProfile(id, name, fuelType, tankCapacityL, fuelPricePerLitre, enginePowerBhp, vehicleMassKg, engineDisplacementCc, volumetricEfficiencyPct, availablePids, customPids, manufacturer)`. `manufacturer` field links to `ManufacturerPidLibrary.Manufacturer` enum. `effectiveCustomPids` computed property merges user-defined and manufacturer preset PIDs (user overrides preset on same ID). `FuelType` enum (Petrol, E20, Diesel, CNG) with `mafMlPerGram`, `co2Factor`, `energyDensityMJpL`. `sanitisedName` computed property for filesystem-safe filenames. |
 | `VehicleProfileRepository.kt` | CRUD for profiles + PID management. Stores as individual JSON files (`vehicle_profile_<name>.json`) in `.obd/profiles/` via SAF or app-private fallback. Legacy SharedPreferences read for backward compat. `updatePids()` merges new PID values, `getKnownPids()`, `getLastPidValues()`, `hasDiscoveredPids()`. Custom PIDs serialised inside profile JSON. Auto-sets first profile as active. |
-| `VehicleProfileEditSheet.kt` | BottomSheet for create/edit profile. |
+| `VehicleProfileEditSheet.kt` | BottomSheet for create/edit profile. Includes manufacturer selector. |
 | `CustomPidEditSheet.kt` | BottomSheet for creating/editing a single `CustomPid`. Fields: name, header, mode, hex, bytes returned, unit, formula, signed. Saves via `VehicleProfileRepository`. |
 | `CustomPidListSheet.kt` | BottomSheet listing all custom PIDs for the active profile. Tap to edit (opens `CustomPidEditSheet`), add new, or launch PID discovery (`PidDiscoverySheet`). |
+| `CustomPidDiff.kt` | Utility for diffing two `CustomPid` lists — detects added, removed, and changed entries. Used when merging manufacturer presets with user-defined PIDs. |
 
 ### `storage/`
 | File | Responsibility |
@@ -127,39 +141,84 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 |------|---------------|
 | `DashboardFragment.kt` | Displays the active layout. Observes `MetricsCalculator.metrics` and updates all widget views. |
 | `DashboardViewModel.kt` | Provides `metrics` flow to `DashboardFragment`. |
-| `DashboardEditorFragment.kt` | Free-form widget placement editor. Drag, resize, z-order, alpha, range config. |
+| `DashboardEditorFragment.kt` | Free-form widget placement editor. Drag, resize, z-order, alpha, range config. Also drives `LiveMapView` with real-time GPS, corner metrics, and trip time formatting. |
 | `DashboardEditorViewModel.kt` | Editor state, widget CRUD, save/load layout JSON. |
-| `EditWidgetSheet.kt` | Bottom sheet: edit metric, widget type, range, decimals, warning threshold per widget. |
+| `EditWidgetSheet.kt` | Bottom sheet: edit metric, widget type, range, decimals, warning threshold per widget. For `LIVE_MAP` type: includes selectors for TL/TR/BL/BR/ML/MR corner metrics. |
 | `WidgetResizeHandler.kt` | Touch handler for widget resize affordance. |
 | `WidgetTouchHandler.kt` | Touch handler for widget drag/move. |
 | `LayoutListFragment.kt` | Shows saved layouts list. Tap to open, long-press to edit/delete. |
 | `GridOverlayView.kt` | Canvas view that draws the grid snap overlay during editing. |
-| `MetricListAdapter.kt` | Reusable `RecyclerView.Adapter` for metric selection. Groups by category, shows availability badges (live / previously seen / not seen) based on `VehicleProfileRepository` PID data and live `obd2Data`. |
+| `MetricListAdapter.kt` | Reusable `RecyclerView.Adapter` for metric selection. Groups by category, shows availability badges (live / previously seen / not seen) based on `VehicleProfileRepository` PID data and live `obd2Data`. Includes CAN signals from `CanBusScanner`. |
 | `model/DashboardLayout.kt` | `DashboardLayout(name, colorScheme, widgets, orientation)`. `DashboardOrientation` enum: `PORTRAIT`, `LANDSCAPE`. `ColorScheme` presets: `DEFAULT_DARK`, `NEON_RED`, `GREEN_LCD`. |
-| `model/DashboardWidget.kt` | `DashboardWidget` — widget instance: type, metric, grid position/size, zOrder, alpha, range, warningThreshold, decimalPlaces, displayUnit. |
-| `model/WidgetType.kt` | Enum: `DIAL`, `SEVEN_SEGMENT`, `BAR_GAUGE_H`, `BAR_GAUGE_V`, `NUMERIC_DISPLAY`, `TEMPERATURE_ARC`. Legacy aliases kept for JSON backward compat. |
-| `model/DashboardMetric.kt` | **Sealed class** (not enum). Subclasses: `Obd2Pid(pid, name, unit)`, `GpsSpeed`, `GpsAltitude`, `DerivedMetric(key, name, unit)`. |
+| `model/DashboardWidget.kt` | `DashboardWidget` — widget instance: type, metric, grid position/size, zOrder, alpha, range, warningThreshold, decimalPlaces, displayUnit. For `LIVE_MAP`: `cornerMetricTL/TR/BL/BR/ML/MR` hold optional overlay metrics. |
+| `model/WidgetType.kt` | Enum: `DIAL`, `SEVEN_SEGMENT`, `BAR_GAUGE_H`, `BAR_GAUGE_V`, `NUMERIC_DISPLAY`, `TEMPERATURE_ARC`, `LIVE_MAP`. Legacy aliases kept for JSON backward compat. |
+| `model/DashboardMetric.kt` | **Sealed class** (not enum). Subclasses: `Obd2Pid(pid, name, unit)`, `GpsSpeed`, `GpsAltitude`, `DerivedMetric(key, name, unit)`, `CanSignal(messageId, signalName, name, unit)`. `CanSignal.latestKey()` returns `"<HEX_ID>:<signalName>"` for `CanBusScanner.latest` lookup. |
 | `model/MetricDefaults.kt` | Default range min/max, major tick, unit, warning threshold per metric. Auto-populated when a metric is chosen in the editor. |
-| `data/LayoutRepository.kt` | Saves/loads `DashboardLayout` as JSON via Gson. `DashboardMetricAdapter` handles sealed-class polymorphism. Dual storage: SAF `.obd/layouts/dashboard_<name>.json` or app-private fallback. `seedDefaultDashboards()` copies from `assets/seed_dashboards/` on first install. `getDefaultLayoutName()` / `setDefaultLayoutName()`. |
-| `views/` | Custom `View` implementations for each `WidgetType` (dial canvas, 7-segment, bar, etc.). |
+| `model/CanMetricSource.kt` | Helper that maps `CanSignal` metric keys to live values from `CanBusScanner`. |
+| `data/LayoutRepository.kt` | Saves/loads `DashboardLayout` as JSON via Gson. `DashboardMetricAdapter` handles sealed-class polymorphism (including `CanSignal`). Dual storage: SAF `.obd/layouts/dashboard_<name>.json` or app-private fallback. `seedDefaultDashboards()` copies from `assets/seed_dashboards/` on first install. `getDefaultLayoutName()` / `setDefaultLayoutName()`. |
+| `views/LiveMapView.kt` | Custom `View` for the `LIVE_MAP` widget. OSMDroid map with animated vehicle marker, bearing rotation, corner/mid-side metric overlays (6 positions: TL/TR/BL/BR/ML/MR), zoom-to-speed scaling, and north-up/heading-up toggle. |
+| `views/` | Other custom `View` implementations for each `WidgetType` (dial canvas, 7-segment, bar, etc.). |
 | `wizard/` | New-layout creation wizard fragments. |
 
 ### `ui/trip/`
 | File | Responsibility |
 |------|---------------|
-| `TripFragment.kt` | Trip tab UI. Shows status indicators, gravity vector, trip stats. Start/pause/stop buttons. |
+| `TripFragment.kt` | Trip tab UI. Shows status indicators, gravity vector, trip stats. Start/pause/stop buttons. Delegates lifecycle calls to `TripLifecycleFacade`. |
 | `TripViewModel.kt` | Collects `metrics` + `tripPhase` flows, formats all display strings, computes indicator colours. |
+
+### `ui/tripsummary/`
+| File | Responsibility |
+|------|---------------|
+| `TripSummaryFragment.kt` | Lists recorded trip log files from the configured log folder. Shows trip summary metrics (fuel, speed, distance) parsed via `TrackFileParser`. GPS track visualisation via "View Map" button → `MapViewFragment`. Provides a Reload button. |
+| `TripSummaryViewModel.kt` | Scans log folder for `*.jsonl` trip files, calls `TrackFileParser` for each, exposes list. |
+| `TripSelectionStore.kt` | Singleton. Holds the currently selected track and its parsed GPS samples (bypasses Bundle size limits). Shared between `TripSummaryFragment` and `MapViewFragment`. |
+
+### `ui/mapview/`
+| File | Responsibility |
+|------|---------------|
+| `MapViewFragment.kt` | OSMDroid GPS track visualisation. Renders full track polyline + cursor marker. Navigation buttons `|◀ ◀ ▶ ▶|` and seekbar to step through samples. Shows speed/altitude at cursor. |
+| `MapViewModel.kt` | Drives map state from `TripSelectionStore`. Manages cursor position, sample list. |
+| `SampleDetailsFragment.kt` | Full-screen scrollable JSON view of a single trip sample. In-place prev/next navigation. Copy JSON button. Reads directly from `TripSelectionStore`. |
+| `SampleDetailsBottomSheet.kt` | Bottom sheet variant of sample detail view. |
+
+### `ui/can/`
+| File | Responsibility |
+|------|---------------|
+| `CanReaderFragment.kt` | CAN Bus Reader screen (page 7). Lists user-created `CanProfile` entries. Start/Stop button drives `CanBusScanner`. Requires ELM327 adapter connected. |
+| `CanProfileEditSheet.kt` | BottomSheet for creating/editing a `CanProfile`. Fields: name, objective, DBC file selection, signal picker, sampling rate, trip-attribute mapping. |
 
 ### `ui/settings/`
 | File | Responsibility |
 |------|---------------|
-| `SettingsFragment.kt` | Settings tab. Connection toggles (OBD on/off, auto-connect, BT logging, accelerometer), vehicle profile list with CRUD, data logging folder picker with **folder migration dialog**, debug section (mock scenario selector — only visible when enhanced mock data loaded). Pending-settings pattern: changes are staged and saved via Save button. `restartObdService()` switches mode via `ObdStateManager`. |
+| `SettingsFragment.kt` | Settings tab (page 6 — swipe-blocked, overflow menu only). Connection toggles (OBD on/off, auto-connect, BT logging, accelerometer, Force BLE, Ignore Cached PIDs), vehicle profile list with CRUD, CAN Bus logging toggle, data logging folder picker with **folder migration dialog**, debug section (mock scenario selector — only visible when enhanced mock data loaded). Pending-settings pattern: changes are staged and saved via Save button. `restartObdService()` switches mode via `ObdStateManager`. |
 | `PidDiscoverySheet.kt` | BottomSheet UI for PID discovery. Header/mode selection, console output (real-time), discovered PID list with multi-select. "Add Selected" saves chosen PIDs as `CustomPid` entries via `VehicleProfileRepository`. Integrates with `PidDiscoveryService`. |
 | `ConsoleAdapter.kt` | `ListAdapter` for console log messages. Strips timestamps, colour-codes by content: ERROR (red), NODATA (grey), VALID (green), Scanning/HEADER/Complete/Cancelled (various). |
 | `DiscoveredPidAdapter.kt` | `ListAdapter` for `DiscoveredPid` items with checkbox multi-selection, visual selection state (background + checkbox). `getSelectedPids()`, `clearSelections()`. |
 
 ### `ui/details/`
 Details screen — shows full raw OBD2 PID dump for diagnostics.
+
+### `bluetooth/`
+| File | Responsibility |
+|------|---------------|
+| `BluetoothBondLossReceiver.kt` | `BroadcastReceiver` for `ACTION_BOND_STATE_CHANGED`. Detects when a paired device loses its bond (e.g., after factory reset of the adapter) and notifies `BluetoothObd2Service` to clear cached protocol and trigger reconnection. |
+
+### `can/`
+| File | Responsibility |
+|------|---------------|
+| `CanBusScanner.kt` | **CAN Bus scanning engine.** Connects to ELM327 in CAN monitor mode (`ATMA`). Decodes frames via attached `DbcDatabase`. Emits decoded signal values to `latest: Map<String, Double>` and `canSignalValues` flow. Drives `VehicleMetrics` fields via `CanDataOrchestrator`. |
+| `CanDataOrchestrator.kt` | Orchestrates CAN scanning lifecycle. Starts/stops `CanBusScanner`. When a trip is active in CAN mode, combines CAN signal values with GPS to produce `VehicleMetrics` updates. Uses `syncTickerHz` from the active `CanProfile`. |
+| `CanDecoder.kt` | Decodes a raw CAN frame (ID + data bytes) into a map of signal name → physical value using a `DbcDatabase`. |
+| `CanEncoder.kt` | Encodes signal values back into CAN frames (used for testing / mock replay). |
+| `CanFrameParser.kt` | Parses raw ELM327 CAN output lines into structured `CanFrame(id, data)` objects. Handles various ELM327 CAN output formats. |
+| `CanProfile.kt` | User-created CAN logging profile. Fields: `id`, `name`, `objective`, `dbcFileName`, `selectedSignals`, `samplingMs`, `syncTickerHz`, `canIdFilter`, `recordRawFrames`, `playbackCaptureFileName`, `isDefault`, `useDemoData`, `metricMapping`. One profile marked `isDefault` drives `CanDataOrchestrator`. |
+| `CanProfileRepository.kt` | CRUD for `CanProfile` objects. Persists as JSON in app-private storage. Manages DBC file copies in `files/can_dbc/<id>.dbc`. |
+| `DbcDatabase.kt` | In-memory representation of a parsed DBC file. Maps message IDs to signal definitions. |
+| `DbcParser.kt` | Parses DBC file text into a `DbcDatabase`. Handles messages, signals, bit positions, scale/offset, value tables. |
+| `DemoDbcDatabase.kt` | Synthetic `DbcDatabase` with realistic demo signals (RPM, speed, throttle, etc.) for mock CAN scanning without a real DBC file. |
+| `MockCanFrameSource.kt` | Generates synthetic CAN frames for mock mode. Either replays a recorded `.jsonl` capture file or generates frames from `DemoDbcDatabase`. |
+| `RawCanTraceRecorder.kt` | Records raw CAN frames to a `.raw.jsonl` file during live scanning (when `CanProfile.recordRawFrames == true`). |
+| `DataOrchestrator.kt` | Internal data combiner for CAN + GPS flows (separate from OBD's `ObdDataOrchestrator`). |
 
 ---
 
@@ -224,22 +283,31 @@ VehicleProfile
 
 ```
 MainActivity
-└── ViewPager2 (MainPagerAdapter — swipe tabs)
-    ├── Tab 0: ConnectFragment          (BT device list + connection)
-    ├── Tab 1: TripFragment             (trip computer)
-    ├── Tab 2: DashboardsHostFragment   → LayoutListFragment | DashboardFragment
-    │                                   → DashboardEditorFragment (edit mode)
-    ├── Tab 3: DetailsFragment          (raw OBD2 PID dump)
-    └── Tab 4: SettingsFragment         (app settings + vehicle profiles)
-                ├── VehicleProfileEditSheet  (create/edit profile)
-                ├── CustomPidListSheet → CustomPidEditSheet
-                └── PidDiscoverySheet       (scan for PIDs)
+└── ViewPager2 (MainPagerAdapter — 8 pages)
+    ├── Page 0: ConnectFragment          (BT device list + connection)
+    ├── Page 1: TripFragment             (trip computer)
+    ├── Page 2: DashboardsHostFragment   → LayoutListFragment | DashboardFragment
+    │                                    → DashboardEditorFragment (edit mode)
+    ├── Page 3: DetailsFragment          (raw OBD2 PID dump)
+    ├── Page 4: TripSummaryFragment      (overflow menu only)
+    │           └── → MapViewFragment   (page 5, only from Trip Summary)
+    │                   └── SampleDetailsFragment (child fragment, back-stack)
+    ├── Page 5: MapViewFragment          (overflow menu only, only from Trip Summary)
+    ├── Page 6: SettingsFragment         (overflow menu only)
+    │           ├── VehicleProfileEditSheet  (create/edit profile, manufacturer picker)
+    │           ├── CustomPidListSheet → CustomPidEditSheet
+    │           └── PidDiscoverySheet       (scan for PIDs)
+    └── Page 7: CanReaderFragment        (overflow menu only)
+                └── CanProfileEditSheet  (create/edit CAN profile)
 ```
 
+- **Pages 4–7 are swipe-blocked** — `ViewPager2.isUserInputEnabled = false` while on those pages. Swipe attempts are intercepted and reverted. Users must use the overflow menu.
 - `DashboardsHostFragment` uses `childFragmentManager` replace transactions to switch between layout list and live dashboard.
 - `DashboardEditorFragment` launched from `LayoutListFragment` via fragment transaction.
-- **Settings access blocked during active trips** — both swipe navigation and overflow menu are guarded. ViewPager swipe is also disabled during dashboard edit mode.
+- **Settings access blocked during active trips AND when OBD is connected** — both swipe and overflow menu are guarded.
+- **Map View** is only accessible from Trip Summary (`navigateToPage` enforces this).
 - `TopBarHelper` overflow menu available on all pages for quick navigation.
+- ViewPager swipe disabled globally during dashboard edit mode (`dashboardEditMode` StateFlow).
 
 ---
 
@@ -247,18 +315,19 @@ MainActivity
 
 ```
 1. MainActivity.onCreate()
-   a. DataMigration.checkExistingData(ctx)  — Toast if .obd data found
-   b. ObdStateManager.initialize(autoConnect, obdEnabled)  — sets mode MOCK/REAL
-   c. If mock mode: Obd2ServiceProvider.initMock(ctx)
-   d. ViewPager2 + MainPagerAdapter created (5 tabs)
-   e. Start GpsDataSource.getInstance(ctx).start()
-   f. MetricsCalculator.getInstance(ctx)   ← creates singleton + calls startCollecting()
+   a. AppDataDirectory.ensureUriPermissions(ctx)  — re-take SAF permissions after cold start
+   b. DataMigration.checkExistingData(ctx)  — Toast if .obd data found
+   c. ObdStateManager.initialize(autoConnect, obdEnabled)  — sets mode MOCK/REAL
+   d. If mock mode: Obd2ServiceProvider.initMock(ctx), else Obd2ServiceProvider.initBluetooth(ctx)
+   e. ViewPager2 + MainPagerAdapter created (8 pages)
+   f. Start GpsDataSource.getInstance(ctx).start()
+   g. MetricsCalculator.getInstance(ctx)   ← creates singleton + calls startCollecting()
 
 2. MetricsCalculator.startCollecting()
-   → creates DataOrchestrator(context, scope, this)
-   → DataOrchestrator.startCollecting()
+   → creates ObdDataOrchestrator(context, scope, this)
+   → ObdDataOrchestrator.startCollecting()
 
-3. DataOrchestrator.startCollecting()
+3. ObdDataOrchestrator.startCollecting()
    → combine(obdService.obd2Data, gpsSource.gpsData) { obdItems, gps → ... }
    → .flowOn(Dispatchers.Default)
    → .debounce(100ms)
@@ -468,21 +537,19 @@ IDLE ──[startTrip()]──► RUNNING ──[pauseTrip()]──► PAUSED
   └────[stopTrip()]──────────┴──────[resumeTrip()]─────┘
 ```
 
-**`startTrip()`:**
-- Resets `TripState`, timers, pause accumulators
-- Sets `_tripPhase = RUNNING`
-- If `isAccelerometerEnabled && accelSource.isAvailable`: calls `accelSource.start()`, sets `waitingForGravityCapture = true`
-- If `isLoggingEnabled`: opens `MetricsLogger` file
+All transitions go through **`TripLifecycleFacade`** (not called directly on `MetricsCalculator`).
 
-**`stopTrip()`:**
-- Resets all trip state
-- Sets `_tripPhase = IDLE`
-- Calls `accelSource.stop()` (unconditional — safe no-op if not started)
-- Calls `logger.close()`
+**OBD mode (`isCanBusLoggingEnabled == false`):**
+- `startTrip()` → `MetricsCalculator.startTripInternal()` → resets `TripState`, starts accelerometer, opens logger, starts `ObdConnectionManager.monitoring`
+- `stopTrip()` → `MetricsCalculator.stopTripInternal()` → resets state, stops accel, closes logger, stops monitoring
+- `pauseTrip()` / `resumeTrip()` → `tripState.update()` skipped while paused
 
-**`pauseTrip()` / `resumeTrip()`:**
-- Track `pauseStartMs` to accumulate `pausedAccumMs`
-- `tripState.update()` is skipped while `isTripPaused = true`
+**CAN mode (`isCanBusLoggingEnabled == true`):**
+- `startTrip()` → starts `CanBusScanner` + `CanDataOrchestrator`, sets `TripPhase.RUNNING`
+- `stopTrip()` → stops scanner, sets `TripPhase.IDLE`
+- OBD polling is entirely suppressed (enforced by `BluetoothObd2Service.startPolling`)
+
+**`tripTimeSec` gating:** Trip time is only counted when `_tripPhase.value == TripPhase.RUNNING`. Returns 0L when `IDLE`.
 
 ---
 
@@ -581,12 +648,19 @@ Legacy aliases `REV_COUNTER`, `SPEEDOMETER_7SEG`, `FUEL_BAR`, `IFC_BAR` are kept
 | `autoShareLog` | false | Share log after trip |
 | `accelerometerEnabled` | false | Opt-in accelerometer recording |
 | `btLoggingEnabled` | false | BT connection event logging to `obd_bt_connx.log` |
+| `forceBleConnection` | false | Force BLE transport even for Classic-capable devices |
 | `globalPollingDelayMs` | 500 ms | OBD2 poll interval |
 | `globalCommandDelayMs` | 50 ms | Delay between AT commands |
 | `activeProfileId` | null | Active vehicle profile UUID |
 | `defaultLayoutName` | null | Default dashboard layout name |
 | `lastDeviceMac` | null | Last connected BT device MAC |
 | `lastDeviceName` | null | Last connected BT device name |
+| `pidCacheMap` | empty | Per-MAC PID cache (keyed by MAC address, includes `protocolNumber`) |
+| `useCanBusLogging` | false | Route trip to CAN Bus scanner instead of OBD polling |
+| `defaultCanProfileId` | null | Active `CanProfile` UUID |
+| `ignoreCachedPids` | false | Skip PID cache on next connect (force re-discovery) |
+| `syncTickerHz` | 50 | CAN data orchestrator tick rate in Hz (1–200) |
+| `lastTripSnapshot` | null | Summary of the most recent completed trip |
 
 **`log_folder_uri`** (SharedPreferences only): SAF URI for the user-selected tracks/data folder.
 
@@ -636,15 +710,20 @@ Legacy aliases `REV_COUNTER`, `SPEEDOMETER_7SEG`, `FUEL_BAR`, `IFC_BAR` are kept
 
 ## 14. Constraints & Gotchas
 
-- **`ObdStateManager.initialize()` must be called before ViewPager creation.** It sets `Obd2ServiceProvider.useMock` which `DataOrchestrator` captures at construction time. Calling after singleton creation has no effect on the active service.
+- **`ObdStateManager.initialize()` must be called before ViewPager creation.** It sets `Obd2ServiceProvider.useMock` which `ObdDataOrchestrator` captures at construction time. Calling after singleton creation has no effect on the active service.
 - **`DataOrchestrator.debounce(100 ms)`** means the maximum effective UI refresh rate is ~10 Hz. If OBD2 and GPS emit simultaneously within 100 ms, only one `calculate()` call fires.
 - **`accelerometer_enabled` defaults to `false`.** Unlike SJGpsUtil (which defaults to `true`), accel recording is opt-in here.
 - **`MetricsCalculator` is created and `startCollecting()` is called lazily on first `getInstance()`.** Any fragment that calls `getInstance()` before `ObdStateManager.initialize()` will lock in the wrong service.
 - **Tiered polling has no explicit inter-PID delay** — `ATAT1` adaptive timing handles ECU pacing. Adding `Thread.sleep()` between PIDs will degrade throughput.
 - **Custom PIDs group by header** to minimise `AT SH` switches. After polling custom PIDs, the default header `7DF` is always restored. Failing to restore the header will break standard Mode 01 polling.
+- **`effectiveCustomPids` is the list used for polling** — not `customPids` alone. Manufacturer presets are merged in automatically. Always use `VehicleProfile.effectiveCustomPids` when setting up the polling loop.
+- **Protocol caching** (`PidCache.protocolNumber`): first connection uses `ATSTFF`+`ATSP0` auto-detect, then locks and caches the protocol. Subsequent connections use `ATSP<N>` directly to skip renegotiation. Set `ignoreCachedPids = true` in settings to force re-discovery.
 - **PID discovery scans read-only modes only** (21, 22, 23). Modes 01–0A are standard and already handled. Actuator/control PIDs are skipped for safety.
+- **CAN Bus mode disables OBD polling entirely** (`BluetoothObd2Service.startPolling` checks `isCanBusLoggingEnabled`). Trip start in CAN mode uses `CanBusScanner` — not `MetricsCalculator.startTripInternal`.
+- **`TripLifecycleFacade` is the only authorised trip transition entry point** — UI must not call `MetricsCalculator.startTripInternal/stopTripInternal` directly.
 - **⚠ Android 10+ `openOutputStream` truncation**: Always use mode `"wt"` (write + truncate). Mode `"w"` writes from the beginning but does NOT truncate, leaving stale trailing bytes if new content is shorter — this corrupts JSON files. This applies to all 4 write locations: `VehicleProfileRepository`, `LayoutRepository`, `AppSettings`, `SettingsFragment` (migration copy).
-- **Settings access is blocked during active trips** via both ViewPager swipe guard and `TopBarHelper` overflow menu. `TripPhase != IDLE` → Settings navigation is rejected with Toast.
+- **Settings access is blocked during active trips AND when OBD is connected** — both swipe and overflow menu are guarded. The navigation drawer also disables Settings and Trip Summary items when a trip is active.
+- **Map View is only accessible from Trip Summary** — `MainActivity.navigateToPage()` enforces this guard. Attempting to navigate to `PAGE_MAP_VIEW` from any other page shows a Toast and aborts.
 - **ViewPager swipe is disabled during dashboard edit mode** via `MetricsCalculator.dashboardEditMode` StateFlow observed in `MainActivity`.
 - **Legacy `WidgetType` aliases** (`REV_COUNTER`, `SPEEDOMETER_7SEG`, `FUEL_BAR`, `IFC_BAR`) are deprecated enum values. Always call `.canonical()` before rendering to get the current equivalent type. Layouts saved with old names load correctly via `canonical()`.
 - **`TripForegroundService` is `START_STICKY`** — Android will restart it if killed. The service re-attaches to the existing `MetricsCalculator` singleton on restart, so trip state is not lost if the service process is killed and recreated.
