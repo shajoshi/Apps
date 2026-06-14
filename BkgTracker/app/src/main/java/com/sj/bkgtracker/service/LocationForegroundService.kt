@@ -33,6 +33,7 @@ import com.google.android.gms.location.Priority
 import android.location.GnssStatus
 import android.location.LocationManager
 import com.sj.bkgtracker.R
+import com.sj.bkgtracker.data.local.ActivityLogCache
 import com.sj.bkgtracker.data.local.ActivityStateHolder
 import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.GpsStateHolder
@@ -313,7 +314,8 @@ class LocationForegroundService : Service() {
                 // STILL activity detected - user is stationary, go to deep idle
                 Log.d(TAG, "STILL activity detected - going to deep idle")
                 isInActivity = false
-                ActivityStateHolder.setActivityStarted(activityType)
+                ActivityStateHolder.setStillActivity()
+                ActivityLogCache.logActivity("Still", true)
                 if (currentGpsState != GpsState.EXPRESS) {
                     enterDeepIdleMode()
                 }
@@ -322,6 +324,7 @@ class LocationForegroundService : Service() {
                 Log.d(TAG, "Activity started: $activityName")
                 isInActivity = true
                 ActivityStateHolder.setActivityStarted(activityType)
+                ActivityLogCache.logActivity(activityName, true)
                 notificationManager?.notify(NOTIFICATION_ID,
                     buildNotification("Active: $activityName", "GPS tracking"))
                 if (currentGpsState == GpsState.DEEP_IDLE && !ExpressSyncManager.isExpressMode.value) {
@@ -334,6 +337,7 @@ class LocationForegroundService : Service() {
             Log.d(TAG, "Activity ended: $activityName")
             isInActivity = false
             ActivityStateHolder.setActivityEnded(activityType)
+            ActivityLogCache.logActivity(activityName, false)
             if (currentGpsState != GpsState.EXPRESS) {
                 enterDeepIdleMode()
             }

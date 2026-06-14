@@ -18,6 +18,11 @@ object ActivityStateHolder {
         _isInActivity.value = true
     }
 
+    fun setStillActivity() {
+        _activityState.value = "Still"
+        _isInActivity.value = false
+    }
+
     fun setActivityEnded(activityType: Int) {
         _activityState.value = "Idle"
         _isInActivity.value = false

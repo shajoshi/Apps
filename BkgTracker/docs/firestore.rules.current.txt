@@ -1,0 +1,39 @@
+// ============================================================================
+// BkgTracker — CURRENTLY DEPLOYED Firestore Security Rules (reference copy)
+// Provided by the project owner on 2026-06-14 for security review.
+//
+// NOTE: This differs from the repo's checked-in `firestore.rules`, which is
+// WEAKER (it grants read/write to ANY authenticated user instead of only the
+// family allowlist). See docs/SECURITY-REVIEW notes — the repo file should be
+// reconciled with these deployed rules and redeployed.
+// ============================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isFamily() {
+      return request.auth != null && request.auth.token.email in [
+        "smjoshi@gmail.com",
+        "bioconcepts.pune@gmail.com",
+        "saee1175@gmail.com",
+        "gjoshi1208@gmail.com"
+      ];
+    }
+    // Location records: users can write their own, all authenticated can read
+    match /locations/{uid} {
+      allow read: if isFamily();
+      allow write: if request.auth != null && request.auth.uid == uid;
+
+      match /records/{recordId} {
+        allow read: if isFamily();
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+
+    // Express sync: any authenticated user can read/write (family broadcast)
+    match /express_sync/{docId} {
+      allow read, write: if isFamily();
+    }
+  }
+}

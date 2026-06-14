@@ -1,9 +1,12 @@
 package com.sj.bkgtracker.ui
 
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
+import android.net.Uri
+import android.widget.Toast
 import androidx.preference.PreferenceManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedFilterChip
@@ -232,10 +236,34 @@ fun MapScreen(
                                     text = "Point ${state.timelineIndex + 1}/${state.timelineTotal}: $timeStr",
                                     style = MaterialTheme.typography.bodySmall
                                 )
-                                Text(
-                                    text = "%.1f km/h".format(point.speedKmh),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "%.1f km/h".format(point.speedKmh),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val label = Uri.encode(timeStr)
+                                            val geoUri = Uri.parse(
+                                                "geo:${point.latitude},${point.longitude}?q=${point.latitude},${point.longitude}($label)"
+                                            )
+                                            val intent = Intent(Intent.ACTION_VIEW, geoUri)
+                                            try {
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "No maps app found", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Public,
+                                            contentDescription = "Open in Maps",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
                             } ?: run {
                                 Text(
                                     text = "No data",
@@ -350,7 +378,8 @@ fun MapScreen(
                         mapView.overlays.add(timelineMarker)
                     }
 
-                    if (allPoints.size > 1) {
+                    // Only auto zoom/center when NOT in timeline mode - let user control the view during timeline browsing
+                    if (allPoints.size > 1 && !state.timelineEnabled) {
                         val lats = allPoints.map { it.latitude }
                         val lons = allPoints.map { it.longitude }
                         val bounds = BoundingBox(lats.max(), lons.max(), lats.min(), lons.min())

@@ -46,6 +46,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.sj.bkgtracker.data.local.ActivityLogCache
 import com.sj.bkgtracker.data.local.UsageTracker
 import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import androidx.core.content.ContextCompat
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 var showMenu by remember { mutableStateOf(false) }
                 var showSignOutDialog by remember { mutableStateOf(false) }
                 var showUsageDialog by remember { mutableStateOf(false) }
+                var showActivityLogDialog by remember { mutableStateOf(false) }
 
                 if (showUsageDialog) {
                     val usage = UsageTracker.getTodayUsage(this@MainActivity)
@@ -180,6 +182,53 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                if (showActivityLogDialog) {
+                    val activityLogs by ActivityLogCache.logs.collectAsState()
+                    AlertDialog(
+                        onDismissRequest = { showActivityLogDialog = false },
+                        title = { Text("Activity Log (last 2 hours)", fontWeight = FontWeight.SemiBold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                if (activityLogs.isEmpty()) {
+                                    Text(
+                                        "No activity detected in last 2 hours",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                } else {
+                                    activityLogs.reversed().take(50).forEach { entry ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                entry.formattedTime(),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            )
+                                            Text(
+                                                "${entry.activityName} ${if (entry.isStart) "started" else "ended"}",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showActivityLogDialog = false }) { Text("Close") }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    ActivityLogCache.clear()
+                                    Toast.makeText(this@MainActivity, "Activity log cleared", Toast.LENGTH_SHORT).show()
+                                }
+                            ) { Text("Clear Log") }
+                        }
+                    )
+                }
+
                 Scaffold(
                     topBar = {
                         TopAppBar(
@@ -203,6 +252,13 @@ class MainActivity : ComponentActivity() {
                                             onClick = {
                                                 showMenu = false
                                                 showUsageDialog = true
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Activity Log") },
+                                            onClick = {
+                                                showMenu = false
+                                                showActivityLogDialog = true
                                             }
                                         )
                                         DropdownMenuItem(

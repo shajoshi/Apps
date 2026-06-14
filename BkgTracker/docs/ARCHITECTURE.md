@@ -60,26 +60,134 @@ graph TB
 sequenceDiagram
     participant GPS as FusedLocationProvider
     participant SVC as LocationForegroundService
-    participant Cache as LocationCache
+    participant Cache as UnifiedLocationCache
     participant WM as WorkManager (15-min)
     participant Repo as LocationRepositoryImpl
     participant FS as Cloud Firestore
 
     Note over SVC: Service starts on sign-in or boot
-    loop Every 15 seconds
+    Note over SVC: GPS state machine governs interval<br/>(DEEP_IDLE→ACQUISITION→ACTIVE→EXPRESS)
+    loop Every 15s in ACTIVE (5s ACQUISITION, 10s EXPRESS)
         GPS->>SVC: onLocationResult(location)
         SVC->>SVC: Filter (accuracy > 100m? skip)
-        SVC->>SVC: Filter (distance < 20m? skip)
-        SVC->>Cache: add(LocationRecord)
+        SVC->>SVC: Filter (distance < 20m? skip → consecutiveSkips++)
+        SVC->>Cache: addPoint(LocationRecord)
     end
 
     Note over WM: Periodic trigger every 15 min
-    WM->>Cache: drainAll()
+    WM->>Cache: drain pending points
     Cache-->>WM: List<LocationRecord>
     WM->>Repo: uploadBatch(records)
     Repo->>FS: batch.set(/locations/{uid}/records/*)
     FS-->>Repo: success
     Repo-->>WM: Result.success
+```
+
+---
+
+## GPS State Machine (Battery-Aware Tracking)
+
+`LocationForegroundService` governs the GPS request interval through a four-state machine to balance
+tracking fidelity against battery drain.
+
+```mermaid
+stateDiagram-v2
+    [*] --> DEEP_IDLE
+    DEEP_IDLE --> ACQUISITION : Activity ENTER (walk/drive/etc.)<br/>or GNSS satellites detected
+    ACQUISITION --> ACTIVE : First fix + movement<br/>(or timeout while isInActivity)
+    ACQUISITION --> DEEP_IDLE : 60s timeout, no movement,<br/>not in activity
+    ACTIVE --> DEEP_IDLE : 6 consecutive distance-skips<br/>(only if NOT in activity)
+    ACTIVE --> DEEP_IDLE : Activity EXIT / STILL detected
+    DEEP_IDLE --> EXPRESS : Express Sync activated (FCM)
+    ACTIVE --> EXPRESS : Express Sync activated (FCM)
+    EXPRESS --> DEEP_IDLE : Express expires (1h) / stopped
+```
+
+| State | Meaning | Interval |
+|-------|---------|---------:|
+| `DEEP_IDLE` | GPS off, minimal battery; awaiting activity/satellites | off |
+| `ACQUISITION` | Fast startup, seeking first fix | 5s |
+| `ACTIVE` | Normal movement tracking | 15s |
+| `EXPRESS` | High-frequency, filters bypassed (overrides all) | 10s |
+
+Key constants (in `LocationForegroundService`): `MIN_DISTANCE_METERS = 20`,
+`INDOOR_ACCURACY_THRESHOLD = 100m`, `ACQUISITION_TIMEOUT_MS = 60s`, `STATIONARY_SKIP_THRESHOLD = 6`.
+
+> **Notification rule**: the foreground notification state is updated ONLY by the `enter*Mode()`
+> methods, never from `onLocationAvailability()` (which previously caused stale "GPS active" text).
+
+---
+
+## Sequence Diagram — Activity-Based Wakeup
+
+The Activity Recognition API wakes GPS when movement starts and sleeps it when the user is STILL or
+an activity ends. While `isInActivity` is true, the service will NOT drop to DEEP_IDLE even if
+stationary — this prevents missed points when movement is minimal/delayed after wake.
+
+```mermaid
+sequenceDiagram
+    participant AR as ActivityRecognition API
+    participant RX as ActivityTransitionReceiver
+    participant SVC as LocationForegroundService
+    participant ASH as ActivityStateHolder
+    participant ALC as ActivityLogCache
+    participant UI as MainScreen
+
+    AR->>RX: Transition (type, ENTER/EXIT)
+    alt Movement ENTER (walk/run/vehicle/bicycle/on_foot)
+        RX->>SVC: startForActivityWake(type)
+        SVC->>SVC: isInActivity = true, if DEEP_IDLE then enterAcquisitionMode
+        SVC->>ASH: setActivityStarted(type)
+        SVC->>ALC: logActivity(name, started)
+    else STILL ENTER
+        RX->>SVC: startForActivityWake(STILL)
+        SVC->>SVC: isInActivity = false, enterDeepIdleMode unless EXPRESS
+        SVC->>ASH: setStillActivity()
+        SVC->>ALC: logActivity("Still", started)
+    else Any EXIT
+        RX->>SVC: notifyActivityEnded(type)
+        SVC->>SVC: isInActivity = false, enterDeepIdleMode unless EXPRESS
+        SVC->>ASH: setActivityEnded(type)
+        SVC->>ALC: logActivity(name, ended)
+    end
+    ASH-->>UI: activityState / isInActivity (StateFlow)
+    Note over UI: Tracking Status card shows activity<br/>(blue when active, grey when idle)
+```
+
+Registered transition types (ENTER + EXIT): `IN_VEHICLE`, `ON_BICYCLE`, `ON_FOOT`, `WALKING`,
+`RUNNING`, `STILL`. `ActivityLogCache` retains entries for the last **120 minutes**, viewable via
+the top-bar **Activity Log** menu.
+
+---
+
+## Sequence Diagram — Map View with Cache Optimization
+
+`UnifiedLocationCache` minimizes Firestore reads by tracking the time window already fetched per user
+and only querying for new points incrementally.
+
+```mermaid
+sequenceDiagram
+    participant UI as MapScreen
+    participant VM as MapViewModel
+    participant Cache as UnifiedLocationCache
+    participant FS as Cloud Firestore
+    participant UT as UsageTracker
+
+    UI->>VM: refresh() / setTimeWindowHours(h)
+    VM->>Cache: cacheCoversTimeWindow(uid, since)?
+    alt Cache covers window
+        Cache-->>VM: cached points + fetchedWindow
+        VM->>FS: query timestamp > fetchedWindow.latest (incremental)
+        FS-->>VM: only new points
+        VM->>Cache: addPoints(new, since)
+    else Cache does not cover window
+        VM->>FS: query timestamp >= since (full window)
+        FS-->>VM: points
+        VM->>Cache: addPoints(points, since)
+    end
+    VM->>UT: recordReads(count)
+    VM-->>UI: users + timeline points
+    Note over UI: Timeline slider scrubs points,<br/>globe icon opens point in Maps app,<br/>map does NOT auto-zoom while timeline is on
 ```
 
 ---
@@ -221,22 +329,28 @@ graph TB
         MVM[MapViewModel]
     end
 
-    subgraph "Data Layer"
-        LC[LocationCache<br/>ConcurrentLinkedQueue + StateFlow]
-        SP[SyncPrefs<br/>SharedPreferences]
-        ESM[ExpressSyncManager<br/>SharedPreferences + StateFlow]
+    subgraph "Data Layer (data/local)"
+        ULC[UnifiedLocationCache<br/>per-user cache + incremental fetch]
+        SP[SyncPrefs / AppSettings]
+        ESM[ExpressSyncManager<br/>StateFlow]
+        GSH[GpsStateHolder<br/>StateFlow GpsState]
+        ASH[ActivityStateHolder<br/>StateFlow activity]
+        ALC[ActivityLogCache<br/>rolling 120-min log]
+        UT[UsageTracker]
         Repo[LocationRepositoryImpl]
     end
 
-    subgraph "Services"
-        LFS[LocationForegroundService<br/>GPS + Express Sync Timer]
+    subgraph "Services & Receivers"
+        LFS[LocationForegroundService<br/>GPS state machine + Express timer]
         FCM_SVC[BkgTrackerMessagingService<br/>FCM Receiver]
         SW[SyncWorker<br/>WorkManager 15-min]
         BR[BootReceiver]
+        ATR[ActivityTransitionReceiver]
     end
 
     subgraph "External"
         FLP[FusedLocationProviderClient]
+        ARC[ActivityRecognitionClient]
         FAuth[Firebase Auth]
         FStore[Cloud Firestore]
         GFCM[Firebase Cloud Messaging]
@@ -244,18 +358,28 @@ graph TB
 
     MA --> VM
     MA --> MVM
+    MA --> ALC
     MS --> VM
+    MS --> GSH
+    MS --> ASH
     MapS --> MVM
-    VM --> LC
     VM --> SP
     VM --> ESM
     VM --> Repo
+    MVM --> ULC
+    MVM --> UT
     LFS --> FLP
-    LFS --> LC
+    LFS --> ARC
+    LFS --> ULC
     LFS --> ESM
+    LFS --> GSH
+    LFS --> ASH
+    LFS --> ALC
     LFS --> Repo
+    ARC --> ATR
+    ATR --> LFS
     FCM_SVC --> ESM
-    SW --> LC
+    SW --> ULC
     SW --> Repo
     BR --> LFS
     Repo --> FAuth
@@ -301,18 +425,25 @@ erDiagram
 
 ## Key Design Decisions
 
-- **GPS Fix Interval (Normal)**: 60 seconds (PRIORITY_HIGH_ACCURACY via FusedLocationProviderClient)
+- **GPS State Machine**: DEEP_IDLE (off) → ACQUISITION (5s) → ACTIVE (15s); EXPRESS (10s) overrides all. (PRIORITY_HIGH_ACCURACY via FusedLocationProviderClient)
+- **GPS Fix Interval (Active/Normal)**: 15 seconds (`NORMAL_INTERVAL_MS`)
+- **GPS Fix Interval (Acquisition)**: 5 seconds for fast first fix after wake; 60s timeout back to idle if no movement
 - **GPS Fix Interval (Express)**: 10 seconds — filters bypassed for maximum data capture
-- **Distance Filter**: Only saves if moved ≥ 20m from last saved point (normal mode only, bypassed in express)
-- **Accuracy Filter**: Skips if GPS accuracy > 100m (normal mode only, bypassed in express)
+- **Activity-Based Wakeup**: Activity Recognition transitions wake GPS on movement (walk/run/vehicle/bicycle/on_foot ENTER) and sleep it on STILL/EXIT. `isInActivity` flag keeps GPS awake during ongoing activity even when stationary.
+- **Distance Filter**: Only saves if moved ≥ 20m from last saved point (bypassed in express)
+- **Accuracy Filter**: Skips if GPS accuracy > 100m (bypassed in express)
+- **Stationary Detection**: 6 consecutive distance-skips → DEEP_IDLE, but only when NOT in an activity
 - **Normal Sync**: WorkManager every 15 minutes (requires network)
 - **Express Sync**: 60-second timer in ForegroundService, lasts 1 hour, FCM broadcast to all family devices
 - **Express Sync Stop**: Any device can stop express sync for all devices via FCM broadcast
 - **Express Status**: All devices show "Express Sync mode till {time} activated by {user}" or "Express Sync stopped by {user}"
-- **Points (24h)**: Rolling 24-hour counter of saved GPS points, not reset by sync drain
-- **Cache**: MutableList in memory + JSON file persistence
+- **Read Cache**: `UnifiedLocationCache` caches per-user points and tracks fetched windows so map reads only query Firebase incrementally (new points since last fetch). Write pipeline is independent of read-cache tracking.
+- **Usage Tracking**: `UsageTracker` records Firestore reads/writes/FCM, surfaced in the "Usage" dialog.
+- **Activity Log**: `ActivityLogCache` keeps activity transitions for the last 120 minutes, shown via the "Activity Log" menu.
+- **Map Timeline**: Scrubbable slider over loaded points; selecting a point shows a globe icon that opens it in the phone's Maps app (`geo:` URI). Auto zoom/center is suppressed while the timeline is active so the user keeps manual control.
 - **Auth**: Google Sign-In → Firebase Auth token → Firestore security rules
 - **Boot Resilience**: BootReceiver restarts foreground service after reboot if signed in
+- **File Persistence**: JSON saves use `ContentResolver` mode `"wt"` (write+truncate) to avoid stale trailing bytes on Android 10+
 
 ---
 
