@@ -69,7 +69,7 @@ sequenceDiagram
     Note over SVC: GPS state machine governs interval<br/>(DEEP_IDLE→ACQUISITION→ACTIVE→EXPRESS)
     loop Every 15s in ACTIVE (5s ACQUISITION, 10s EXPRESS)
         GPS->>SVC: onLocationResult(location)
-        SVC->>SVC: Filter (accuracy > 100m? skip)
+        SVC->>SVC: Filter (accuracy > 45m? skip — always, including Express)
         SVC->>SVC: Filter (distance < 20m? skip → consecutiveSkips++)
         SVC->>Cache: addPoint(LocationRecord)
     end
@@ -108,10 +108,10 @@ stateDiagram-v2
 | `DEEP_IDLE` | GPS off, minimal battery; awaiting activity/satellites | off |
 | `ACQUISITION` | Fast startup, seeking first fix | 5s |
 | `ACTIVE` | Normal movement tracking | 15s |
-| `EXPRESS` | High-frequency, filters bypassed (overrides all) | 10s |
+| `EXPRESS` | High-frequency, distance filter bypassed (overrides all); accuracy filter still applies | 10s |
 
 Key constants (in `LocationForegroundService`): `MIN_DISTANCE_METERS = 20`,
-`INDOOR_ACCURACY_THRESHOLD = 100m`, `ACQUISITION_TIMEOUT_MS = 60s`, `STATIONARY_SKIP_THRESHOLD = 6`.
+`INDOOR_ACCURACY_THRESHOLD = 45m`, `ACQUISITION_TIMEOUT_MS = 60s`, `STATIONARY_SKIP_THRESHOLD = 6`.
 
 > **Notification rule**: the foreground notification state is updated ONLY by the `enter*Mode()`
 > methods, never from `onLocationAvailability()` (which previously caused stale "GPS active" text).
@@ -423,15 +423,68 @@ erDiagram
 
 ---
 
+## Build Signing
+
+Both debug and release builds use the same signing configuration, defined in `app/build.gradle.kts`:
+
+| Property | Value |
+|----------|-------|
+| **Keystore** | `%USERPROFILE%\.android\debug.keystore` (Gradle: `System.getProperty("user.home") + "/.android/debug.keystore"`) |
+| **Alias** | `androiddebugkey` |
+| **Store password** | `android` |
+| **Key password** | `android` |
+
+The `signingConfigs` block defines a single `"shared"` config used by both `debug` and `release` build types.
+
+> **Important**: The SHA-1 fingerprint from this keystore must be registered in Firebase Console
+> (Project Settings → Your apps → SHA certificate fingerprints) for Google Play Services APIs
+> (Activity Recognition, location) to function. Without this, GMS returns `DEVELOPER_ERROR`.
+
+To extract the SHA-1:
+```powershell
+keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android
+```
+
+---
+
+## Activity Recognition API Setup
+
+Activity detection is performed entirely on-device by Google Play Services using sensor fusion
+(accelerometer, gyroscope, barometer, cell/WiFi signal patterns) and a local ML model. However,
+GMS gates API access behind an authorization check, requiring two server-side registrations:
+
+### 1. Firebase Console — SHA-1 Fingerprint
+- Go to **Firebase Console → Project Settings → Your apps → Android app (`com.sj.bkgtracker`)**
+- Add the SHA-1 fingerprint from the build keystore (see Build Signing above)
+- Re-download `google-services.json` and place it in `app/`
+
+### 2. Google Cloud Console — Enable API
+- Go to **[Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Library**
+- Select the project linked to Firebase (project ID: `bkgtracker`)
+- Search for and enable the **Activity Recognition API** (may appear under Fitness API)
+
+### How It Works
+1. **Sensors** (phone hardware) → raw accelerometer, gyro, barometer data
+2. **ML Model** (Google Play Services, on-device) → classifies into WALKING, DRIVING, STILL, etc.
+3. **API Gateway** (Google Play Services) → validates app identity (SHA-1 + package name) before granting access
+4. **Authorization** (Google Cloud/Firebase, server-side) → stores which apps are allowed to use the API
+
+### Key Facts
+- **Cost**: Completely free, no quota limits
+- **Network**: Works offline after initial credential validation is cached
+- **PendingIntent**: Must use `FLAG_MUTABLE` (not `FLAG_IMMUTABLE`) so GMS can attach `ActivityTransitionResult` extras to the broadcast intent
+
+---
+
 ## Key Design Decisions
 
 - **GPS State Machine**: DEEP_IDLE (off) → ACQUISITION (5s) → ACTIVE (15s); EXPRESS (10s) overrides all. (PRIORITY_HIGH_ACCURACY via FusedLocationProviderClient)
 - **GPS Fix Interval (Active/Normal)**: 15 seconds (`NORMAL_INTERVAL_MS`)
 - **GPS Fix Interval (Acquisition)**: 5 seconds for fast first fix after wake; 60s timeout back to idle if no movement
-- **GPS Fix Interval (Express)**: 10 seconds — filters bypassed for maximum data capture
+- **GPS Fix Interval (Express)**: 10 seconds — distance filter bypassed, but accuracy filter (45m) still applies
 - **Activity-Based Wakeup**: Activity Recognition transitions wake GPS on movement (walk/run/vehicle/bicycle/on_foot ENTER) and sleep it on STILL/EXIT. `isInActivity` flag keeps GPS awake during ongoing activity even when stationary.
 - **Distance Filter**: Only saves if moved ≥ 20m from last saved point (bypassed in express)
-- **Accuracy Filter**: Skips if GPS accuracy > 100m (bypassed in express)
+- **Accuracy Filter**: Skips if GPS accuracy > 45m — always enforced, including in Express mode. Cell tower fixes are typically 50–600m, genuine GPS in a car is typically 3–20m.
 - **Stationary Detection**: 6 consecutive distance-skips → DEEP_IDLE, but only when NOT in an activity
 - **Normal Sync**: WorkManager every 15 minutes (requires network)
 - **Express Sync**: 60-second timer in ForegroundService, lasts 1 hour, FCM broadcast to all family devices
@@ -441,6 +494,8 @@ erDiagram
 - **Usage Tracking**: `UsageTracker` records Firestore reads/writes/FCM, surfaced in the "Usage" dialog.
 - **Activity Log**: `ActivityLogCache` keeps activity transitions for the last 120 minutes, shown via the "Activity Log" menu.
 - **Map Timeline**: Scrubbable slider over loaded points; selecting a point shows a globe icon that opens it in the phone's Maps app (`geo:` URI). Auto zoom/center is suppressed while the timeline is active so the user keeps manual control.
+- **Map Export (KML)**: Share icon in Map toolbar exports one KML 2.2 file per visible user as a `<LineString>` track with Start/End placemarks, shared via `ACTION_SEND_MULTIPLE` using `FileProvider` (`filesDir/exports/`). Compatible with Google Earth mobile/desktop.
+- **Map Export (Raw CSV)**: Bug icon in Map toolbar exports a CSV of all cached points with timestamp, lat, lon, accuracy, speed, altitude, bearing — for debugging GPS quality. Both exports are gated by `FileProvider` (`${applicationId}.fileprovider`).
 - **Auth**: Google Sign-In → Firebase Auth token → Firestore security rules
 - **Boot Resilience**: BootReceiver restarts foreground service after reboot if signed in
 - **File Persistence**: JSON saves use `ContentResolver` mode `"wt"` (write+truncate) to avoid stale trailing bytes on Android 10+

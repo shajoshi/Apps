@@ -1,10 +1,12 @@
 package com.sj.bkgtracker.ui
 
 import android.app.Application
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
@@ -13,26 +15,32 @@ import com.google.firebase.firestore.Query
 import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import com.sj.bkgtracker.data.local.UsageTracker
 import com.sj.bkgtracker.domain.model.LocationRecord
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 data class TrackedUser(
     val uid: String,
     val email: String,
-    val points: List<LocationRecord>
+    val points: List<LocationRecord>,
+    val firebasePoints: Int = 0,
+    val cachePoints: Int = 0
 )
 
 data class MapState(
     val users: List<TrackedUser> = emptyList(),
     val visibleUsers: Set<String> = emptySet(),
     val timeWindowHours: Int = 1,
-    val totalPoints: Int = 0,
-    val firebasePoints: Int = 0,
-    val cachePoints: Int = 0,
     val isLoading: Boolean = false,
     val error: String? = null,
     val timelineEnabled: Boolean = false,
@@ -80,9 +88,7 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(isLoading = true, error = null) }
             try {
                 val since = System.currentTimeMillis() - _state.value.timeWindowHours * 3600_000L
-                val currentUserId = auth.currentUser?.uid
                 var firebasePointsCount = 0
-                var cachePointsCount = 0
                 val users = mutableListOf<TrackedUser>()
 
                 
@@ -94,7 +100,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     val uid = userDoc.id
                     try {
                         var points: List<LocationRecord>
-                        var fromFirebase = false
                         var userEmail: String? = null
 
                         // Get user email first (from cache or Firebase)
@@ -113,12 +118,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         }
 
+                        // Per-user source tracking
+                        var userFirebasePoints = 0
+                        var userCachePoints = 0
+
                         // Check if cache covers the requested time window
                         if (UnifiedLocationCache.cacheCoversTimeWindow(uid, since)) {
                             // Cache covers the start of window - use cached data + incremental fetch for gap
                             val (cachedPoints, fetchedWindow) = UnifiedLocationCache.getCachedPoints(uid, since)
                             points = cachedPoints
-                            cachePointsCount += points.size
+                            userCachePoints = points.size
                             
                             // Fetch any new points since the last fetch to fill the gap
                             if (fetchedWindow != null) {
@@ -147,6 +156,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                                 bearingDeg  = d.getDouble("bearing")?.toFloat()
                                             )
                                         }
+                                        userFirebasePoints = newPoints.size
+                                        userCachePoints = cachedPoints.size
                                         // Merge and update - pass 'since' to track the window
                                         points = (cachedPoints + newPoints).sortedBy { it.timestampMs }
                                         UnifiedLocationCache.addPoints(uid, newPoints, since)
@@ -185,20 +196,17 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             }
 
                             points = newPoints.sortedBy { it.timestampMs }
+                            userFirebasePoints = points.size
 
                             // Update cache with fetched data - pass 'since' to track the window
                             UnifiedLocationCache.addPoints(uid, newPoints, since)
-                            fromFirebase = true
                             firebasePointsCount += points.size
                             Log.d(TAG, "Fetched from Firebase for $uid: ${points.size} points")
                         }
 
-                        // Filter by time window
+                        // Filter by time window — always add user even if no points in window
                         val filteredPoints = points.filter { it.timestampMs >= since }
-
-                        if (filteredPoints.isNotEmpty()) {
-                            users.add(TrackedUser(uid, userEmail ?: uid, filteredPoints))
-                        }
+                        users.add(TrackedUser(uid, userEmail ?: uid, filteredPoints, userFirebasePoints, userCachePoints))
                     } catch (e: Exception) {
                         Log.w(TAG, "Could not fetch records for uid $uid: ${e.message}")
                     }
@@ -212,15 +220,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val totalFiltered = users.sumOf { it.points.size }
+                val cachePointsCount = users.sumOf { it.cachePoints }
                 Log.d(TAG, "Refresh complete: $totalFiltered points displayed ($firebasePointsCount from Firebase, $cachePointsCount from cache)")
                 
                 _state.update { 
                     it.copy(
                         users = users, 
                         visibleUsers = newVisible, 
-                        totalPoints = totalFiltered,
-                        firebasePoints = firebasePointsCount,
-                        cachePoints = cachePointsCount,
                         isLoading = false
                     ) 
                 }
@@ -317,5 +323,133 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             .filter { it.email in _state.value.visibleUsers }
             .flatMap { it.points }
             .sortedBy { it.timestampMs }
+    }
+
+    fun exportRawCsv() {
+        val ctx = getApplication<Application>()
+        val usersToExport = _state.value.users.filter {
+            it.email in _state.value.visibleUsers && it.points.isNotEmpty()
+        }
+        if (usersToExport.isEmpty()) {
+            Toast.makeText(ctx, "No points to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val uris = withContext(Dispatchers.IO) {
+                    val exportDir = File(ctx.filesDir, "exports").also { it.mkdirs() }
+                    val fileFmt = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
+                    val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).also {
+                        it.timeZone = TimeZone.getTimeZone("UTC")
+                    }
+                    val stamp = fileFmt.format(Date())
+
+                    usersToExport.map { user ->
+                        val name = user.email.substringBefore("@")
+                        val file = File(exportDir, "${name}_raw_$stamp.csv")
+                        file.bufferedWriter().use { w ->
+                            w.write("timestamp_utc,lat,lon,accuracy_m,speed_kmh,altitude_m,bearing_deg")
+                            w.newLine()
+                            for (pt in user.points.sortedBy { it.timestampMs }) {
+                                w.write("${isoFmt.format(Date(pt.timestampMs))},${pt.latitude},${pt.longitude},${pt.accuracyM},${pt.speedKmh},${pt.altitudeM},${pt.bearingDeg ?: ""}")
+                                w.newLine()
+                            }
+                        }
+                        FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+                    }
+                }
+                val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "text/csv"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                ctx.startActivity(Intent.createChooser(shareIntent, "Share Raw CSV").also {
+                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "CSV export failed", e)
+                Toast.makeText(ctx, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun exportGpx() {
+        val ctx = getApplication<Application>()
+        val usersToExport = _state.value.users.filter {
+            it.email in _state.value.visibleUsers && it.points.isNotEmpty()
+        }
+        if (usersToExport.isEmpty()) {
+            Toast.makeText(ctx, "No points to export", Toast.LENGTH_SHORT).show()
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val uris = withContext(Dispatchers.IO) {
+                    val exportDir = File(ctx.filesDir, "exports").also { it.mkdirs() }
+                    val fileFmt = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
+                    val stamp = fileFmt.format(Date())
+
+                    usersToExport.map { user ->
+                        val name = user.email.substringBefore("@")
+                        val file = File(exportDir, "${name}_$stamp.kml")
+                        file.bufferedWriter().use { w ->
+                            val sorted = user.points.sortedBy { it.timestampMs }
+                            val sdf = SimpleDateFormat("dd-MMM HH:mm", Locale.getDefault())
+                            w.write("""<?xml version="1.0" encoding="UTF-8"?>"""); w.newLine()
+                            w.write("""<kml xmlns="http://www.opengis.net/kml/2.2">"""); w.newLine()
+                            w.write("<Document>"); w.newLine()
+                            w.write("  <name>${user.email}</name>"); w.newLine()
+                            w.write("  <Style id=\"track\">"); w.newLine()
+                            w.write("    <LineStyle><color>ffff0000</color><width>4</width></LineStyle>"); w.newLine()
+                            w.write("    <PolyStyle><fill>0</fill></PolyStyle>"); w.newLine()
+                            w.write("  </Style>"); w.newLine()
+                            // Track as LineString
+                            w.write("  <Placemark>"); w.newLine()
+                            w.write("    <name>${user.email.substringBefore("@")} track</name>"); w.newLine()
+                            w.write("    <styleUrl>#track</styleUrl>"); w.newLine()
+                            w.write("    <LineString>"); w.newLine()
+                            w.write("      <tessellate>1</tessellate>"); w.newLine()
+                            w.write("      <coordinates>"); w.newLine()
+                            for (pt in sorted) {
+                                w.write("        ${pt.longitude},${pt.latitude},${pt.altitudeM}"); w.newLine()
+                            }
+                            w.write("      </coordinates>"); w.newLine()
+                            w.write("    </LineString>"); w.newLine()
+                            w.write("  </Placemark>"); w.newLine()
+                            // Start marker
+                            sorted.firstOrNull()?.let { first ->
+                                w.write("  <Placemark>"); w.newLine()
+                                w.write("    <name>Start ${sdf.format(Date(first.timestampMs))}</name>"); w.newLine()
+                                w.write("    <description>Speed: ${"%.1f".format(first.speedKmh)} km/h</description>"); w.newLine()
+                                w.write("    <Point><coordinates>${first.longitude},${first.latitude},${first.altitudeM}</coordinates></Point>"); w.newLine()
+                                w.write("  </Placemark>"); w.newLine()
+                            }
+                            // End marker
+                            sorted.lastOrNull()?.let { last ->
+                                w.write("  <Placemark>"); w.newLine()
+                                w.write("    <name>End ${sdf.format(Date(last.timestampMs))}</name>"); w.newLine()
+                                w.write("    <description>Speed: ${"%.1f".format(last.speedKmh)} km/h</description>"); w.newLine()
+                                w.write("    <Point><coordinates>${last.longitude},${last.latitude},${last.altitudeM}</coordinates></Point>"); w.newLine()
+                                w.write("  </Placemark>"); w.newLine()
+                            }
+                            w.write("</Document>"); w.newLine()
+                            w.write("</kml>"); w.newLine()
+                        }
+                        FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+                    }
+                }
+                val shareIntent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "application/vnd.google-earth.kml+xml"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                ctx.startActivity(Intent.createChooser(shareIntent, "Share KML").also {
+                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "KML export failed", e)
+                Toast.makeText(ctx, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 }

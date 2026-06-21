@@ -7,9 +7,17 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 
+@Serializable
+data class PersistedActivityLogEntry(
+    val timestamp: Long,
+    val activityName: String,
+    val isStart: Boolean
+)
+
 object AppSettings {
 
     private const val CACHE_FILE = "location_cache.ndjson"
+    private const val ACTIVITY_LOG_FILE = "activity_log.ndjson"
 
     @Serializable
     private data class CachedRecord(
@@ -83,5 +91,52 @@ object AppSettings {
     fun getCacheFileSize(context: Context): Long {
         val file = File(context.filesDir, CACHE_FILE)
         return if (file.exists()) file.length() else 0L
+    }
+
+    /** Append activity log entry to persistent storage */
+    fun appendActivityLogEntry(context: Context, entry: ActivityLogEntry) {
+        val persisted = PersistedActivityLogEntry(
+            timestamp = entry.timestamp,
+            activityName = entry.activityName,
+            isStart = entry.isStart
+        )
+        val file = File(context.filesDir, ACTIVITY_LOG_FILE)
+        file.appendText(json.encodeToString(persisted) + "\n")
+    }
+
+    /** Load activity log entries from persistent storage */
+    fun loadActivityLog(context: Context): List<ActivityLogEntry> {
+        val file = File(context.filesDir, ACTIVITY_LOG_FILE)
+        if (!file.exists()) return emptyList()
+
+        return try {
+            file.readLines()
+                .filter { it.isNotBlank() }
+                .mapNotNull { line ->
+                    try {
+                        val persisted: PersistedActivityLogEntry = json.decodeFromString(line)
+                        ActivityLogEntry(
+                            timestamp = persisted.timestamp,
+                            activityName = persisted.activityName,
+                            isStart = persisted.isStart
+                        )
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Rewrite entire activity log (used after cleanup/reaping old entries) */
+    fun saveActivityLog(context: Context, entries: List<ActivityLogEntry>) {
+        val file = File(context.filesDir, ACTIVITY_LOG_FILE)
+        file.writeText("")
+        entries.forEach { appendActivityLogEntry(context, it) }
+    }
+
+    fun clearActivityLog(context: Context) {
+        File(context.filesDir, ACTIVITY_LOG_FILE).delete()
     }
 }

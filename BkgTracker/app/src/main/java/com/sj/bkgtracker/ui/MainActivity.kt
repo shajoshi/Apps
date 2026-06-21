@@ -36,11 +36,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.Modifier
@@ -183,32 +186,103 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (showActivityLogDialog) {
-                    val activityLogs by ActivityLogCache.logs.collectAsState()
+                    val activityLogs = remember { ActivityLogCache.logs(this@MainActivity) }
+
+                    // data class to hold a paired row: startTime, name, endTime, durationMs (-1 if still open)
+                    data class ActivityRow(val startTime: String, val activityName: String, val endTime: String, val durationMs: Long)
+
+                    val pairedRows = remember(activityLogs) {
+                        val sorted = activityLogs.sortedBy { it.timestamp }
+                        val rows = mutableListOf<ActivityRow>()
+                        val openActivities = mutableMapOf<String, Long>() // name -> startTimestamp
+                        val sdf = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+                        val now = System.currentTimeMillis()
+                        for (entry in sorted) {
+                            if (entry.isStart) {
+                                openActivities[entry.activityName] = entry.timestamp
+                            } else {
+                                val startTs = openActivities.remove(entry.activityName)
+                                val durationMs = if (startTs != null) entry.timestamp - startTs else -1L
+                                val startTime = if (startTs != null) sdf.format(java.util.Date(startTs)) else "?"
+                                rows.add(ActivityRow(startTime, entry.activityName, sdf.format(java.util.Date(entry.timestamp)), durationMs))
+                            }
+                        }
+                        // Still-open activities
+                        for ((name, ts) in openActivities) {
+                            rows.add(ActivityRow(sdf.format(java.util.Date(ts)), name, "…", now - ts))
+                        }
+                        rows.reversed() // newest first
+                    }
+
+                    // Summarise total duration per activity type
+                    val durationSummary = remember(pairedRows) {
+                        pairedRows
+                            .filter { it.durationMs > 0 }
+                            .groupBy { it.activityName }
+                            .mapValues { (_, rows) -> rows.sumOf { it.durationMs } }
+                            .entries
+                            .sortedByDescending { it.value }
+                            .joinToString("  ") { (name, ms) ->
+                                val totalMin = ms / 60_000
+                                if (totalMin >= 60) "$name ${totalMin / 60}h${if (totalMin % 60 > 0) "${totalMin % 60}m" else ""}"
+                                else "$name ${totalMin}m"
+                            }
+                    }
+
+                    fun formatDuration(ms: Long): String {
+                        val totalMin = ms / 60_000
+                        return if (totalMin >= 60) "${totalMin / 60}h${if (totalMin % 60 > 0) "${totalMin % 60}m" else ""}"
+                        else "${totalMin}m"
+                    }
+
                     AlertDialog(
                         onDismissRequest = { showActivityLogDialog = false },
-                        title = { Text("Activity Log (last 2 hours)", fontWeight = FontWeight.SemiBold) },
+                        title = { Text("Activity Log (last 24 hours)", fontWeight = FontWeight.SemiBold) },
                         text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (activityLogs.isEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 400.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (pairedRows.isEmpty()) {
                                     Text(
-                                        "No activity detected in last 2 hours",
+                                        "No activity detected in last 24 hours",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                     )
                                 } else {
-                                    activityLogs.reversed().take(50).forEach { entry ->
+                                    // Duration summary header
+                                    if (durationSummary.isNotEmpty()) {
+                                        Text(
+                                            durationSummary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        HorizontalDivider()
+                                    }
+                                    // Detail rows: startTime  ActivityName  endTime  (duration)
+                                    pairedRows.take(50).forEach { row ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text(
-                                                entry.formattedTime(),
+                                                row.startTime,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                             )
                                             Text(
-                                                "${entry.activityName} ${if (entry.isStart) "started" else "ended"}",
-                                                style = MaterialTheme.typography.bodySmall
+                                                row.activityName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            Text(
+                                                "${row.endTime}${if (row.durationMs > 0) " (${formatDuration(row.durationMs)})" else ""}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                             )
                                         }
                                     }
@@ -221,7 +295,7 @@ class MainActivity : ComponentActivity() {
                         dismissButton = {
                             TextButton(
                                 onClick = {
-                                    ActivityLogCache.clear()
+                                    ActivityLogCache.clear(this@MainActivity)
                                     Toast.makeText(this@MainActivity, "Activity log cleared", Toast.LENGTH_SHORT).show()
                                 }
                             ) { Text("Clear Log") }
@@ -328,6 +402,8 @@ class MainActivity : ComponentActivity() {
                                 onRefresh     = { mapViewModel.refresh() },
                                 onToggleUser  = { mapViewModel.toggleUser(it) },
                                 onSetTimeWindow = { mapViewModel.setTimeWindowHours(it) },
+                                onExport      = { mapViewModel.exportGpx() },
+                                onExportRaw   = { mapViewModel.exportRawCsv() },
                                 onEnableTimeline = { mapViewModel.enableTimeline() },
                                 onDisableTimeline = { mapViewModel.disableTimeline() },
                                 onSetTimelineIndex = { mapViewModel.setTimelineIndex(it) },

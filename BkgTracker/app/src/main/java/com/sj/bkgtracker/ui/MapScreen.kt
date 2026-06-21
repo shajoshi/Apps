@@ -23,7 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ElevatedFilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -75,6 +78,8 @@ fun MapScreen(
     onRefresh: () -> Unit,
     onToggleUser: (String) -> Unit,
     onSetTimeWindow: (Int) -> Unit,
+    onExport: () -> Unit = {},
+    onExportRaw: () -> Unit = {},
     onEnableTimeline: () -> Unit = {},
     onDisableTimeline: () -> Unit = {},
     onSetTimelineIndex: (Int) -> Unit = {},
@@ -112,6 +117,20 @@ fun MapScreen(
                 }
                 IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                }
+                IconButton(
+                    onClick = onExport,
+                    enabled = state.users.any { it.email in state.visibleUsers && it.points.isNotEmpty() },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.Share, contentDescription = "Export KML")
+                }
+                IconButton(
+                    onClick = onExportRaw,
+                    enabled = state.users.any { it.email in state.visibleUsers && it.points.isNotEmpty() },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.BugReport, contentDescription = "Export Raw CSV")
                 }
             }
         }
@@ -465,12 +484,41 @@ fun MapScreen(
                             )
                         }
                     }
-                    Text(
-                        text = "${state.totalPoints} points displayed (${state.firebasePoints} fetched from Firebase, ${state.cachePoints} from cache)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-                    )
+                    // Point count table: header + one row per user + totals row
+                    val totalFb    = state.users.sumOf { it.firebasePoints }
+                    val totalCache = state.users.sumOf { it.cachePoints }
+                    val totalAll   = state.users.sumOf { it.points.size }
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        // Header row
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text("", modifier = Modifier.weight(2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                            Text("Firebase", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("Cache",    modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("Total",    modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                        // Totals row
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text("All", modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                            Text("$totalFb",    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("$totalCache", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            Text("$totalAll",   modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                        }
+                        // Per-user rows
+                        state.users.forEach { user ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    user.email.substringBefore("@"),
+                                    modifier = Modifier.weight(2f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text("${user.firebasePoints}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                Text("${user.cachePoints}",   modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                Text("${user.points.size}",   modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -33,7 +33,6 @@ import com.google.android.gms.location.Priority
 import android.location.GnssStatus
 import android.location.LocationManager
 import com.sj.bkgtracker.R
-import com.sj.bkgtracker.data.local.ActivityLogCache
 import com.sj.bkgtracker.data.local.ActivityStateHolder
 import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.GpsStateHolder
@@ -73,8 +72,11 @@ class LocationForegroundService : Service() {
         /** Minimum distance (meters) from last saved point to save a new point */
         private const val MIN_DISTANCE_METERS = 20.0
 
-        /** Accuracy threshold to detect indoor/cell locations vs real GPS (meters) */
-        private const val INDOOR_ACCURACY_THRESHOLD = 100f
+        /** Accuracy threshold to detect indoor/cell locations vs real GPS (meters).
+         *  GPS in a car is typically 3-20m. Cell/WiFi fixes are typically 50-600m.
+         *  45m threshold rejects most cell-tower fallbacks while keeping valid GPS. */
+        private const val INDOOR_ACCURACY_THRESHOLD = 45f
+
 
         /** Normal mode: GPS fix every 15 seconds */
         private const val NORMAL_INTERVAL_MS = 15_000L
@@ -193,17 +195,18 @@ class LocationForegroundService : Service() {
             val loc = result.lastLocation ?: return
             val isExpress = ExpressSyncManager.isExpressMode.value
 
-            // In express mode, bypass accuracy and distance filters
-            if (!isExpress) {
-                // Indoor detection: skip if poor accuracy (indoor/cell/wifi instead of real GPS)
-                val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
-                if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
-                    val reason = "indoor accuracy ${accuracy.toInt()}m > ${INDOOR_ACCURACY_THRESHOLD.toInt()}m"
-                    UnifiedLocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
-                    Log.d(TAG, "Indoor/cell location skipped: $reason")
-                    return
-                }
+            // Accuracy filter always applies — even in Express mode.
+            // Express mode means high-frequency upload, not accepting bad GPS fixes.
+            val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
+            if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
+                val reason = "poor accuracy ${accuracy.toInt()}m > ${INDOOR_ACCURACY_THRESHOLD.toInt()}m"
+                UnifiedLocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
+                Log.d(TAG, "Cell/indoor location skipped: $reason")
+                return
+            }
 
+            // In express mode, bypass only the distance filter (save every fix)
+            if (!isExpress) {
                 // Distance filter: only save if moved > MIN_DISTANCE_METERS from last saved point
                 val shouldSave = if (lastSavedLocation == null) {
                     true // Always save first point
@@ -293,6 +296,9 @@ class LocationForegroundService : Service() {
         val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         locationManager.registerGnssStatusCallback(ContextCompat.getMainExecutor(this), gnssStatusCallback)
         
+        // Always register activity transitions at service start
+        registerActivityTransitions()
+        
         // Initialize GPS state machine
         if (ExpressSyncManager.isExpressMode.value) {
             enterExpressMode()
@@ -315,7 +321,6 @@ class LocationForegroundService : Service() {
                 Log.d(TAG, "STILL activity detected - going to deep idle")
                 isInActivity = false
                 ActivityStateHolder.setStillActivity()
-                ActivityLogCache.logActivity("Still", true)
                 if (currentGpsState != GpsState.EXPRESS) {
                     enterDeepIdleMode()
                 }
@@ -324,7 +329,6 @@ class LocationForegroundService : Service() {
                 Log.d(TAG, "Activity started: $activityName")
                 isInActivity = true
                 ActivityStateHolder.setActivityStarted(activityType)
-                ActivityLogCache.logActivity(activityName, true)
                 notificationManager?.notify(NOTIFICATION_ID,
                     buildNotification("Active: $activityName", "GPS tracking"))
                 if (currentGpsState == GpsState.DEEP_IDLE && !ExpressSyncManager.isExpressMode.value) {
@@ -337,7 +341,6 @@ class LocationForegroundService : Service() {
             Log.d(TAG, "Activity ended: $activityName")
             isInActivity = false
             ActivityStateHolder.setActivityEnded(activityType)
-            ActivityLogCache.logActivity(activityName, false)
             if (currentGpsState != GpsState.EXPRESS) {
                 enterDeepIdleMode()
             }
@@ -390,7 +393,7 @@ class LocationForegroundService : Service() {
             this,
             ACTIVITY_WAKE_REQUEST_CODE,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
     }
 
@@ -405,9 +408,14 @@ class LocationForegroundService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun registerActivityTransitions() {
+        Log.d(TAG, "registerActivityTransitions() called. alreadyRegistered=$activityTransitionsRegistered")
         if (activityTransitionsRegistered) return
-        if (!hasActivityRecognitionPermission()) {
+        
+        val hasPermission = hasActivityRecognitionPermission()
+        Log.d(TAG, "Activity recognition permission granted: $hasPermission")
+        if (!hasPermission) {
             Log.w(TAG, "Activity recognition permission missing; idle wake transitions not registered")
+            android.widget.Toast.makeText(this, "[DEBUG] Activity perm MISSING", android.widget.Toast.LENGTH_LONG).show()
             return
         }
 
@@ -432,6 +440,7 @@ class LocationForegroundService : Service() {
             )
         }
 
+        Log.d(TAG, "Requesting activity transition updates with ${transitions.size} transitions")
         activityRecognitionClient
             .requestActivityTransitionUpdates(
                 ActivityTransitionRequest(transitions),
@@ -439,10 +448,12 @@ class LocationForegroundService : Service() {
             )
             .addOnSuccessListener {
                 activityTransitionsRegistered = true
-                Log.d(TAG, "Activity transitions registered for deep idle wake")
+                Log.d(TAG, "Activity transitions REGISTERED successfully")
+                android.widget.Toast.makeText(this, "[DEBUG] Activity transitions REGISTERED OK", android.widget.Toast.LENGTH_LONG).show()
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Failed to register activity transitions: ${e.message}", e)
+                Log.e(TAG, "FAILED to register activity transitions: ${e.message}", e)
+                android.widget.Toast.makeText(this, "[DEBUG] Activity reg FAILED: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             }
     }
 
@@ -552,7 +563,6 @@ class LocationForegroundService : Service() {
         currentGpsState = GpsState.DEEP_IDLE
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.DEEP_IDLE, 0L)
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        registerActivityTransitions()
         
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("Deep Idle", "Battery saving - GPS off"))
@@ -567,7 +577,6 @@ class LocationForegroundService : Service() {
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACQUISITION, ACQUISITION_INTERVAL_MS)
         acquisitionStartTime = System.currentTimeMillis()
         
-        unregisterActivityTransitions()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, ACQUISITION_INTERVAL_MS)
             .setMinUpdateIntervalMillis(ACQUISITION_INTERVAL_MS / 2)
@@ -608,7 +617,6 @@ class LocationForegroundService : Service() {
         acquisitionTimeoutJob?.cancel()
         acquisitionTimeoutJob = null
         
-        unregisterActivityTransitions()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
             .setMinUpdateIntervalMillis(30_000L)
@@ -628,7 +636,6 @@ class LocationForegroundService : Service() {
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.EXPRESS, EXPRESS_INTERVAL_MS)
         consecutiveSkips = 0
         
-        unregisterActivityTransitions()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, EXPRESS_INTERVAL_MS)
             .setMinUpdateIntervalMillis(5_000L)
