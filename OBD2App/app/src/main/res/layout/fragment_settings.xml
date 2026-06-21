@@ -237,40 +237,61 @@
                     android:background="#222244"
                     android:layout_marginHorizontal="16dp" />
 
-                <!-- CAN Bus Logging toggle -->
+                <!-- App Mode selection -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:padding="16dp">
 
-                    <LinearLayout
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal">
+                        android:text="Adapter Mode"
+                        android:textColor="#FFFFFF"
+                        android:textSize="15sp" />
 
-                        <TextView
-                            android:layout_width="0dp"
+                    <RadioGroup
+                        android:id="@+id/rg_app_mode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical">
+
+                        <RadioButton
+                            android:id="@+id/rb_mode_obd"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Use CAN Bus instead of OBD polling"
+                            android:text="OBD Polling"
                             android:textColor="#FFFFFF"
-                            android:textSize="15sp" />
+                            android:textSize="14sp"
+                            android:buttonTint="#4CAF50" />
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/switch_can_bus_logging"
-                            android:layout_width="wrap_content"
+                        <RadioButton
+                            android:id="@+id/rb_mode_hs_can"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="12dp" />
+                            android:text="HS-CAN Bus (500 kbps, ATMA)"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:buttonTint="#4FC3F7" />
 
-                    </LinearLayout>
+                        <RadioButton
+                            android:id="@+id/rb_mode_ms_can"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="MS-CAN Bus 125 kbps (STP 53 — vLinker/OBDLink)"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:buttonTint="#CE93D8" />
+
+                    </RadioGroup>
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
-                        android:text="When on, trips are logged from CAN Bus frames using the selected CAN profile. OBD PID readings will not be polled or logged while this is enabled."
+                        android:text="OBD Polling: standard PID queries. HS-CAN / MS-CAN: raw frame sniffing using the selected CAN profile — OBD polling is suppressed."
                         android:textColor="#888888"
                         android:textSize="12sp" />
 

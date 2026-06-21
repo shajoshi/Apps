@@ -1,5 +1,6 @@
 package com.sj.obd2app.obd
 
+import com.sj.obd2app.settings.AppMode
 import com.sj.obd2app.settings.CachedPidEntry
 
 /**
@@ -7,14 +8,14 @@ import com.sj.obd2app.settings.CachedPidEntry
  * No SharedPreferences, no Context, no Android framework.
  */
 class InMemoryConnectionSettingsSource(
-    var canBusMode: Boolean = false,
+    var appMode: AppMode = AppMode.OBD,
     var ignoreCachedPids: Boolean = false
 ) : ConnectionSettingsSource {
 
     private val pidCache = mutableMapOf<String, Map<String, CachedPidEntry>>()
     private val protocolCache = mutableMapOf<String, String>()
 
-    override fun isCanBusMode(): Boolean = canBusMode
+    override fun getAppMode(): AppMode = appMode
     override fun ignoreCachedPids(): Boolean = ignoreCachedPids
 
     override fun getCachedProtocol(address: String): String? = protocolCache[address]

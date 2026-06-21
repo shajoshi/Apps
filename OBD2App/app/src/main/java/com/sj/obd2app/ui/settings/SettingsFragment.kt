@@ -27,6 +27,7 @@ import com.sj.obd2app.obd.MockObd2Service
 import com.sj.obd2app.obd.MockDiscoveryScenario
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
+import com.sj.obd2app.settings.AppMode
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.VehicleProfile
 import com.sj.obd2app.settings.VehicleProfileEditSheet
@@ -211,7 +212,11 @@ class SettingsFragment : Fragment() {
         binding.switchLoggingEnabled.isChecked = AppSettings.isLoggingEnabled(ctx)
         binding.switchAutoShareLog.isChecked = AppSettings.isAutoShareLogEnabled(ctx)
         binding.switchBtLoggingEnabled.isChecked = AppSettings.isBtLoggingEnabled(ctx)
-        binding.switchCanBusLogging.isChecked = AppSettings.isCanBusLoggingEnabled(ctx)
+        when (AppSettings.getAppMode(ctx)) {
+            AppMode.OBD    -> binding.rgAppMode.check(R.id.rb_mode_obd)
+            AppMode.HS_CAN -> binding.rgAppMode.check(R.id.rb_mode_hs_can)
+            AppMode.MS_CAN -> binding.rgAppMode.check(R.id.rb_mode_ms_can)
+        }
         binding.switchIgnoreCachedPids.isChecked = AppSettings.isIgnoreCachedPidsEnabled(ctx)
         
         val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable
@@ -235,7 +240,11 @@ class SettingsFragment : Fragment() {
             settings.autoShareLog = binding.switchAutoShareLog.isChecked
             settings.btLoggingEnabled = binding.switchBtLoggingEnabled.isChecked
             settings.accelerometerEnabled = binding.switchAccelerometerEnabled.isChecked
-            settings.useCanBusLogging = binding.switchCanBusLogging.isChecked
+            settings.appMode = when (binding.rgAppMode.checkedRadioButtonId) {
+                R.id.rb_mode_hs_can -> AppMode.HS_CAN
+                R.id.rb_mode_ms_can -> AppMode.MS_CAN
+                else                -> AppMode.OBD
+            }
             settings.ignoreCachedPids = binding.switchIgnoreCachedPids.isChecked
         }
         
@@ -313,7 +322,7 @@ class SettingsFragment : Fragment() {
         binding.switchLoggingEnabled.setOnCheckedChangeListener { _, _ -> markAsChanged() }
         binding.switchAutoShareLog.setOnCheckedChangeListener { _, _ -> markAsChanged() }
         binding.switchBtLoggingEnabled.setOnCheckedChangeListener { _, _ -> markAsChanged() }
-        binding.switchCanBusLogging.setOnCheckedChangeListener { _, _ -> markAsChanged() }
+        binding.rgAppMode.setOnCheckedChangeListener { _, _ -> markAsChanged() }
         binding.switchIgnoreCachedPids.setOnCheckedChangeListener { _, _ -> markAsChanged() }
 
         val accelAvailable = com.sj.obd2app.sensors.AccelerometerSource.getInstance(ctx).isAvailable

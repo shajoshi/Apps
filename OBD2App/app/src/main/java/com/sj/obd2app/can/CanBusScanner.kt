@@ -183,7 +183,11 @@ object CanBusScanner {
                 return
             }
             transport = borrowed
-            RealFrameSource(borrowed, profile, service)
+            if (profile.networkType == CanNetworkType.MS_CAN) {
+                MsCanRealFrameSource(borrowed, profile, service)
+            } else {
+                RealFrameSource(borrowed, profile, service)
+            }
         }
 
         _state.value = State.Starting
@@ -439,6 +443,101 @@ object CanBusScanner {
                     delay(30)
                 } catch (e: Exception) {
                     Log.w(TAG, "restore $cmd failed: ${e.message}")
+                }
+            }
+            service.restorePolling()
+        }
+    }
+
+    /**
+     * MS-CAN real ELM327 source (125 kbps, body-domain bus).
+     *
+     * Identical to [RealFrameSource] except that before ATMA it sends:
+     *   `STP 53` — STN-specific command to switch the vLinker MC+ to the 125 kbps network.
+     *
+     * `STP 53` is not a standard ELM327 command; a `?` response means the adapter is a
+     * clone that does not support the STN extension and cannot access the MS-CAN bus.
+     */
+    private class MsCanRealFrameSource(
+        private val t: Elm327Transport,
+        private val profile: CanProfile,
+        private val service: BluetoothObd2Service
+    ) : FrameSource {
+        override val label: String get() = "ELM327 MS-CAN 125kbps"
+
+        override suspend fun start() {
+            t.drainInput(EXIT_DRAIN_MS)
+
+            service.appendConnectionLog("MS-CAN scan setup — verifying STN adapter capabilities…")
+
+            val criticalCmds = linkedMapOf(
+                "ATE0"   to "Echo off",
+                "ATL0"   to "Linefeeds off",
+                "ATS0"   to "Spaces off",
+                "ATH1"   to "Headers on",
+                "ATCAF0" to "CAN auto-formatting off"
+            )
+            for ((cmd, desc) in criticalCmds) {
+                val resp = t.sendCommand(cmd).trim()
+                service.appendConnectionLog("  $cmd \u2192 $resp")
+                Log.d(TAG, "ms-can setup $cmd \u2192 $resp")
+                if (resp.contains("?")) {
+                    val err = "Adapter rejected $cmd ($desc) — not CAN-capable."
+                    service.appendConnectionLog("✗ $err")
+                    throw UnsupportedAdapterException(err)
+                }
+                delay(30)
+            }
+
+            // Switch to MS-CAN 125 kbps via STN-specific STP 53
+            val stpResp = t.sendCommand("STP 53").trim()
+            service.appendConnectionLog("  STP 53 \u2192 $stpResp")
+            Log.d(TAG, "ms-can setup STP 53 \u2192 $stpResp")
+            if (stpResp.contains("?")) {
+                val err = "Adapter rejected STP 53 — not an STN-based adapter (vLinker/OBDLink required for MS-CAN)."
+                service.appendConnectionLog("✗ $err")
+                throw UnsupportedAdapterException(err)
+            }
+            delay(30)
+
+            // Apply CAN ID hardware filter (same logic as RealFrameSource)
+            val ids = profile.canIdFilter
+            val filterCmd = if (ids != null && ids.size == 1) {
+                "ATCRA${Integer.toHexString(ids.first()).uppercase()}"
+            } else {
+                "ATCRA"
+            }
+            val filterResp = t.sendCommand(filterCmd).trim()
+            service.appendConnectionLog("  $filterCmd \u2192 $filterResp")
+            Log.d(TAG, "ms-can setup $filterCmd \u2192 $filterResp")
+            delay(30)
+
+            service.appendConnectionLog("✓ MS-CAN adapter ready — starting monitor stream")
+            t.sendRaw("ATMA")
+        }
+
+        override suspend fun next(): FrameResult {
+            val line = t.readStreamLine(STREAM_READ_TIMEOUT_MS) ?: return FrameResult.None
+            if (line.isEmpty()) return FrameResult.None
+            if (line.contains("BUFFER FULL", ignoreCase = true) ||
+                line.contains("CAN ERROR", ignoreCase = true) ||
+                line.contains("STOPPED", ignoreCase = true)
+            ) return FrameResult.Notice(line)
+            val frame = CanFrameParser.parse(line) ?: return FrameResult.Noise
+            return FrameResult.Ok(frame)
+        }
+
+        override suspend fun stop() {
+            try { t.sendRaw(" ") } catch (_: Exception) {}
+            delay(50)
+            t.drainInput(EXIT_DRAIN_MS)
+            val restore = listOf("ATCRA", "ATH0", "ATCAF1")
+            for (cmd in restore) {
+                try {
+                    t.sendCommand(cmd)
+                    delay(30)
+                } catch (e: Exception) {
+                    Log.w(TAG, "ms-can restore $cmd failed: ${e.message}")
                 }
             }
             service.restorePolling()

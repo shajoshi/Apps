@@ -194,6 +194,51 @@
 
         </LinearLayout>
 
+        <!-- Network type: HS-CAN vs MS-CAN -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="CAN Network Type"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+
+            <RadioGroup
+                android:id="@+id/rg_network_type"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rb_hs_can"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="HS-CAN (500 kbps)"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp"
+                    android:buttonTint="#4FC3F7"
+                    android:checked="true" />
+
+                <RadioButton
+                    android:id="@+id/rb_ms_can"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:text="MS-CAN (125 kbps)"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp"
+                    android:buttonTint="#CE93D8" />
+
+            </RadioGroup>
+
+        </LinearLayout>
+
         <!-- Visible only in mock mode: lets the user bypass DBC loading entirely -->
         <LinearLayout
             android:id="@+id/ll_use_demo_data"

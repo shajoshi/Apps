@@ -25,6 +25,7 @@ import com.sj.obd2app.can.RawCanTraceRecorder
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
+import com.sj.obd2app.settings.AppMode
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.storage.ExportImportManager
 import com.sj.obd2app.ui.attachNavOverflow
@@ -125,12 +126,14 @@ class ConnectFragment : Fragment() {
 
     private fun updateModeBadge() {
         val isMock = ObdStateManager.isMockMode
-        val isCan = AppSettings.isCanBusLoggingEnabled(requireContext())
+        val appMode = AppSettings.getAppMode(requireContext())
         val (label, color) = when {
-            isMock && isCan  -> "SIMULATED · CAN READER"  to android.graphics.Color.parseColor("#FFC107")
-            isMock && !isCan -> "SIMULATED · OBD POLLING" to android.graphics.Color.parseColor("#FFC107")
-            !isMock && isCan -> "CAN READER MODE"          to android.graphics.Color.parseColor("#4FC3F7")
-            else             -> "OBD REQUEST MODE"         to android.graphics.Color.parseColor("#4CAF50")
+            isMock && appMode == AppMode.HS_CAN -> "SIMULATED · HS-CAN" to android.graphics.Color.parseColor("#FFC107")
+            isMock && appMode == AppMode.MS_CAN -> "SIMULATED · MS-CAN" to android.graphics.Color.parseColor("#FFC107")
+            isMock                              -> "SIMULATED · OBD"    to android.graphics.Color.parseColor("#FFC107")
+            appMode == AppMode.HS_CAN           -> "HS-CAN 500 kbps"   to android.graphics.Color.parseColor("#4FC3F7")
+            appMode == AppMode.MS_CAN           -> "MS-CAN 125 kbps"   to android.graphics.Color.parseColor("#CE93D8")
+            else                                -> "OBD POLLING"        to android.graphics.Color.parseColor("#4CAF50")
         }
         binding.tvModeBadge!!.text = label
         binding.tvModeBadge!!.setTextColor(android.graphics.Color.WHITE)
@@ -317,7 +320,7 @@ class ConnectFragment : Fragment() {
      */
     override fun onResume() {
         super.onResume()
-        
+
         // Force UI refresh since ViewPager2 reuses fragments
         setupConnectUI(viewModel.currentMockMode)
         updateModeBadge()

@@ -11,6 +11,7 @@ import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdConnectionManager
 import com.sj.obd2app.service.TripForegroundService
+import com.sj.obd2app.settings.AppMode
 import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.flow.StateFlow
 
@@ -47,18 +48,18 @@ class TripLifecycleFacade private constructor(private val context: Context) {
     val tripPhase: StateFlow<TripPhase> = calculator.tripPhase
 
     fun startTrip() {
-        if (AppSettings.isCanBusLoggingEnabled(context)) {
-            startCanBusTrip()
-        } else {
-            startObdTrip()
+        when (AppSettings.getAppMode(context)) {
+            AppMode.HS_CAN -> startCanBusTrip()
+            AppMode.MS_CAN -> startMsCanTrip()
+            AppMode.OBD    -> startObdTrip()
         }
     }
 
     fun stopTrip() {
-        if (AppSettings.isCanBusLoggingEnabled(context)) {
-            stopCanBusTrip()
-        } else {
-            stopObdTrip()
+        when (AppSettings.getAppMode(context)) {
+            AppMode.HS_CAN -> stopCanBusTrip()
+            AppMode.MS_CAN -> stopMsCanTrip()
+            AppMode.OBD    -> stopObdTrip()
         }
     }
 
@@ -138,6 +139,74 @@ class TripLifecycleFacade private constructor(private val context: Context) {
         calculator.setTripPhase(TripPhase.RUNNING)
         TripForegroundService.start(context)
         Log.i(TAG, "CAN Bus trip started with profile '${profile.name}'")
+    }
+
+    // ── MS-CAN Bus path ───────────────────────────────────────────────────────
+
+    /**
+     * Starts a trip in MS-CAN Bus mode (125 kbps). Requires a default profile whose
+     * [CanProfile.networkType] is [CanNetworkType.MS_CAN] and a connected STN-based
+     * (vLinker/OBDLink) adapter. Delegates to the same scanner lifecycle as HS-CAN;
+     * the [MsCanRealFrameSource] inside [CanBusScanner] handles the STP 53 switch.
+     */
+    private fun startMsCanTrip() {
+        val profileId = AppSettings.getDefaultCanProfileId(context)
+        val profile = profileId?.let { com.sj.obd2app.can.CanProfileRepository.getInstance(context).getById(it) }
+        if (profile == null) {
+            toast("No default CAN profile — star one in the CAN Bus Reader screen.")
+            Log.w(TAG, "startMsCanTrip aborted: no default CAN profile")
+            return
+        }
+        if (profile.selectedSignals.isEmpty()) {
+            toast("CAN profile '${profile.name}' has no signals — edit it first.")
+            Log.w(TAG, "startMsCanTrip aborted: profile has no signals")
+            return
+        }
+
+        val svc = Obd2ServiceProvider.getService()
+        if (svc.connectionState.value != Obd2Service.ConnectionState.CONNECTED) {
+            val hint = if (com.sj.obd2app.obd.ObdStateManager.isMockMode)
+                "Connect the Mock OBD2 Adapter before starting a MS-CAN trip."
+            else
+                "Connect the vLinker/OBDLink adapter before starting a MS-CAN trip."
+            toast(hint)
+            Log.w(TAG, "startMsCanTrip aborted: adapter not connected")
+            return
+        }
+        if (!com.sj.obd2app.obd.ObdStateManager.isMockMode && svc !is BluetoothObd2Service) {
+            toast("MS-CAN trip requires a Bluetooth STN adapter in real mode.")
+            Log.w(TAG, "startMsCanTrip aborted: not a BluetoothObd2Service in real mode")
+            return
+        }
+
+        if (CanBusScanner.state.value !is CanBusScanner.State.Idle) {
+            CanBusScanner.stop()
+        }
+        CanBusScanner.start(context, profile, previewMode = false)
+
+        calculator.startTripInternal()
+        CanDataOrchestrator.resetAccelBasis()
+        CanDataOrchestrator.start(
+            context = context,
+            profile = profile,
+            calculator = calculator,
+            writer = null
+        )
+
+        calculator.setTripPhase(TripPhase.RUNNING)
+        TripForegroundService.start(context)
+        Log.i(TAG, "MS-CAN trip started with profile '${profile.name}'")
+    }
+
+    private fun stopMsCanTrip() {
+        CanDataOrchestrator.stop()
+        if (CanBusScanner.state.value !is CanBusScanner.State.Idle) {
+            CanBusScanner.stop()
+        }
+        calculator.stopTripInternal()
+        calculator.setTripPhase(TripPhase.IDLE)
+        TripForegroundService.stop(context)
+        Log.i(TAG, "MS-CAN trip stopped")
     }
 
     private fun stopCanBusTrip() {

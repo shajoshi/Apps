@@ -19,6 +19,7 @@ import com.sj.obd2app.can.CanProfileRepository
 import com.sj.obd2app.obd.Obd2Service
 import com.sj.obd2app.obd.Obd2ServiceProvider
 import com.sj.obd2app.obd.ObdStateManager
+import com.sj.obd2app.settings.AppMode
 import com.sj.obd2app.settings.AppSettings
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.Job
@@ -189,11 +190,12 @@ class ConnectViewModel : ViewModel() {
                 _connectionLog.postValue(lines)
             }
         }
-        // Auto-start CAN scanner in preview mode when CAN mode is on and adapter connects.
+        // Auto-start CAN scanner in preview mode when HS-CAN or MS-CAN mode is on and adapter connects.
         viewModelScope.launch {
             service.connectionState.collect { state ->
                 val ctx = appContext ?: return@collect
-                if (!AppSettings.isCanBusLoggingEnabled(ctx)) return@collect
+                val mode = AppSettings.getAppMode(ctx)
+                if (mode == AppMode.OBD) return@collect
                 when (state) {
                     Obd2Service.ConnectionState.CONNECTED -> {
                         if (CanBusScanner.state.value is CanBusScanner.State.Idle) {
@@ -201,7 +203,7 @@ class ConnectViewModel : ViewModel() {
                             if (profile != null && profile.selectedSignals.isNotEmpty()) {
                                 android.util.Log.i(
                                     "ConnectViewModel",
-                                    "CAN mode: auto-starting scanner (preview) for '${profile.name}'"
+                                    "${mode.name} mode: auto-starting scanner (preview) for '${profile.name}'"
                                 )
                                 CanBusScanner.start(ctx, profile, previewMode = true)
                             }

@@ -110,6 +110,21 @@ class BluetoothObd2Service(
         }
 
         /**
+         * ELM327 init commands for MS-CAN sniffing mode (125 kbps body-domain bus).
+         * Protocol is forced via [STP 53] in [MsCanSniffStrategy.finalizeSetup] — no ATSP here.
+         */
+        private val MS_CAN_BASE_INIT_COMMANDS = listOf(
+            "ATZ",    // Reset
+            "ATE0",   // Echo off
+            "ATL0",   // Linefeeds off
+            "ATS0",   // Spaces off
+            "ATH1",   // Headers ON
+            "ATCAF0"  // No CAN auto-formatting
+        )
+
+        private fun buildMsCanInitCommands(): List<String> = MS_CAN_BASE_INIT_COMMANDS
+
+        /**
          * Fast-tier PIDs — polled every cycle (~200ms target).
          * These are the high-frequency metrics needed for trip recording.
          */
@@ -310,8 +325,6 @@ class BluetoothObd2Service(
             buildCanInitCommands(cachedProtocol)
 
         override suspend fun finalizeSetup(t: Elm327Transport, config: FlowConfig): Set<Int> {
-            // Detect protocol so we can cache it; OBD PID discovery is skipped — the
-            // CAN scanner / trace recorder will set ATMA / ATCRA themselves.
             val detectedProto = t.sendCommand("ATDPN").trim()
             if (detectedProto.isValidProtocol()) {
                 log("✓ Protocol detected: $detectedProto")
@@ -319,7 +332,22 @@ class BluetoothObd2Service(
             } else {
                 log("⚠ Could not detect protocol via ATDPN — CAN scan may need manual ATSP")
             }
-            log("✓ Ready for CAN sniffing — adapter idle until scan starts")
+            log("✓ Ready for HS-CAN sniffing — adapter idle until scan starts")
+            return emptySet()
+        }
+    }
+
+    /**
+     * Init strategy for MS-CAN (125 kbps, body-domain bus).
+     * Uses a fixed AT init (no cached protocol) because the protocol is
+     * forced by STP 53 which [MsCanRealFrameSource] sends during scan setup.
+     */
+    private inner class MsCanSniffStrategy : ConnectionStrategy {
+        override fun initCommandsFor(cachedProtocol: String?): List<String> =
+            buildMsCanInitCommands()
+
+        override suspend fun finalizeSetup(t: Elm327Transport, config: FlowConfig): Set<Int> {
+            log("✓ Ready for MS-CAN 125 kbps sniffing — adapter idle until scan starts")
             return emptySet()
         }
     }
@@ -402,7 +430,11 @@ class BluetoothObd2Service(
             else "No cached protocol — will auto-detect")
 
         val config = FlowConfig(target, cachedProto, ignoreCache)
-        val strategy: ConnectionStrategy = if (isCanMode) CanSniffStrategy() else ObdPollStrategy()
+        val strategy: ConnectionStrategy = when (settingsSource.getAppMode()) {
+            com.sj.obd2app.settings.AppMode.HS_CAN -> CanSniffStrategy()
+            com.sj.obd2app.settings.AppMode.MS_CAN -> MsCanSniffStrategy()
+            else -> ObdPollStrategy()
+        }
 
         runInitSequence(t, strategy.initCommandsFor(cachedProto))
         awaitBusSettle(cachedProto)
@@ -541,8 +573,9 @@ class BluetoothObd2Service(
         // If CAN Bus logging is enabled, trips are driven by the CAN scanner and OBD polling
         // must stay off (see Settings → "Use CAN Bus instead of OBD polling"). We leave the
         // socket connected so the scanner can borrow the transport without re-pairing.
-        if (context?.let { AppSettings.isCanBusLoggingEnabled(it) } == true) {
-            android.util.Log.i(TAG, "OBD polling suppressed — CAN Bus logging mode is enabled")
+        val mode = context?.let { AppSettings.getAppMode(it) } ?: com.sj.obd2app.settings.AppMode.OBD
+        if (mode != com.sj.obd2app.settings.AppMode.OBD) {
+            android.util.Log.i(TAG, "OBD polling suppressed — ${mode.name} mode is active")
             return
         }
 

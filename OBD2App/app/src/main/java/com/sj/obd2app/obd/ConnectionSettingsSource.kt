@@ -1,6 +1,7 @@
 package com.sj.obd2app.obd
 
 import android.content.Context
+import com.sj.obd2app.settings.AppMode
 import com.sj.obd2app.settings.AppSettings
 import com.sj.obd2app.settings.CachedPidEntry
 
@@ -10,7 +11,8 @@ import com.sj.obd2app.settings.CachedPidEntry
  * be unit-tested without hitting SharedPreferences.
  */
 interface ConnectionSettingsSource {
-    fun isCanBusMode(): Boolean
+    fun getAppMode(): AppMode
+    fun isCanBusMode(): Boolean = getAppMode() != AppMode.OBD
     fun ignoreCachedPids(): Boolean
     fun getCachedProtocol(address: String): String?
     fun getPidCache(address: String): Map<String, CachedPidEntry>?
@@ -30,8 +32,8 @@ class AppSettingsConnectionSource(
     private val context: Context?
 ) : ConnectionSettingsSource {
 
-    override fun isCanBusMode(): Boolean =
-        context?.let { AppSettings.isCanBusLoggingEnabled(it) } == true
+    override fun getAppMode(): AppMode =
+        context?.let { AppSettings.getAppMode(it) } ?: AppMode.OBD
 
     override fun ignoreCachedPids(): Boolean =
         context?.let { AppSettings.isIgnoreCachedPidsEnabled(it) } == true

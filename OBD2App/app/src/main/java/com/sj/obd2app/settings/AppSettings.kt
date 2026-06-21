@@ -31,7 +31,7 @@ object AppSettings {
         var lastDeviceName: String? = null,
         var pidCacheMap: Map<String, PidCache> = emptyMap(),
         var lastTripSnapshot: LastTripSnapshot? = null,
-        var useCanBusLogging: Boolean = false,
+        var appMode: AppMode = AppMode.OBD,
         var defaultCanProfileId: String? = null,
         var ignoreCachedPids: Boolean = false,
         var syncTickerHz: Int = 50
@@ -58,7 +58,7 @@ object AppSettings {
     private const val KEY_BT_LOGGING_ENABLED        = "bt_logging_enabled"
     private const val KEY_FORCE_BLE_CONNECTION      = "force_ble_connection"
     private const val KEY_PID_CACHE_MAP             = "pid_cache_map"
-    private const val KEY_USE_CAN_BUS_LOGGING       = "use_can_bus_logging"
+    private const val KEY_APP_MODE                  = "app_mode"
     private const val KEY_DEFAULT_CAN_PROFILE_ID    = "default_can_profile_id"
     private const val KEY_IGNORE_CACHED_PIDS        = "ignore_cached_pids"
     private const val KEY_SYNC_TICKER_HZ             = "sync_ticker_hz"
@@ -111,7 +111,7 @@ object AppSettings {
                 lastDeviceName = json.optString("lastDeviceName", "").takeIf { it.isNotEmpty() },
                 pidCacheMap = parsePidCacheMap(json.optJSONObject("pidCacheMap")?.toString()),
                 lastTripSnapshot = json.optJSONObject("lastTripSnapshot")?.let { LastTripSnapshot.fromJSON(it) },
-                useCanBusLogging = json.optBoolean("useCanBusLogging", false),
+                appMode = AppMode.fromString(json.optString("appMode", "")),
                 defaultCanProfileId = json.optString("defaultCanProfileId", "").takeIf { it.isNotEmpty() },
                 ignoreCachedPids = json.optBoolean("ignoreCachedPids", false),
                 syncTickerHz = json.optInt("syncTickerHz", 50)
@@ -138,7 +138,7 @@ object AppSettings {
             lastDeviceMac = p.getString("last_device_mac", null),
             lastDeviceName = p.getString("last_device_name", null),
             pidCacheMap = parsePidCacheMap(p.getString(KEY_PID_CACHE_MAP, null)),
-            useCanBusLogging = p.getBoolean(KEY_USE_CAN_BUS_LOGGING, false),
+            appMode = AppMode.fromString(p.getString(KEY_APP_MODE, null)),
             defaultCanProfileId = p.getString(KEY_DEFAULT_CAN_PROFILE_ID, null),
             ignoreCachedPids = p.getBoolean(KEY_IGNORE_CACHED_PIDS, false),
             syncTickerHz = p.getInt(KEY_SYNC_TICKER_HZ, 50)
@@ -178,7 +178,7 @@ object AppSettings {
             
             // Serialize last trip snapshot
             settings.lastTripSnapshot?.let { put("lastTripSnapshot", it.toJSON()) }
-            put("useCanBusLogging", settings.useCanBusLogging)
+            put("appMode", settings.appMode.name)
             settings.defaultCanProfileId?.let { put("defaultCanProfileId", it) }
             put("ignoreCachedPids", settings.ignoreCachedPids)
             put("syncTickerHz", settings.syncTickerHz)
@@ -215,7 +215,7 @@ object AppSettings {
             } else {
                 remove(KEY_PID_CACHE_MAP)
             }
-            putBoolean(KEY_USE_CAN_BUS_LOGGING, settings.useCanBusLogging)
+            putString(KEY_APP_MODE, settings.appMode.name)
             settings.defaultCanProfileId?.let { putString(KEY_DEFAULT_CAN_PROFILE_ID, it) } ?: remove(KEY_DEFAULT_CAN_PROFILE_ID)
             putBoolean(KEY_IGNORE_CACHED_PIDS, settings.ignoreCachedPids)
             putInt(KEY_SYNC_TICKER_HZ, settings.syncTickerHz)
@@ -478,16 +478,19 @@ object AppSettings {
         return loadSettings(context).pidCacheMap
     }
 
-    // ── CAN Bus Logging ───────────────────────────────────────────────────────
+    // ── App Mode (OBD / HS_CAN / MS_CAN) ─────────────────────────────────────
 
-    fun isCanBusLoggingEnabled(context: Context): Boolean =
-        loadSettings(context).useCanBusLogging
+    fun getAppMode(context: Context): AppMode =
+        loadSettings(context).appMode
 
-    fun setCanBusLoggingEnabled(context: Context, value: Boolean) {
+    fun setAppMode(context: Context, mode: AppMode) {
         val settings = loadSettings(context)
-        settings.useCanBusLogging = value
+        settings.appMode = mode
         saveSettings(context, settings)
     }
+
+    fun isCanBusLoggingEnabled(context: Context): Boolean =
+        loadSettings(context).appMode != AppMode.OBD
 
     fun getDefaultCanProfileId(context: Context): String? =
         loadSettings(context).defaultCanProfileId

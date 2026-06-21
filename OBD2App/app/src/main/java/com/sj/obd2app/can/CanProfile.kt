@@ -4,6 +4,17 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
+/** Which physical CAN network this profile targets. */
+enum class CanNetworkType {
+    HS_CAN,  // High-speed CAN 500 kbps — standard ATMA flow
+    MS_CAN;  // Medium-speed CAN 125 kbps — requires STP 53 before ATMA
+
+    companion object {
+        fun fromString(value: String?): CanNetworkType =
+            entries.firstOrNull { it.name == value } ?: HS_CAN
+    }
+}
+
 /**
  * User-created CAN Bus logging profile.
  *
@@ -39,7 +50,9 @@ data class CanProfile(
      * (e.g. "0x7E8:EngineRPM"). Used by [CanDataOrchestrator] to populate [VehicleMetrics].
      * Auto-populated by heuristic on first edit; user-editable via the Trip Attribute Mapping card.
      */
-    val tripMetricMapping: Map<String, String> = emptyMap()
+    val tripMetricMapping: Map<String, String> = emptyMap(),
+    /** Physical CAN network speed. Drives the ELM327 init sequence in [CanBusScanner]. */
+    val networkType: CanNetworkType = CanNetworkType.HS_CAN
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -57,6 +70,7 @@ data class CanProfile(
                 tripMetricMapping.forEach { (k, v) -> put(k, v) }
             })
         }
+        put("networkType", networkType.name)
         put("selectedSignals", JSONArray().apply {
             selectedSignals.forEach { ref ->
                 put(JSONObject().apply {
@@ -101,6 +115,7 @@ data class CanProfile(
                     .takeIf { it.isNotEmpty() },
                 isDefault = json.optBoolean("isDefault", false),
                 useDemoData = json.optBoolean("useDemoData", false),
+                networkType = CanNetworkType.fromString(json.optString("networkType", "")),
                 tripMetricMapping = json.optJSONObject("tripMetricMapping")?.let { obj ->
                     val map = mutableMapOf<String, String>()
                     obj.keys().forEach { k -> map[k] = obj.getString(k) }

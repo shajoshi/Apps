@@ -26,6 +26,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.sj.obd2app.can.CanDataOrchestrator
 import com.sj.obd2app.can.CanMessage
+import com.sj.obd2app.can.CanNetworkType
 import com.sj.obd2app.can.CanProfile
 import com.sj.obd2app.can.CanProfileRepository
 import com.sj.obd2app.can.CanSignal
@@ -196,6 +197,11 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             binding.etCanObjective.setText(p.objective)
             binding.etSamplingMs.setText(p.samplingMs.toString())
             binding.swRecordRaw.isChecked = p.recordRawFrames
+            if (p.networkType == CanNetworkType.MS_CAN) {
+                binding.rgNetworkType.check(R.id.rb_ms_can)
+            } else {
+                binding.rgNetworkType.check(R.id.rb_hs_can)
+            }
             binding.swUseDemoData.isChecked = p.useDemoData
             updateDbcSectionVisibility(p.useDemoData)
             loadSyncTickerHz(p)
@@ -393,6 +399,8 @@ class CanProfileEditSheet : BottomSheetDialogFragment() {
             recordRawFrames = binding.swRecordRaw.isChecked,
             playbackCaptureFileName = captureName,
             useDemoData = useDemoData,
+            networkType = if (binding.rgNetworkType.checkedRadioButtonId == R.id.rb_ms_can)
+                CanNetworkType.MS_CAN else CanNetworkType.HS_CAN,
             tripMetricMapping = tripMappingState.toMap()
         )
 
