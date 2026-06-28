@@ -62,6 +62,16 @@ enum class TripSummaryLoadingType {
     ANALYZING
 }
 
+enum class AnalysisPhase { IDLE, SCANNING, COMBINING, DONE }
+
+data class AnalysisProgress(
+    val phase: AnalysisPhase = AnalysisPhase.IDLE,
+    val filesScanned: Int = 0,
+    val totalFiles: Int = 0,
+    val samplesWritten: Int = 0,
+    val currentFileName: String = ""
+)
+
 private data class ParsedFile(
     val item: TrackFileItem,
     val header: JSONObject,
@@ -89,6 +99,9 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _selectedDirectory = MutableStateFlow<String?>(null)
     val selectedDirectory: StateFlow<String?> = _selectedDirectory
+
+    private val _analysisProgress = MutableStateFlow(AnalysisProgress())
+    val analysisProgress: StateFlow<AnalysisProgress> = _analysisProgress
 
     /**
      * Lists all track files in the given directory URI.
@@ -244,19 +257,36 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
             _error.value = null
             _summary.value = null
 
+            _analysisProgress.value = AnalysisProgress(phase = AnalysisPhase.IDLE)
             try {
                 val result = withContext(Dispatchers.IO) {
                     val sorted = selectedFiles.sortedBy { it.lastModified }
 
-                    // Line-scanner: read each file line-by-line to extract vehicleProfile
-                    // and last sample only — never loads the full file into memory.
-                    val parsed = sorted.mapNotNull { item ->
+                    // Scan phase: token-stream each file to extract vehicleProfile + last sample.
+                    _analysisProgress.value = AnalysisProgress(
+                        phase = AnalysisPhase.SCANNING,
+                        totalFiles = sorted.size
+                    )
+                    val parsed = mutableListOf<ParsedFile>()
+                    sorted.forEachIndexed { index, item ->
+                        _analysisProgress.value = AnalysisProgress(
+                            phase = AnalysisPhase.SCANNING,
+                            filesScanned = index,
+                            totalFiles = sorted.size,
+                            currentFileName = item.name
+                        )
                         try {
-                            scanFileForStats(item)
+                            val pf = scanFileForStats(item)
+                            if (pf != null) parsed.add(pf)
                         } catch (e: Exception) {
                             Log.e(TAG, "analyzeSelectedFiles: Failed to scan ${item.name}", e)
-                            null
                         }
+                        _analysisProgress.value = AnalysisProgress(
+                            phase = AnalysisPhase.SCANNING,
+                            filesScanned = index + 1,
+                            totalFiles = sorted.size,
+                            currentFileName = item.name
+                        )
                     }
 
                     if (parsed.isEmpty()) {
@@ -347,10 +377,23 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
                         })
                     }
 
-                    // Stream-write combined file — line-copy sample lines from source files
+                    // Combine phase: stream-write combined file
+                    _analysisProgress.value = AnalysisProgress(
+                        phase = AnalysisPhase.COMBINING,
+                        filesScanned = parsed.size,
+                        totalFiles = parsed.size,
+                        samplesWritten = 0
+                    )
                     val savedUri: Uri? = saveCombinedFile(
                         combinedFileName, firstHeader, sorted
-                    )
+                    ) { written ->
+                        _analysisProgress.value = AnalysisProgress(
+                            phase = AnalysisPhase.COMBINING,
+                            filesScanned = parsed.size,
+                            totalFiles = parsed.size,
+                            samplesWritten = written
+                        )
+                    }
 
                     TripSelectionStore.setSelectedTrack(
                         TripSelectionStore.SelectedTrack(
@@ -386,9 +429,11 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
                 }
 
                 if (result != null) {
+                    _analysisProgress.value = AnalysisProgress(phase = AnalysisPhase.DONE)
                     _summary.value = result
                     Log.d(TAG, "analyzeSelectedFiles: Combined summary ready")
                 } else {
+                    _analysisProgress.value = AnalysisProgress(phase = AnalysisPhase.IDLE)
                     _error.value = "Failed to analyze selected files"
                 }
             } catch (e: Exception) {
@@ -495,7 +540,8 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
     private fun saveCombinedFile(
         fileName: String,
         vehicleProfileJson: JSONObject,
-        sourceFiles: List<TrackFileItem>
+        sourceFiles: List<TrackFileItem>,
+        onProgress: ((samplesWritten: Int) -> Unit)? = null
     ): Uri? {
         return try {
             val folderUriStr = AppSettings.getLogFolderUri(getApplication()) ?: return null
@@ -521,6 +567,7 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
                     writer.write(headerJson.toString())
                     writer.write(",\"samples\":[")
                     var firstSample = true
+                    var samplesWritten = 0
                     for (sourceFile in sourceFiles) {
                         val inStream = getApplication<Application>()
                             .contentResolver.openInputStream(sourceFile.uri) ?: continue
@@ -535,6 +582,10 @@ class TripSummaryViewModel(application: Application) : AndroidViewModel(applicat
                                             if (!firstSample) writer.write(",")
                                             writer.write(readJsonValue(reader))
                                             firstSample = false
+                                            samplesWritten++
+                                            if (samplesWritten % 1000 == 0) {
+                                                onProgress?.invoke(samplesWritten)
+                                            }
                                         }
                                         reader.endArray()
                                     } else {

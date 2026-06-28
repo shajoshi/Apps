@@ -736,13 +736,36 @@ All track file I/O uses `android.util.JsonReader` token streaming. **Never call 
 
 ```
 analyzeSelectedFiles(items)
+  _analysisProgress ← SCANNING
   for each item → scanFileForStats()    ← JsonReader, 2 objects, discarded per file
-  merge vehicleProfiles, pick lastSample
-  saveCombinedFile(vehicleProfile, sourceFiles)
+    _analysisProgress ← SCANNING(filesScanned=i, currentFileName=...)
+  _analysisProgress ← COMBINING
+  saveCombinedFile(vehicleProfile, sourceFiles, onProgress)
     write header JSON
     for each sourceFile → JsonReader → stream samples token-by-token → BufferedWriter
+      every 1000 samples → onProgress(samplesWritten)
+        → _analysisProgress ← COMBINING(samplesWritten=N)
     write closing bracket
+  _analysisProgress ← DONE
 ```
+
+### Analysis progress reporting
+
+`TripSummaryViewModel` exposes `analysisProgress: StateFlow<AnalysisProgress>`:
+
+```kotlin
+enum class AnalysisPhase { IDLE, SCANNING, COMBINING, DONE }
+data class AnalysisProgress(
+    val phase: AnalysisPhase, val filesScanned: Int, val totalFiles: Int,
+    val samplesWritten: Int, val currentFileName: String
+)
+```
+
+- `_analysisProgress.value = ...` is set from `Dispatchers.IO` — safe because `MutableStateFlow` is lock-free thread-safe
+- `saveCombinedFile()` receives a plain `(Int) -> Unit` lambda — zero knowledge of ViewModel or UI
+- `TripSummaryFragment` collects `analysisProgress` on main thread via `lifecycleScope`; coroutine dispatcher handles thread hop automatically
+- `StateFlow` delivers only the latest value if UI lags — no unbounded emission queue
+- Cadence: 1 emit per file scanned + 1 emit per 1000 samples written during combine
 
 ---
 

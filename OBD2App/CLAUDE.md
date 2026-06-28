@@ -275,6 +275,24 @@ All file reads use `android.util.JsonReader` token streaming. **Never call `read
 
 `fetchedSample: StateFlow<JSONObject?>` in `MapViewModel` is the single shared sample; both `MapViewFragment` (cursor info bar) and `SampleDetailsFragment` observe it — no duplication.
 
+### Analysis progress reporting
+
+`TripSummaryViewModel` exposes `analysisProgress: StateFlow<AnalysisProgress>` for live UI feedback during multi-file analysis:
+
+```kotlin
+enum class AnalysisPhase { IDLE, SCANNING, COMBINING, DONE }
+data class AnalysisProgress(
+    val phase: AnalysisPhase, val filesScanned: Int, val totalFiles: Int,
+    val samplesWritten: Int, val currentFileName: String
+)
+```
+
+- **SCANNING** — emitted once per file (before + after each `scanFileForStats()` call)
+- **COMBINING** — emitted every 1000 samples written; `saveCombinedFile()` receives a plain `(Int) -> Unit` lambda — zero UI knowledge in IO layer
+- **Fragment** observes `analysisProgress` via `lifecycleScope.launch { collect { ... } }` — thread hop to main handled automatically by coroutine dispatcher
+- `_analysisProgress.value = ...` is safe from `Dispatchers.IO` — `MutableStateFlow` is lock-free thread-safe
+- `StateFlow` drops stale intermediate values automatically if UI is slow — no backpressure queue
+
 ---
 
 ## Common Workflows

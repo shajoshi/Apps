@@ -209,10 +209,29 @@ class TripSummaryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.loadingType.collect { loadingType ->
-                binding.tvLoadingMessage.text = when (loadingType) {
-                    TripSummaryLoadingType.FILE_LIST -> "Loading track files..."
-                    TripSummaryLoadingType.TRIP_SUMMARY -> "Loading track summary..."
-                    TripSummaryLoadingType.ANALYZING -> "Analyzing selected track files..."
+                if (loadingType != TripSummaryLoadingType.ANALYZING) {
+                    binding.tvLoadingMessage.text = when (loadingType) {
+                        TripSummaryLoadingType.FILE_LIST -> "Loading track files..."
+                        TripSummaryLoadingType.TRIP_SUMMARY -> "Loading track summary..."
+                        else -> ""
+                    }
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.analysisProgress.collect { progress ->
+                if (viewModel.loadingType.value != TripSummaryLoadingType.ANALYZING) return@collect
+                binding.tvLoadingMessage.text = when (progress.phase) {
+                    AnalysisPhase.IDLE -> "Preparing analysis..."
+                    AnalysisPhase.SCANNING ->
+                        "Scanning file ${progress.filesScanned + 1} of ${progress.totalFiles}:\n${progress.currentFileName}"
+                    AnalysisPhase.COMBINING -> {
+                        val k = progress.samplesWritten / 1000
+                        if (k == 0) "Writing combined file..."
+                        else "Writing combined file... ${k}k samples written"
+                    }
+                    AnalysisPhase.DONE -> "Analysis complete"
                 }
             }
         }
