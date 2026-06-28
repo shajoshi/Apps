@@ -16,7 +16,9 @@ import android.graphics.RectF
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.sj.obd2app.MainActivity
+import kotlinx.coroutines.launch
 import com.sj.obd2app.MainPagerAdapter
 import com.sj.obd2app.R
 import com.sj.obd2app.databinding.FragmentMapViewBinding
@@ -76,6 +78,27 @@ class MapViewFragment : Fragment() {
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, callback)
         
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.pathPoints.collect { points ->
+                if (points.isNotEmpty() && loadedTrackFileName == viewModel.selectedTrack?.fileName) {
+                    onPathPointsReady(points)
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.pathLoading.collect { loading ->
+                binding.tvEmptyState.text = if (loading) "Loading track data..." else ""
+                binding.tvEmptyState.visibility = if (loading) android.view.View.VISIBLE else android.view.View.GONE
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.fetchedSample.collect { sample ->
+                updateCursorInfo(sample)
+            }
+        }
+
         bindSelectedTrack()
     }
 
@@ -96,7 +119,7 @@ class MapViewFragment : Fragment() {
 
     private fun bindSelectedTrack() {
         if (_binding == null) return
-        
+
         val track = viewModel.selectedTrack
         if (track == null) {
             showEmptyState("No track selected")
@@ -111,21 +134,25 @@ class MapViewFragment : Fragment() {
         pathPoints.clear()
         sampleIndex = 0
         binding.mapView.overlays.clear()
-        binding.tvEmptyState.visibility = View.GONE
-        binding.seekRoute.isEnabled = true
-        binding.seekRoute.max = (track.samples.size - 1).coerceAtLeast(0)
-        binding.seekRoute.progress = 0
         binding.tvTrackName.text = track.fileName
 
-        buildPath(track.samples)
+        viewModel.loadPathPoints()
+    }
+
+    private fun onPathPointsReady(points: List<org.osmdroid.util.GeoPoint>) {
+        if (_binding == null) return
+        pathPoints.clear()
+        pathPoints.addAll(points)
         if (pathPoints.isEmpty()) {
             showEmptyState("No GPS points available in this track")
             return
         }
-
+        binding.tvEmptyState.visibility = View.GONE
+        binding.seekRoute.isEnabled = true
+        binding.seekRoute.max = (pathPoints.size - 1).coerceAtLeast(0)
+        binding.seekRoute.progress = 0
         binding.mapView.post {
             if (_binding == null) return@post
-
             renderRoute()
             setupCursor()
             setupSeekBar()
@@ -138,17 +165,6 @@ class MapViewFragment : Fragment() {
         binding.tvEmptyState.visibility = View.VISIBLE
         binding.tvEmptyState.text = message
         binding.seekRoute.isEnabled = false
-    }
-
-    private fun buildPath(samples: List<JSONObject>) {
-        samples.forEach { sample ->
-            val gps = sample.optJSONObject("gps") ?: return@forEach
-            val lat = gps.optDouble("lat", Double.NaN)
-            val lon = gps.optDouble("lon", Double.NaN)
-            if (!lat.isNaN() && !lon.isNaN()) {
-                pathPoints.add(GeoPoint(lat, lon))
-            }
-        }
     }
 
     private fun renderRoute() {
@@ -290,24 +306,24 @@ class MapViewFragment : Fragment() {
         binding.seekRoute.progress = sampleIndex
         val point = pathPoints[sampleIndex]
         cursorMarker?.position = point
-        
-        // Extract speed for display in cursor info
-        val track = viewModel.selectedTrack
-        val sample = track?.samples?.getOrNull(sampleIndex)
+        binding.mapView.invalidate()
+        binding.tvCursorInfo.text = "Sample ${sampleIndex + 1} / ${pathPoints.size}"
+        viewModel.fetchSample(sampleIndex)
+    }
+
+    private fun updateCursorInfo(sample: JSONObject?) {
+        if (_binding == null) return
         val obdSpeed = sample?.optJSONObject("obd")?.optDouble("speedKmh", 0.0) ?: 0.0
         val speedText = "${obdSpeed.toInt()} km/h"
         val altMsl = sample?.optJSONObject("gps")?.optDouble("altMsl", Double.NaN) ?: Double.NaN
         val altText = if (!altMsl.isNaN()) " • ${altMsl.toInt()} m" else ""
-        
-        binding.mapView.invalidate()
         binding.tvCursorInfo.text = "Sample ${sampleIndex + 1} / ${pathPoints.size} • $speedText$altText"
     }
 
     private fun showCurrentSampleDetails() {
-        val track = viewModel.selectedTrack ?: return
-        if (track.samples.isEmpty()) return
+        if (pathPoints.isEmpty()) return
         binding.sampleDetailsContainer.visibility = View.VISIBLE
-        val fragment = SampleDetailsFragment.newInstance(sampleIndex)
+        val fragment = SampleDetailsFragment.newInstance(sampleIndex, viewModel.sampleCount)
         childFragmentManager.beginTransaction()
             .replace(R.id.sample_details_container, fragment, "sample_details")
             .addToBackStack("sample_details")

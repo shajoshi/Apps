@@ -35,13 +35,35 @@
                 android:orientation="vertical"
                 android:padding="12dp">
 
-                <Button
-                    android:id="@+id/btn_reload_folder"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Reload Track Files"
-                    android:textColor="#FFFFFF"
-                    android:backgroundTint="#1565C0" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <Button
+                        android:id="@+id/btn_reload_folder"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:text="Reload"
+                        android:textColor="#FFFFFF"
+                        android:backgroundTint="#1565C0" />
+
+                    <Button
+                        android:id="@+id/btn_analyze"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:text="Analyze"
+                        android:textColor="#FFFFFF"
+                        android:backgroundTint="#2E7D32"
+                        android:enabled="false"
+                        android:alpha="0.4" />
+
+                </LinearLayout>
 
                 <TextView
                     android:id="@+id/tv_current_folder"

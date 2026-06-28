@@ -54,8 +54,7 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 | `AccelMetrics.kt` | Output of `AccelEngine.computeAccelMetrics()`. Vertical + fwd + lat axes, lean angle. |
 | `AccelCalibration.kt` | Tuning parameters for `AccelEngine` (moving average window, peak threshold). |
 | `PowerCalculations.kt` | Pure internal functions (`powerAccelKw`, `powerThermoKw`, `powerOBDKw`) extracted for JVM unit testing. No Android dependencies. |
-| `TrackFileParser.kt` | Reads trip log JSONL files efficiently — extracts only the header and last sample to produce a `TrackFileSummary`. Used by Trip Summary to avoid loading entire large files. |
-| `TrackFileMapParser.kt` | Reads all GPS samples from a trip log file for map rendering in `MapViewFragment`. |
+| `TrackFileParser.kt` | Token-streams trip log files using `JsonReader`. Extracts only `vehicleProfile` from header and the last sample. Peak memory: 2 `JSONObject`s. Never calls `readText()`. |
 
 ### `metrics/calculator/`
 | File | Responsibility |
@@ -169,17 +168,18 @@ OBD2App is a **Bluetooth OBD-II vehicle monitor and trip computer** that connect
 ### `ui/tripsummary/`
 | File | Responsibility |
 |------|---------------|
-| `TripSummaryFragment.kt` | Lists recorded trip log files from the configured log folder. Shows trip summary metrics (fuel, speed, distance) parsed via `TrackFileParser`. GPS track visualisation via "View Map" button → `MapViewFragment`. Provides a Reload button. |
-| `TripSummaryViewModel.kt` | Scans log folder for `*.jsonl` trip files, calls `TrackFileParser` for each, exposes list. |
-| `TripSelectionStore.kt` | Singleton. Holds the currently selected track and its parsed GPS samples (bypasses Bundle size limits). Shared between `TripSummaryFragment` and `MapViewFragment`. |
+| `TripSummaryFragment.kt` | Lists recorded trip log files from the configured log folder. Shows trip summary metrics (fuel, speed, distance) parsed via `TrackFileParser`. GPS track visualisation via "View Map" button → `MapViewFragment`. Multi-select up to 5 tracks for combined analysis. |
+| `TripSummaryViewModel.kt` | Scans log folder for `*.json` trip files. `scanFileForStats()` token-streams each file via `JsonReader` to extract vehicleProfile + last sample only. `saveCombinedFile()` streams samples token-by-token from source files to output — never builds a full in-memory sample list. |
+| `TripSelectionStore.kt` | Singleton. Holds the currently selected track (`fileName`, `uri`, `lastSample`). **No samples list** — samples are lazy-loaded by `MapViewModel`. Shared between `TripSummaryFragment` and `MapViewFragment`. |
+| `TrackFileItem` | Data class: `name`, `uri`, `size`, `date`. |
+| `ParsedFile` | ViewModel-private data class: `item: TrackFileItem`, `header: JSONObject` (vehicleProfile), `lastSample: JSONObject`. |
 
 ### `ui/mapview/`
 | File | Responsibility |
 |------|---------------|
-| `MapViewFragment.kt` | OSMDroid GPS track visualisation. Renders full track polyline + cursor marker. Navigation buttons `|◀ ◀ ▶ ▶|` and seekbar to step through samples. Shows speed/altitude at cursor. |
-| `MapViewModel.kt` | Drives map state from `TripSelectionStore`. Manages cursor position, sample list. |
-| `SampleDetailsFragment.kt` | Full-screen scrollable JSON view of a single trip sample. In-place prev/next navigation. Copy JSON button. Reads directly from `TripSelectionStore`. |
-| `SampleDetailsBottomSheet.kt` | Bottom sheet variant of sample detail view. |
+| `MapViewFragment.kt` | OSMDroid GPS track visualisation. Observes `MapViewModel.pathPoints` (`List<GeoPoint>`) for the polyline. Calls `viewModel.fetchSample(index)` on seek/nav interactions — never holds a samples list. |
+| `MapViewModel.kt` | `loadPathPoints()` — token-streams the track file extracting only `gps.lat/lon` per sample into `List<GeoPoint>`; zero `JSONObject` during path load. `fetchSample(index)` — re-opens file, skips to sample N, emits one `JSONObject` via `fetchedSample: StateFlow<JSONObject?>`. |
+| `SampleDetailsFragment.kt` | Full-screen scrollable JSON view of a single trip sample. Observes `MapViewModel.fetchedSample`; calls `mapViewModel.fetchSample()` for prev/next navigation. `newInstance(index, total)` — requires total count arg. |
 
 ### `ui/can/`
 | File | Responsibility |
@@ -708,7 +708,45 @@ Legacy aliases `REV_COUNTER`, `SPEEDOMETER_7SEG`, `FUEL_BAR`, `IFC_BAR` are kept
 
 ---
 
-## 14. Constraints & Gotchas
+## 14. Memory Strategy — JsonReader Streaming
+
+All track file I/O uses `android.util.JsonReader` token streaming. **Never call `readText()` on a track file or load it into a `JSONObject`/`JSONArray`.**
+
+### Peak memory by operation
+
+| Operation | Peak memory |
+|-----------|-------------|
+| `TrackFileParser.parseTrackFile()` | 2 small `JSONObject`s (vehicleProfile + lastSample) |
+| `TripSummaryViewModel.scanFileForStats()` | Same — 2 objects per source file, discarded after |
+| `TripSummaryViewModel.saveCombinedFile()` | 1 sample `String` at a time, written to `BufferedWriter` immediately |
+| `MapViewModel.loadPathPoints()` | `GeoPoint` only (~40 bytes/sample); zero `JSONObject` during path load |
+| `MapViewModel.fetchSample(index)` | 1 `JSONObject` on demand per user interaction; GC-able immediately |
+
+### Shared helpers
+
+- **`readGeoPoint(reader)`** — in `MapViewModel`. Reads one sample object, extracts only `gps.lat/lon`, allocates only a `GeoPoint`. All other tokens skipped.
+- **`readJsonValue(reader)`** — in both `MapViewModel` and `TripSummaryViewModel`. Reconstructs one complete JSON value token-by-token into a `String`. Used by `fetchSample` and `saveCombinedFile`.
+- **`fetchSample(index)`** — re-opens the SAF URI, navigates the `JsonReader` to the `samples` array, skips entries 0..N-1 via `skipValue()`, reads entry N with `readJsonValue`, emits via `fetchedSample: StateFlow<JSONObject?>`.
+
+### StateFlow sharing
+
+`MapViewModel.fetchedSample` is a single `StateFlow<JSONObject?>` observed by both `MapViewFragment` (cursor info bar) and `SampleDetailsFragment` (detail view). Only one `JSONObject` is ever in memory at a time.
+
+### Multi-track analysis flow
+
+```
+analyzeSelectedFiles(items)
+  for each item → scanFileForStats()    ← JsonReader, 2 objects, discarded per file
+  merge vehicleProfiles, pick lastSample
+  saveCombinedFile(vehicleProfile, sourceFiles)
+    write header JSON
+    for each sourceFile → JsonReader → stream samples token-by-token → BufferedWriter
+    write closing bracket
+```
+
+---
+
+## 15. Constraints & Gotchas
 
 - **`ObdStateManager.initialize()` must be called before ViewPager creation.** It sets `Obd2ServiceProvider.useMock` which `ObdDataOrchestrator` captures at construction time. Calling after singleton creation has no effect on the active service.
 - **`DataOrchestrator.debounce(100 ms)`** means the maximum effective UI refresh rate is ~10 Hz. If OBD2 and GPS emit simultaneously within 100 ms, only one `calculate()` call fires.

@@ -41,7 +41,7 @@ com.sj.obd2app/
 ├── metrics/            MetricsCalculator (central singleton), TripLifecycleFacade,
 │   │                   VehicleMetrics, TripPhase, TripState, MetricsLogger,
 │   │                   AccelEngine, AccelMetrics, AccelCalibration, PowerCalculations,
-│   │                   TrackFileParser, TrackFileMapParser
+│   │                   TrackFileParser
 │   ├── calculator/     FuelCalculator, PowerCalculator, TripCalculator
 │   └── collector/      ObdDataOrchestrator, DataOrchestrator (CAN-mode)
 ├── obd/                BluetoothObd2Service, Elm327Transport (interface),
@@ -70,12 +70,12 @@ com.sj.obd2app/
     │   │               NumericDisplayView, TemperatureGaugeView, DashboardGaugeView
     │   └── wizard/     AddWidgetWizardSheet, Step1–3 pages, WizardState
     ├── details/        DetailsFragment (raw OBD2 PID dump)
-    ├── mapview/        MapViewFragment, MapViewModel,
-    │                   SampleDetailsFragment, SampleDetailsBottomSheet
+    ├── mapview/        MapViewFragment, MapViewModel, SampleDetailsFragment
     ├── settings/       SettingsFragment, PidDiscoverySheet,
     │                   ConsoleAdapter, DiscoveredPidAdapter
     └── trip/           TripFragment, TripViewModel
-    └── tripsummary/    TripSummaryFragment, TripSummaryViewModel, TripSelectionStore
+    └── tripsummary/    TripSummaryFragment, TripSummaryViewModel, TripSelectionStore,
+                        TrackFileItem, ParsedFile
 ```
 
 ---
@@ -253,6 +253,27 @@ PID discovery:
 
 Read-only discovery modes only: **01, 02, 03, 07, 09, 21, 22, 23**.  
 Never use modes 04, 08, 2E, 2F, 31 (actuator / write / clear DTC).
+
+---
+
+## Memory Strategy — JsonReader Streaming
+
+All file reads use `android.util.JsonReader` token streaming. **Never call `readText()` or load a full JSON file into a `JSONObject`/`JSONArray`.**
+
+| Operation | Peak memory |
+|-----------|-------------|
+| `TrackFileParser.parseTrackFile()` | 2 small `JSONObject`s (vehicleProfile + lastSample) |
+| `TripSummaryViewModel.scanFileForStats()` | Same — 2 objects per file, discarded after |
+| `TripSummaryViewModel.saveCombinedFile()` | 1 sample `String` at a time written to `BufferedWriter` |
+| `MapViewModel.loadPathPoints()` | `GeoPoint` only per sample (~40 bytes); zero `JSONObject` during path load |
+| `MapViewModel.fetchSample(index)` | 1 `JSONObject` on demand (seek/nav/details); GC-able immediately |
+
+**Key helpers** (in `MapViewModel` and `TripSummaryViewModel`):
+- `readGeoPoint(reader)` — skips all tokens except `gps.lat/lon`, allocates only a `GeoPoint`
+- `readJsonValue(reader)` — reconstructs one complete JSON value token-by-token into a `String`
+- `fetchSample(index)` — re-opens the file, skips to sample `N`, reads exactly one `JSONObject`
+
+`fetchedSample: StateFlow<JSONObject?>` in `MapViewModel` is the single shared sample; both `MapViewFragment` (cursor info bar) and `SampleDetailsFragment` observe it — no duplication.
 
 ---
 

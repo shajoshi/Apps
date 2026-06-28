@@ -56,13 +56,19 @@ class TripSummaryFragment : Fragment() {
         // Enable back button in the activity's ActionBar
         val onBackPressedCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Handle back press - clear summary if showing, otherwise use default behavior
-                if (viewModel.summary.value != null) {
-                    viewModel.clearSummary()
-                } else {
-                    isEnabled = false
-                    requireActivity().onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
+                // Handle back press - exit selection mode first, then clear summary, then navigate back
+                when {
+                    fileAdapter.isInSelectionMode() -> {
+                        fileAdapter.clearSelection()
+                    }
+                    viewModel.summary.value != null -> {
+                        viewModel.clearSummary()
+                    }
+                    else -> {
+                        isEnabled = false
+                        requireActivity().onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
                 }
             }
         }
@@ -102,9 +108,14 @@ class TripSummaryFragment : Fragment() {
     }
 
     private fun setupRecyclerView() {
-        fileAdapter = TrackFileAdapter { fileItem ->
-            viewModel.loadTrackFile(fileItem)
-        }
+        fileAdapter = TrackFileAdapter(
+            onFileClick = { fileItem ->
+                viewModel.loadTrackFile(fileItem)
+            },
+            onSelectionChanged = { count ->
+                updateSelectionUI(count)
+            }
+        )
         binding.rvTrackFiles.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = fileAdapter
@@ -113,12 +124,32 @@ class TripSummaryFragment : Fragment() {
 
     private fun setupListeners() {
         binding.btnReloadFolder.setOnClickListener {
+            fileAdapter.clearSelection()
             val uri = AppSettings.getLogFolderUri(requireContext())
             if (uri != null) {
                 viewModel.listTrackFiles(Uri.parse(uri))
             } else {
                 Toast.makeText(requireContext(), "No folder selected yet", Toast.LENGTH_SHORT).show()
             }
+        }
+
+        binding.btnAnalyze.setOnClickListener {
+            val selected = fileAdapter.getSelectedFiles()
+            if (selected.size >= 2) {
+                viewModel.analyzeSelectedFiles(selected)
+                fileAdapter.clearSelection()
+            }
+        }
+    }
+
+    private fun updateSelectionUI(count: Int) {
+        val hasSelection = count >= 2
+        binding.btnAnalyze.isEnabled = hasSelection
+        binding.btnAnalyze.alpha = if (hasSelection) 1.0f else 0.4f
+        binding.tvCurrentFolder.text = when (count) {
+            0 -> "Track files are loaded from the Log Folder set in Settings."
+            1 -> "1 file selected — long-press more files to select (max 5)"
+            else -> "$count files selected — tap Analyze to combine"
         }
     }
 
@@ -181,6 +212,7 @@ class TripSummaryFragment : Fragment() {
                 binding.tvLoadingMessage.text = when (loadingType) {
                     TripSummaryLoadingType.FILE_LIST -> "Loading track files..."
                     TripSummaryLoadingType.TRIP_SUMMARY -> "Loading track summary..."
+                    TripSummaryLoadingType.ANALYZING -> "Analyzing selected track files..."
                 }
             }
         }
@@ -259,14 +291,85 @@ class TripSummaryFragment : Fragment() {
 }
 
 class TrackFileAdapter(
-    private val onFileClick: (TrackFileItem) -> Unit
+    private val onFileClick: (TrackFileItem) -> Unit,
+    private val onSelectionChanged: (count: Int) -> Unit
 ) : RecyclerView.Adapter<TrackFileAdapter.ViewHolder>() {
 
+    private val MAX_SELECTION = 5
+
     private var files = listOf<TrackFileItem>()
+
+    /** Ordered set of selected filenames (insertion order = selection order). */
+    private val selectedNames = LinkedHashSet<String>()
+
+    /** Profile prefix of the first selected file; gates subsequent selections. */
+    private var anchorProfilePrefix: String? = null
 
     fun submitList(newFiles: List<TrackFileItem>) {
         files = newFiles
         notifyDataSetChanged()
+    }
+
+    fun isInSelectionMode(): Boolean = selectedNames.isNotEmpty()
+
+    fun getSelectedFiles(): List<TrackFileItem> {
+        val nameIndex = files.associateBy { it.name }
+        return selectedNames.mapNotNull { nameIndex[it] }
+    }
+
+    fun clearSelection() {
+        selectedNames.clear()
+        anchorProfilePrefix = null
+        notifyDataSetChanged()
+        onSelectionChanged(0)
+    }
+
+    /** Extracts the profile name prefix from a filename like "Brezza_obdlog_2025-01-15_143022.json" */
+    private fun profilePrefix(name: String): String =
+        if ("_obdlog_" in name) name.substringBefore("_obdlog_") else name
+
+    private fun toggleSelection(file: TrackFileItem, context: android.content.Context) {
+        android.util.Log.d("TrackFileAdapter", "toggleSelection: file=${file.name} alreadySelected=${selectedNames.contains(file.name)} currentSet=$selectedNames anchor=$anchorProfilePrefix")
+        val wasInSelectionMode = isInSelectionMode()
+        if (selectedNames.contains(file.name)) {
+            selectedNames.remove(file.name)
+            if (selectedNames.isEmpty()) anchorProfilePrefix = null
+            android.util.Log.d("TrackFileAdapter", "toggleSelection: DESELECTED. set now=$selectedNames")
+        } else {
+            val prefix = profilePrefix(file.name)
+            if (anchorProfilePrefix != null && prefix != anchorProfilePrefix) {
+                android.util.Log.d("TrackFileAdapter", "toggleSelection: REJECTED profile mismatch prefix=$prefix anchor=$anchorProfilePrefix")
+                Toast.makeText(
+                    context,
+                    "Only files from '$anchorProfilePrefix' can be selected",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+            if (selectedNames.size >= MAX_SELECTION) {
+                android.util.Log.d("TrackFileAdapter", "toggleSelection: REJECTED max selection reached size=${selectedNames.size}")
+                Toast.makeText(
+                    context,
+                    "Maximum $MAX_SELECTION files can be analyzed",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+            if (anchorProfilePrefix == null) anchorProfilePrefix = prefix
+            selectedNames.add(file.name)
+            android.util.Log.d("TrackFileAdapter", "toggleSelection: SELECTED. set now=$selectedNames")
+        }
+        val nowInSelectionMode = isInSelectionMode()
+        // Notify only the toggled item plus all others if selection mode boundary changed
+        // (mode change affects dimming of ALL items). Use notifyItemChanged to avoid
+        // a full layout pass that resets the touch state and turns taps into long-presses.
+        val changedPos = files.indexOfFirst { it.name == file.name }
+        if (wasInSelectionMode != nowInSelectionMode) {
+            notifyDataSetChanged()
+        } else if (changedPos >= 0) {
+            notifyItemChanged(changedPos)
+        }
+        onSelectionChanged(selectedNames.size)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -275,7 +378,34 @@ class TrackFileAdapter(
             parent,
             false
         )
-        return ViewHolder(binding)
+        val holder = ViewHolder(binding)
+
+        // Set listeners once here — use bindingAdapterPosition to get the live file at click time,
+        // never capture a file reference from bind() which goes stale after recycling.
+        binding.root.setOnClickListener {
+            val pos = holder.bindingAdapterPosition
+            android.util.Log.d("TrackFileAdapter", "onClick: pos=$pos selectionMode=${isInSelectionMode()} selectedNames=$selectedNames")
+            if (pos == RecyclerView.NO_POSITION) return@setOnClickListener
+            val file = files[pos]
+            if (isInSelectionMode()) {
+                toggleSelection(file, it.context)
+            } else {
+                onFileClick(file)
+            }
+        }
+
+        binding.root.setOnLongClickListener {
+            val pos = holder.bindingAdapterPosition
+            android.util.Log.d("TrackFileAdapter", "onLongClick: pos=$pos selectionMode=${isInSelectionMode()}")
+            if (pos == RecyclerView.NO_POSITION) return@setOnLongClickListener true
+            val file = files[pos]
+            // Toggle selection on both short and long press — users naturally hold longer
+            // when waiting for visual feedback, so we must handle both gesture types.
+            toggleSelection(file, it.context)
+            true
+        }
+
+        return holder
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
@@ -294,9 +424,29 @@ class TrackFileAdapter(
                 .format(Date(file.lastModified))
             binding.tvFileSize.text = formatFileSize(file.sizeBytes)
 
-            binding.root.setOnClickListener {
-                onFileClick(file)
+            val isSelected = selectedNames.contains(file.name)
+            val selectionOrder = if (isSelected) selectedNames.toList().indexOf(file.name) + 1 else -1
+
+            // Selection accent strip
+            binding.viewSelectionAccent.visibility =
+                if (isSelected) android.view.View.VISIBLE else android.view.View.GONE
+
+            // Selection order badge
+            if (isSelected) {
+                binding.tvSelectionBadge.visibility = android.view.View.VISIBLE
+                binding.tvSelectionBadge.text = selectionOrder.toString()
+            } else {
+                binding.tvSelectionBadge.visibility = android.view.View.GONE
             }
+
+            // Dim unselectable files (different profile prefix when in selection mode)
+            val inSelectionMode = isInSelectionMode()
+            val prefix = profilePrefix(file.name)
+            val isSelectable = !inSelectionMode
+                || isSelected
+                || anchorProfilePrefix == null
+                || prefix == anchorProfilePrefix
+            binding.root.alpha = if (inSelectionMode && !isSelectable) 0.4f else 1.0f
         }
 
         private fun formatFileSize(bytes: Long): String {
