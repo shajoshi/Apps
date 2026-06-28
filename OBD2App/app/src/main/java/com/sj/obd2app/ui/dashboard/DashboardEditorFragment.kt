@@ -50,7 +50,7 @@ class DashboardEditorFragment : Fragment() {
     private lateinit var viewModel: DashboardEditorViewModel
     private var isEditMode = false
     private var hasUnsavedChanges = false
-    private var isMapBearingMode = false // Map orientation: false = north-up, true = bearing-up
+    private var isMapBearingMode = true // Map orientation: false = north-up, true = bearing-up
     private val gridSizePx = 60
 
     private val liveDataJobs = mutableMapOf<String, Job>()
@@ -238,6 +238,7 @@ class DashboardEditorFragment : Fragment() {
             }
         }
 
+        btnMapOrientation.alpha = 1.0f
         btnMapOrientation.setOnClickListener {
             toggleMapOrientation()
         }

@@ -40,7 +40,7 @@ class LiveMapView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private val mapView: MapView
-    private var isBearingMode = false // Map orientation: false = north-up, true = bearing-up
+    private var isBearingMode = true // Map orientation: false = north-up, true = bearing-up
     private val cornerTLContainer: LinearLayout
     private val valueTL: TextView
     private val unitTL: TextView
