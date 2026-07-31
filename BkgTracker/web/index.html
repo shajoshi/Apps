@@ -88,6 +88,12 @@
     // Track which users are visible (email -> boolean)
     let visibleUsers = new Set();
     let allUsers = []; // Store all discovered users
+    let byUser = {};   // Loaded points grouped by email/uid
+    let showWaypoints = false; // Toggle for per-point markers
+    let waypointMarkers = [];
+    let cachedPoints = {};     // email/uid -> array of fetched points
+    let lastFetchMs = 0;       // Timestamp of last fetch start
+    let oldestCachedMs = 0;    // Oldest point timestamp currently in cache
     
     function toggleUser(email) {
       if (visibleUsers.has(email)) {
@@ -99,7 +105,44 @@
       loadLocations();
     }
     window.toggleUser = toggleUser;
-    
+
+    function updateWaypointButton() {
+      const btn = document.getElementById('points-toggle');
+      if (btn) btn.textContent = showWaypoints ? 'Points: on' : 'Points: off';
+    }
+
+    function renderWaypoints() {
+      waypointMarkers.forEach(m => map.removeLayer(m));
+      waypointMarkers = [];
+      if (!showWaypoints) return;
+
+      Object.entries(byUser).forEach(([email, points]) => {
+        if (!visibleUsers.has(email)) return;
+        const colour = colourFor(email);
+        points.forEach(p => {
+          const ptIcon = L.divIcon({
+            className: "",
+            html: `<div style="width:8px;height:8px;border-radius:50%;background:${colour};"></div>`,
+            iconAnchor: [4, 4]
+          });
+          const pm = L.marker([p.lat, p.lon], { icon: ptIcon, interactive: true });
+          const pts = new Date(p._tsMs).toLocaleString();
+          const pspd = p.speed != null ? `${p.speed.toFixed(1)} km/h` : "?";
+          const palt = p.altitude != null ? `${p.altitude.toFixed(0)} m` : "?";
+          pm.bindPopup(`<b>${email}</b><br>±${p.accuracy?.toFixed(0) ?? "?"}m  ${pspd}  alt ${palt}<br>${pts}`);
+          pm.addTo(map);
+          waypointMarkers.push(pm);
+        });
+      });
+    }
+
+    function toggleWaypoints() {
+      showWaypoints = !showWaypoints;
+      updateWaypointButton();
+      renderWaypoints();
+    }
+    window.toggleWaypoints = toggleWaypoints;
+
     function updateUserToggles() {
       const container = document.getElementById('user-toggles');
       if (!container) return;
@@ -123,13 +166,16 @@
     async function loadLocations() {
       const hoursBack = parseInt(document.getElementById("hours-select").value, 10);
       const since     = Date.now() - hoursBack * 3600 * 1000;
+      const fetchStartMs = Date.now();
+      const isFullFetch = oldestCachedMs === 0 || since < oldestCachedMs;
 
       document.getElementById("status").textContent = "Loading…";
 
-      // Clear previous overlays
+      // Clear display overlays (cache stays in memory)
       markers.forEach(m => map.removeLayer(m));
       polylines.forEach(p => map.removeLayer(p));
-      markers = []; polylines = [];
+      waypointMarkers.forEach(m => map.removeLayer(m));
+      markers = []; polylines = []; waypointMarkers = [];
 
       // Step 1: list all user documents under /locations to get UIDs
       let userDocs;
@@ -140,66 +186,88 @@
         return;
       }
 
-      // Step 2: fetch each user's records subcollection directly
-      const byUser = {};
-      let totalPoints = 0;
-      const discoveredUsers = [];
-      
-      // Dynamic query limits based on time window (matching Android app)
-      function getQueryLimit(hours) {
-        switch(hours) {
-          case 1: return 240;     // 1 hour = 4 points/min × 60 min
-          case 6: return 1000;    // 6 hours buffer
-          case 24: return 1500;   // 24 hours
-          case 72: return 3000;   // 3 days
-          case 168: return 5000;  // 7 days
-          default: return 240;
-        }
+      // If window widened, discard cache and fetch the full window fresh
+      if (isFullFetch) {
+        cachedPoints = {};
       }
-      const queryLimit = getQueryLimit(hoursBack);
-      
+
+      const fetchSince = isFullFetch ? since : lastFetchMs;
+      const discoveredUsers = [];
+      let pointsAdded = 0;
+
+      // Step 2: fetch each user's records subcollection (full window or incremental)
       await Promise.all(userDocs.docs.map(async userDoc => {
         const uid = userDoc.id;
         const recRef = collection(db, "locations", uid, "records");
-        
-        // Query with server-side timestamp filtering (matching Android app)
+
         const q = query(
           recRef,
-          where("timestamp", ">=", since),
-          orderBy("timestamp", "desc"),
-          limit(queryLimit)
+          where("timestamp", ">=", fetchSince),
+          orderBy("timestamp", "desc")
         );
-        
+
         try {
           const snap = await getDocs(q);
-          snap.forEach(d => {
-            const data = d.data();
-            const raw = data.timestamp;
-            const tsMs = raw?.toMillis
-              ? raw.toMillis()
-              : Number(raw);
-            data._tsMs = tsMs;
-            const key = data.email || uid;
-            if (!discoveredUsers.includes(key)) {
-              discoveredUsers.push(key);
-            }
-            if (!byUser[key]) byUser[key] = [];
-            byUser[key].push(data);
-            totalPoints++;
-          });
+          if (isFullFetch) {
+            snap.forEach(d => {
+              const data = d.data();
+              data._id = d.id;
+              const raw = data.timestamp;
+              data._tsMs = raw?.toMillis ? raw.toMillis() : Number(raw);
+              const key = data.email || uid;
+              if (!discoveredUsers.includes(key)) discoveredUsers.push(key);
+              if (!cachedPoints[key]) cachedPoints[key] = [];
+              cachedPoints[key].push(data);
+              pointsAdded++;
+            });
+          } else {
+            // Append only new points; dedupe by Firestore doc id
+            snap.forEach(d => {
+              const data = d.data();
+              data._id = d.id;
+              const raw = data.timestamp;
+              data._tsMs = raw?.toMillis ? raw.toMillis() : Number(raw);
+              const key = data.email || uid;
+              if (!discoveredUsers.includes(key)) discoveredUsers.push(key);
+              if (!cachedPoints[key]) cachedPoints[key] = [];
+              if (!cachedPoints[key].some(p => p._id === data._id)) {
+                cachedPoints[key].push(data);
+                pointsAdded++;
+              }
+            });
+          }
         } catch (e) {
           console.warn("Could not fetch records for uid", uid, e.message);
         }
       }));
 
+      lastFetchMs = fetchStartMs;
+
+      // Recalculate the oldest timestamp we have cached
+      oldestCachedMs = Object.values(cachedPoints).reduce((min, arr) => {
+        arr.forEach(p => { if (p._tsMs < min) min = p._tsMs; });
+        return min;
+      }, Infinity);
+      if (!isFinite(oldestCachedMs)) oldestCachedMs = 0;
+
       // Update user list and toggles if we discovered new users
       const newUsers = discoveredUsers.filter(u => !allUsers.includes(u));
       if (newUsers.length > 0) {
         allUsers = [...allUsers, ...newUsers];
-        // Auto-enable new users
         newUsers.forEach(u => visibleUsers.add(u));
         updateUserToggles();
       }
+
+      // Build the display dataset from cache filtered by the current window
+      byUser = {};
+      let totalPoints = 0;
+      Object.entries(cachedPoints).forEach(([key, points]) => {
+        const filtered = points.filter(p => p._tsMs >= since);
+        if (filtered.length > 0) {
+          byUser[key] = filtered.sort((a, b) => a._tsMs - b._tsMs);
+          totalPoints += filtered.length;
+        }
+      });
 
       const bounds = [];
       const legend = document.getElementById("legend-list");
@@ -208,12 +276,11 @@
       Object.entries(byUser).forEach(([email, points]) => {
         // Skip if user is not selected for display
         if (!visibleUsers.has(email)) return;
-        points.sort((a, b) => a._tsMs - b._tsMs);
         const colour = colourFor(email);
         const latLngs = points.map(p => [p.lat, p.lon]);
 
         // Polyline trail
-        const pl = L.polyline(latLngs, { color: colour, weight: 3, opacity: 0.7 }).addTo(map);
+        const pl = L.polyline(latLngs, { color: colour, weight: 3, opacity: 0.7, interactive: false }).addTo(map);
         polylines.push(pl);
         bounds.push(...latLngs);
 
@@ -241,12 +308,73 @@
 
       if (bounds.length > 0) map.fitBounds(bounds, { padding: [30, 30] });
       const userCount = Object.keys(byUser).length;
+      const modeLabel = isFullFetch ? "" : " (incremental)";
+      const addedLabel = pointsAdded > 0 ? ` — ${pointsAdded} new fetched` : "";
       document.getElementById("status").textContent = userCount === 0
         ? "No data found for selected time range."
-        : `Loaded ${totalPoints} points for ${userCount} user(s).`;
+        : `Loaded ${totalPoints} points for ${userCount} user(s)${modeLabel}${addedLabel}.`;
+
+      updateWaypointButton();
+      renderWaypoints();
     }
 
     window.loadLocations = loadLocations;
+
+    // ── CSV export ──────────────────────────────────────────────────────────────
+    window.exportCsv = function () {
+      // Collect visible points already loaded in byUser
+      const rows = [];
+      Object.entries(byUser).forEach(([email, points]) => {
+        if (!visibleUsers.has(email)) return;
+        points.sort((a, b) => a._tsMs - b._tsMs);
+        points.forEach(p => {
+          const tsIso = new Date(p._tsMs).toISOString();
+          rows.push({
+            timestamp_utc: tsIso,
+            email,
+            lat: p.lat,
+            lon: p.lon,
+            accuracy_m: p.accuracy ?? "",
+            speed_kmh: p.speed ?? "",
+            altitude_m: p.altitude ?? "",
+            bearing_deg: p.bearing ?? ""
+          });
+        });
+      });
+
+      if (rows.length === 0) {
+        alert("No visible points to export.");
+        return;
+      }
+
+      const headers = ["timestamp_utc", "email", "lat", "lon", "accuracy_m", "speed_kmh", "altitude_m", "bearing_deg"];
+      const csv = [
+        headers.join(","),
+        ...rows.map(r => headers.map(h => {
+          const v = r[h];
+          const s = v == null ? "" : String(v);
+          // Escape values that contain commas or quotes
+          if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+            return '"' + s.replace(/"/g, '""') + '"';
+          }
+          return s;
+        }).join(","))
+      ].join("\n");
+
+      const hoursBack = document.getElementById("hours-select").value;
+      const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
+      const filename = `bkgtracker_${hoursBack}h_${stamp}.csv`;
+
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
   </script>
 
   <style>
@@ -316,6 +444,8 @@
         <option value="168">7 days</option>
       </select>
       <button onclick="loadLocations()">Refresh</button>
+      <button onclick="exportCsv()">Export CSV</button>
+      <button id="points-toggle" onclick="toggleWaypoints()">Points: off</button>
       <span id="toggle-label">Users:</span>
       <span id="user-toggles"></span>
       <span id="status"></span>

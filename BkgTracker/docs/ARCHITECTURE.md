@@ -67,10 +67,10 @@ sequenceDiagram
 
     Note over SVC: Service starts on sign-in or boot
     Note over SVC: GPS state machine governs interval<br/>(DEEP_IDLE→ACQUISITION→ACTIVE→EXPRESS)
-    loop Every 15s in ACTIVE (5s ACQUISITION, 10s EXPRESS)
+    loop Every 10s in ACTIVE (5s ACQUISITION, 10s EXPRESS)
         GPS->>SVC: onLocationResult(location)
-        SVC->>SVC: Filter (accuracy > 45m? skip — always, including Express)
-        SVC->>SVC: Filter (distance < 20m? skip → consecutiveSkips++)
+        SVC->>SVC: Filter (accuracy > threshold? skip — 15m normal, 25m Express)
+        SVC->>SVC: Filter (distance < 5m? skip → consecutiveSkips++)
         SVC->>Cache: addPoint(LocationRecord)
     end
 
@@ -107,11 +107,12 @@ stateDiagram-v2
 |-------|---------|---------:|
 | `DEEP_IDLE` | GPS off, minimal battery; awaiting activity/satellites | off |
 | `ACQUISITION` | Fast startup, seeking first fix | 5s |
-| `ACTIVE` | Normal movement tracking | 15s |
-| `EXPRESS` | High-frequency, distance filter bypassed (overrides all); accuracy filter still applies | 10s |
+| `ACTIVE` | Normal movement tracking | 10s |
+| `EXPRESS` | High-frequency, distance filter bypassed; accuracy filter applies at 25m | 10s |
 
-Key constants (in `LocationForegroundService`): `MIN_DISTANCE_METERS = 20`,
-`INDOOR_ACCURACY_THRESHOLD = 45m`, `ACQUISITION_TIMEOUT_MS = 60s`, `STATIONARY_SKIP_THRESHOLD = 6`.
+Key constants (in `LocationForegroundService`): `MIN_DISTANCE_METERS = 5`,
+`INDOOR_ACCURACY_THRESHOLD = 15m`, `EXPRESS_INDOOR_ACCURACY_THRESHOLD = 25m`,
+`ACQUISITION_TIMEOUT_MS = 60s`, `STATIONARY_SKIP_THRESHOLD = 6`.
 
 > **Notification rule**: the foreground notification state is updated ONLY by the `enter*Mode()`
 > methods, never from `onLocationAvailability()` (which previously caused stale "GPS active" text).
@@ -306,10 +307,14 @@ sequenceDiagram
     WD->>FS: getDocs(/locations)
     FS-->>WD: List of family members
     loop For each member
-        WD->>FS: getDocs(/locations/{uid}/records, limit)
+        WD->>FS: getDocs(/locations/{uid}/records, since timestamp)
         FS-->>WD: Location points
         WD->>WD: Plot trail on Leaflet map
+        WD->>WD: Add clickable markers with detail popups
     end
+    User->>WD: Click Export CSV
+    WD->>WD: Generate CSV from loaded points
+    WD-->>User: Download bkgtracker_<range>_<stamp>.csv
 ```
 
 ---
@@ -478,13 +483,13 @@ GMS gates API access behind an authorization check, requiring two server-side re
 
 ## Key Design Decisions
 
-- **GPS State Machine**: DEEP_IDLE (off) → ACQUISITION (5s) → ACTIVE (15s); EXPRESS (10s) overrides all. (PRIORITY_HIGH_ACCURACY via FusedLocationProviderClient)
-- **GPS Fix Interval (Active/Normal)**: 15 seconds (`NORMAL_INTERVAL_MS`)
+- **GPS State Machine**: DEEP_IDLE (off) → ACQUISITION (5s) → ACTIVE (10s); EXPRESS (10s) overrides all. (PRIORITY_HIGH_ACCURACY via FusedLocationProviderClient)
+- **GPS Fix Interval (Active/Normal)**: 10 seconds (`NORMAL_INTERVAL_MS`)
 - **GPS Fix Interval (Acquisition)**: 5 seconds for fast first fix after wake; 60s timeout back to idle if no movement
-- **GPS Fix Interval (Express)**: 10 seconds — distance filter bypassed, but accuracy filter (45m) still applies
+- **GPS Fix Interval (Express)**: 10 seconds — distance filter bypassed; accuracy filter applies at 25m (15m for normal modes)
 - **Activity-Based Wakeup**: Activity Recognition transitions wake GPS on movement (walk/run/vehicle/bicycle/on_foot ENTER) and sleep it on STILL/EXIT. `isInActivity` flag keeps GPS awake during ongoing activity even when stationary.
-- **Distance Filter**: Only saves if moved ≥ 20m from last saved point (bypassed in express)
-- **Accuracy Filter**: Skips if GPS accuracy > 45m — always enforced, including in Express mode. Cell tower fixes are typically 50–600m, genuine GPS in a car is typically 3–20m.
+- **Distance Filter**: Only saves if moved ≥ 5m from last saved point (bypassed in express)
+- **Accuracy Filter**: Skips if GPS accuracy > 15m in normal modes or > 25m in Express. Cell/WiFi assisted fixes are typically 20–600m, genuine GPS is typically 3–10m.
 - **Stationary Detection**: 6 consecutive distance-skips → DEEP_IDLE, but only when NOT in an activity
 - **Normal Sync**: WorkManager every 15 minutes (requires network)
 - **Express Sync**: 60-second timer in ForegroundService, lasts 1 hour, FCM broadcast to all family devices
@@ -496,6 +501,9 @@ GMS gates API access behind an authorization check, requiring two server-side re
 - **Map Timeline**: Scrubbable slider over loaded points; selecting a point shows a globe icon that opens it in the phone's Maps app (`geo:` URI). Auto zoom/center is suppressed while the timeline is active so the user keeps manual control.
 - **Map Export (KML)**: Share icon in Map toolbar exports one KML 2.2 file per visible user as a `<LineString>` track with Start/End placemarks, shared via `ACTION_SEND_MULTIPLE` using `FileProvider` (`filesDir/exports/`). Compatible with Google Earth mobile/desktop.
 - **Map Export (Raw CSV)**: Bug icon in Map toolbar exports a CSV of all cached points with timestamp, lat, lon, accuracy, speed, altitude, bearing — for debugging GPS quality. Both exports are gated by `FileProvider` (`${applicationId}.fileprovider`).
+- **Web Dashboard (Clickable Points)**: Each point on the Leaflet trail is rendered as a small clickable marker with a popup showing email, accuracy, speed, altitude, and local timestamp.
+- **Web Dashboard (CSV Export)**: Export CSV button downloads the currently visible points as `bkgtracker_<range>_<stamp>.csv` with columns `timestamp_utc,email,lat,lon,accuracy_m,speed_kmh,altitude_m,bearing_deg`.
+- **Web Dashboard (Client Cache)**: The dashboard keeps fetched points in memory per user. On Refresh it fetches only points newer than the last fetch time (`lastFetchMs`) for the same or narrowed time window. If the time window is widened, the cache is discarded and a full fetch for that window runs. The Firestore query is bounded only by the selected time window, so the cache is always complete for that window. The status line shows how many points were fetched in the current refresh so the cache behaviour is visible.
 - **Auth**: Google Sign-In → Firebase Auth token → Firestore security rules
 - **Boot Resilience**: BootReceiver restarts foreground service after reboot if signed in
 - **File Persistence**: JSON saves use `ContentResolver` mode `"wt"` (write+truncate) to avoid stale trailing bytes on Android 10+

@@ -70,16 +70,20 @@ class LocationForegroundService : Service() {
         private const val ACTIVITY_WAKE_REQUEST_CODE = 2001
 
         /** Minimum distance (meters) from last saved point to save a new point */
-        private const val MIN_DISTANCE_METERS = 20.0
+        private const val MIN_DISTANCE_METERS = 5.0
 
         /** Accuracy threshold to detect indoor/cell locations vs real GPS (meters).
-         *  GPS in a car is typically 3-20m. Cell/WiFi fixes are typically 50-600m.
-         *  45m threshold rejects most cell-tower fallbacks while keeping valid GPS. */
-        private const val INDOOR_ACCURACY_THRESHOLD = 45f
+         *  Tightened to 15m for all modes to reject WiFi/cell assists that place points
+         *  off the road. Real GPS in open sky is typically 3-10m. */
+        private const val INDOOR_ACCURACY_THRESHOLD = 15f
+
+        /** Express mode uses a slightly looser accuracy threshold so high-frequency
+         *  fixes are not discarded, while still rejecting cell-tower fallbacks. */
+        private const val EXPRESS_INDOOR_ACCURACY_THRESHOLD = 35f
 
 
-        /** Normal mode: GPS fix every 15 seconds */
-        private const val NORMAL_INTERVAL_MS = 15_000L
+        /** Normal mode: GPS fix every 10 seconds */
+        private const val NORMAL_INTERVAL_MS = 10_000L
         /** Express mode: GPS fix every 10 seconds */
         private const val EXPRESS_INTERVAL_MS = 10_000L
         /** Idle/stationary mode: GPS fix every 5 minutes */
@@ -195,11 +199,12 @@ class LocationForegroundService : Service() {
             val loc = result.lastLocation ?: return
             val isExpress = ExpressSyncManager.isExpressMode.value
 
-            // Accuracy filter always applies — even in Express mode.
-            // Express mode means high-frequency upload, not accepting bad GPS fixes.
+            // Accuracy filter always applies, but Express mode uses a looser threshold
+            // so high-frequency capture is not blocked by marginal fixes.
             val accuracy = if (loc.hasAccuracy()) loc.accuracy else Float.MAX_VALUE
-            if (accuracy > INDOOR_ACCURACY_THRESHOLD) {
-                val reason = "poor accuracy ${accuracy.toInt()}m > ${INDOOR_ACCURACY_THRESHOLD.toInt()}m"
+            val accuracyThreshold = if (isExpress) EXPRESS_INDOOR_ACCURACY_THRESHOLD else INDOOR_ACCURACY_THRESHOLD
+            if (accuracy > accuracyThreshold) {
+                val reason = "poor accuracy ${accuracy.toInt()}m > ${accuracyThreshold.toInt()}m"
                 UnifiedLocationCache.reportSkipped(loc.latitude, loc.longitude, reason)
                 Log.d(TAG, "Cell/indoor location skipped: $reason")
                 return
@@ -619,7 +624,7 @@ class LocationForegroundService : Service() {
         
         fusedLocationClient.removeLocationUpdates(locationCallback)
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(30_000L)
+            .setMinUpdateIntervalMillis(5_000L)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
         

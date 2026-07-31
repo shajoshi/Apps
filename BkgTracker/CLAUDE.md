@@ -98,15 +98,16 @@ Defined in `LocationForegroundService.kt`. Four states (`GpsState`):
 |-------|---------|--------------|
 | `DEEP_IDLE` | GPS off, minimal battery; waiting for activity/satellites | 0 (off) |
 | `ACQUISITION` | Fast startup after wake, seeking first fix | 5s |
-| `ACTIVE` | Normal movement tracking | 15s |
-| `EXPRESS` | High-frequency, filters bypassed (overrides everything) | 10s |
+| `ACTIVE` | Normal movement tracking | 10s |
+| `EXPRESS` | High-frequency, distance filter bypassed; accuracy filter at 25m | 10s |
 
 Key constants:
-- `MIN_DISTANCE_METERS = 20.0` — only save a point if moved ≥20m from last saved (bypassed in EXPRESS).
-- `INDOOR_ACCURACY_THRESHOLD = 100f` — skip fixes worse than 100m (bypassed in EXPRESS).
+- `MIN_DISTANCE_METERS = 5.0` — only save a point if moved ≥5m from last saved (bypassed in EXPRESS).
+- `INDOOR_ACCURACY_THRESHOLD = 15f` — skip fixes worse than 15m in normal modes.
+- `EXPRESS_INDOOR_ACCURACY_THRESHOLD = 25f` — skip fixes worse than 25m in EXPRESS.
 - `ACQUISITION_TIMEOUT_MS = 60_000L` — if no movement within 60s of acquiring.
 - `STATIONARY_SKIP_THRESHOLD = 6` — consecutive distance-skips before going idle.
-- `NORMAL_INTERVAL_MS = 15_000L`, `EXPRESS_INTERVAL_MS = 10_000L`, `ACQUISITION_INTERVAL_MS = 5_000L`.
+- `NORMAL_INTERVAL_MS = 10_000L`, `EXPRESS_INTERVAL_MS = 10_000L`, `ACQUISITION_INTERVAL_MS = 5_000L`.
 
 Transitions are handled by `enterDeepIdleMode()`, `enterAcquisitionMode()`, `enterActiveMode()`,
 `enterExpressMode()`. **The notification state is driven ONLY by these `enter*` methods** — do not
@@ -154,7 +155,7 @@ for the UI. `ActivityLogCache` keeps a rolling 120-minute log shown in the "Acti
 - A device writes `/express_sync/{uid}` in Firestore → Cloud Function `onExpressSyncRequested`
   broadcasts an FCM data message to topic `bkgtracker_family`.
 - `BkgTrackerMessagingService` receives it → `ExpressSyncManager.activate(expiresAt)`.
-- Service enters `EXPRESS` (10s interval, filters bypassed) and syncs every 60s for 1 hour.
+- Service enters `EXPRESS` (10s interval, distance filter bypassed, accuracy threshold 25m) and syncs every 60s for 1 hour.
 - Any device can **stop** express for everyone (writes a stop doc → FCM broadcast).
 - Normal sync otherwise is WorkManager every 15 min.
 
@@ -194,8 +195,6 @@ express_sync/{uid}                   # { action: start|stop, requestedBy, stoppe
 - **EXPRESS overrides everything**: state transitions guard with `currentGpsState != GpsState.EXPRESS`
   before dropping to DEEP_IDLE.
 - **Comments/docs**: do not add or remove comments unless asked.
-- **Doc drift**: `docs/ARCHITECTURE.md` lists the normal GPS interval as 60s, but the current code uses
-  `NORMAL_INTERVAL_MS = 15_000L` (15s). Treat the code as the source of truth.
 
 ---
 

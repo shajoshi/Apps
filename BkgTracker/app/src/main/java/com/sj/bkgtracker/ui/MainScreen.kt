@@ -257,8 +257,7 @@ private fun TrackingStatusCard(
                             !isTracking -> "Start the app or reboot to resume"
                             gpsIntervalMs == 0L -> "GPS off - waiting for satellites"
                             gpsIntervalMs <= 5_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (acquisition)"
-                            gpsIntervalMs <= 10_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (express)"
-                            gpsIntervalMs <= 15_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (normal)"
+                            gpsIntervalMs <= 10_000L -> "GPS updates every ${gpsIntervalMs / 1000}s (active/express)"
                             else -> "GPS updates every ${gpsIntervalMs / 1000}s"
                         },
                         style = MaterialTheme.typography.bodySmall,
