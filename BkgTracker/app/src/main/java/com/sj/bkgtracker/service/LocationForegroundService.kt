@@ -155,6 +155,7 @@ class LocationForegroundService : Service() {
     private var acquisitionTimeoutJob: Job? = null
     private var heartbeatWakeLock: PowerManager.WakeLock? = null
     private var activityTransitionsRegistered = false
+    private var gnssStatusRegistered = false
 
     /** GPS State Machine tracking */
     private var currentGpsState = GpsState.DEEP_IDLE
@@ -310,10 +311,6 @@ class LocationForegroundService : Service() {
             UnifiedLocationCache.initialise(this, currentUser.uid)
         }
         
-        // Register GnssCallback for battery-efficient GPS detection
-        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        locationManager.registerGnssStatusCallback(ContextCompat.getMainExecutor(this), gnssStatusCallback)
-        
         // Always register activity transitions at service start
         registerActivityTransitions()
         
@@ -380,8 +377,7 @@ class LocationForegroundService : Service() {
         Log.d(TAG, "Service onDestroy")
         fusedLocationClient.removeLocationUpdates(locationCallback)
         unregisterActivityTransitions()
-        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
+        unregisterGnssStatusCallback()
         expressSyncJob?.cancel()
         acquisitionTimeoutJob?.cancel()
         cancelHeartbeatAlarm()
@@ -698,35 +694,37 @@ class LocationForegroundService : Service() {
     @SuppressLint("MissingPermission")
     private fun enterDeepIdleMode() {
         if (currentGpsState == GpsState.DEEP_IDLE) return
-        
+
         Log.d(TAG, "Entering deep idle mode - GPS completely off")
         currentGpsState = GpsState.DEEP_IDLE
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.DEEP_IDLE, 0L)
         fusedLocationClient.removeLocationUpdates(locationCallback)
-        
+        unregisterGnssStatusCallback()
+
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("Deep Idle", "Battery saving - GPS off"))
     }
-    
+
     @SuppressLint("MissingPermission")
     private fun enterAcquisitionMode() {
         if (currentGpsState == GpsState.ACQUISITION || currentGpsState == GpsState.EXPRESS) return
-        
+
         Log.d(TAG, "Entering acquisition mode - fast GPS startup")
         currentGpsState = GpsState.ACQUISITION
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACQUISITION, ACQUISITION_INTERVAL_MS)
         acquisitionStartTime = System.currentTimeMillis()
-        
+
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        registerGnssStatusCallback()
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, ACQUISITION_INTERVAL_MS)
             .setMinUpdateIntervalMillis(ACQUISITION_INTERVAL_MS / 2)
             .setMaxUpdateDelayMillis(ACQUISITION_INTERVAL_MS * 2)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-        
+
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("Acquiring GPS", "Waiting for first fix"))
-        
+
         // Start acquisition timeout - return to deep idle if no movement detected
         acquisitionTimeoutJob?.cancel()
         acquisitionTimeoutJob = serviceScope.launch {
@@ -743,47 +741,70 @@ class LocationForegroundService : Service() {
             }
         }
     }
-    
+
     @SuppressLint("MissingPermission")
     private fun enterActiveMode() {
         if (currentGpsState == GpsState.ACTIVE || currentGpsState == GpsState.EXPRESS) return
-        
+
         Log.d(TAG, "Entering active mode - normal GPS tracking")
         currentGpsState = GpsState.ACTIVE
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.ACTIVE, NORMAL_INTERVAL_MS)
         consecutiveSkips = 0
-        
+
         // Cancel acquisition timeout - we detected movement
         acquisitionTimeoutJob?.cancel()
         acquisitionTimeoutJob = null
-        
+
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        registerGnssStatusCallback()
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, NORMAL_INTERVAL_MS)
             .setMinUpdateIntervalMillis(5_000L)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-        
+
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("GPS Active", "Tracking movement"))
     }
-    
+
     @SuppressLint("MissingPermission")
     private fun enterExpressMode() {
         if (currentGpsState == GpsState.EXPRESS) return
-        
+
         Log.d(TAG, "Entering express mode - high frequency tracking")
         currentGpsState = GpsState.EXPRESS
         GpsStateHolder.setGpsState(GpsStateHolder.GpsState.EXPRESS, EXPRESS_INTERVAL_MS)
         consecutiveSkips = 0
-        
+
         fusedLocationClient.removeLocationUpdates(locationCallback)
+        registerGnssStatusCallback()
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, EXPRESS_INTERVAL_MS)
             .setMinUpdateIntervalMillis(5_000L)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-        
+
         notificationManager?.notify(NOTIFICATION_ID,
             buildNotification("Express Mode", "High frequency tracking"))
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun registerGnssStatusCallback() {
+        if (gnssStatusRegistered) return
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.registerGnssStatusCallback(ContextCompat.getMainExecutor(this), gnssStatusCallback)
+        gnssStatusRegistered = true
+        Log.d(TAG, "GNSS status callback registered")
+    }
+
+    private fun unregisterGnssStatusCallback() {
+        if (!gnssStatusRegistered) return
+        try {
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
+            Log.d(TAG, "GNSS status callback unregistered")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to unregister GNSS status callback: ${e.message}")
+        }
+        gnssStatusRegistered = false
     }
 
     
