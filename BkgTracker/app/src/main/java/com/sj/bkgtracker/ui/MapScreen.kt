@@ -1,11 +1,14 @@
 package com.sj.bkgtracker.ui
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.OvalShape
 import android.net.Uri
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.widget.Toast
 import androidx.preference.PreferenceManager
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +29,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ElevatedFilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -58,7 +60,9 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.ScaleBarOverlay
+import androidx.compose.material3.TextButton
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -77,6 +81,7 @@ fun MapScreen(
     state: MapState,
     onRefresh: () -> Unit,
     onToggleUser: (String) -> Unit,
+    onSetStartDate: (Long) -> Unit,
     onSetTimeWindow: (Int) -> Unit,
     onExport: () -> Unit = {},
     onExportRaw: () -> Unit = {},
@@ -105,9 +110,19 @@ fun MapScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                val dateFormatter = remember { SimpleDateFormat("dd-MMM HH:mm", Locale.getDefault()) }
+
+                val singleUserSelected = state.visibleUsers.size == 1
+                TextButton(
+                    onClick = { showDatePickerDialog(context, state.fromDateMs) { onSetStartDate(it) } },
+                    enabled = singleUserSelected
+                ) {
+                    Text(dateFormatter.format(Date(state.fromDateMs)), style = MaterialTheme.typography.labelSmall)
+                }
+
                 MapViewModel.TIME_OPTIONS.forEach { hours ->
                     val label = when (hours) {
-                        1 -> "1h"; 6 -> "6h"; 24 -> "24h"; else -> "3d"
+                        1 -> "1h"; 6 -> "6h"; else -> "24h"
                     }
                     FilterChip(
                         selected = state.timeWindowHours == hours,
@@ -115,6 +130,7 @@ fun MapScreen(
                         label = { Text(label, style = MaterialTheme.typography.labelSmall) }
                     )
                 }
+
                 IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
                 }
@@ -144,6 +160,9 @@ fun MapScreen(
             Column(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
+                val rangeFormatter = remember { SimpleDateFormat("dd-MMM HH:mm", Locale.getDefault()) }
+                val queryEnd = state.fromDateMs
+                val queryStart = queryEnd - state.timeWindowHours * 3600_000L
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -231,6 +250,10 @@ fun MapScreen(
                         }
                     }
                 }
+                Text(
+                    text = "From ${rangeFormatter.format(Date(queryStart))}",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 
                 if (state.timelineEnabled && state.timelineTotal > 0) {
                     // Timeline slider
@@ -291,13 +314,6 @@ fun MapScreen(
                             }
                         }
                     }
-                } else if (state.users.isNotEmpty()) {
-                    Text(
-                        text = "Click refresh to enable timeline",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    )
                 }
             }
         }
@@ -484,41 +500,13 @@ fun MapScreen(
                             )
                         }
                     }
-                    // Point count table: header + one row per user + totals row
-                    val totalFb    = state.users.sumOf { it.firebasePoints }
-                    val totalCache = state.users.sumOf { it.cachePoints }
-                    val totalAll   = state.users.sumOf { it.points.size }
-                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                        // Header row
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text("", modifier = Modifier.weight(2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                            Text("Firebase", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                            Text("Cache",    modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                            Text("Total",    modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                        }
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-                        // Totals row
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text("All", modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-                            Text("$totalFb",    modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                            Text("$totalCache", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                            Text("$totalAll",   modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                        }
-                        // Per-user rows
-                        state.users.forEach { user ->
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    user.email.substringBefore("@"),
-                                    modifier = Modifier.weight(2f),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text("${user.firebasePoints}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                                Text("${user.cachePoints}",   modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                                Text("${user.points.size}",   modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                            }
-                        }
-                    }
+                    val totalAll = state.users.sumOf { it.points.size }
+                    Text(
+                        text = "$totalAll points",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
                 }
             }
         }
@@ -527,4 +515,29 @@ fun MapScreen(
     DisposableEffect(Unit) {
         onDispose { mapViewRef.value?.onDetach() }
     }
+}
+
+private fun showDatePickerDialog(context: Context, initialMs: Long, onDate: (Long) -> Unit) {
+    val cal = Calendar.getInstance().apply { timeInMillis = initialMs }
+    DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    val selected = Calendar.getInstance().apply {
+                        set(year, month, day, hour, minute, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    onDate(selected.timeInMillis)
+                },
+                cal.get(Calendar.HOUR_OF_DAY),
+                cal.get(Calendar.MINUTE),
+                true
+            ).show()
+        },
+        cal.get(Calendar.YEAR),
+        cal.get(Calendar.MONTH),
+        cal.get(Calendar.DAY_OF_MONTH)
+    ).show()
 }

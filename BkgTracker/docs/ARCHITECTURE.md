@@ -495,7 +495,7 @@ GMS gates API access behind an authorization check, requiring two server-side re
 - **Express Sync**: 60-second timer in ForegroundService, lasts 1 hour, FCM broadcast to all family devices
 - **Express Sync Stop**: Any device can stop express sync for all devices via FCM broadcast
 - **Express Status**: All devices show "Express Sync mode till {time} activated by {user}" or "Express Sync stopped by {user}"
-- **Read Cache**: `UnifiedLocationCache` caches per-user points and tracks fetched windows so map reads only query Firebase incrementally (new points since last fetch). Write pipeline is independent of read-cache tracking.
+- **Read Cache (Map)**: `MapViewModel` keeps a global in-memory read cache (`cachedPoints`, `cachedDocIds`, `lastFetchMs`, `oldestCachedMs`). One parallel Firestore query per user fetches each `/locations/{uid}/records` subcollection for the selected window. A full fetch runs when the cache is empty or the selected time window starts before the oldest cached point; otherwise only points newer than the last fetch are read. Results are deduplicated by Firestore document ID. `UnifiedLocationCache` still handles the write-side upload queue and email lookups.
 - **Usage Tracking**: `UsageTracker` records Firestore reads/writes/FCM, surfaced in the "Usage" dialog.
 - **Activity Log**: `ActivityLogCache` keeps activity transitions for the last 120 minutes, shown via the "Activity Log" menu.
 - **Map Timeline**: Scrubbable slider over loaded points; selecting a point shows a globe icon that opens it in the phone's Maps app (`geo:` URI). Auto zoom/center is suppressed while the timeline is active so the user keeps manual control.

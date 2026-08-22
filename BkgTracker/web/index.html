@@ -242,13 +242,10 @@
       }));
 
       lastFetchMs = fetchStartMs;
-
-      // Recalculate the oldest timestamp we have cached
-      oldestCachedMs = Object.values(cachedPoints).reduce((min, arr) => {
-        arr.forEach(p => { if (p._tsMs < min) min = p._tsMs; });
-        return min;
-      }, Infinity);
-      if (!isFinite(oldestCachedMs)) oldestCachedMs = 0;
+      // After a full fetch we know the cache covers from 'since' to now because the
+      // query was timestamp >= since with no limit. Use that as coverage marker
+      // rather than the oldest returned point, which may be later if data is sparse.
+      if (isFullFetch) oldestCachedMs = since;
 
       // Update user list and toggles if we discovered new users
       const newUsers = discoveredUsers.filter(u => !allUsers.includes(u));

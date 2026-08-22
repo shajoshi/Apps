@@ -1,10 +1,15 @@
 package com.sj.bkgtracker.ui
 
 import android.Manifest
+import android.app.AlarmManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
+import java.io.File
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -129,7 +134,7 @@ class MainActivity : ComponentActivity() {
                     val cacheStats = UnifiedLocationCache.cacheStats.collectAsState().value
                     AlertDialog(
                         onDismissRequest = { showUsageDialog = false },
-                        title = { Text("Cloud Usage", fontWeight = FontWeight.SemiBold) },
+                        title = { Text("Usage", fontWeight = FontWeight.SemiBold) },
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("Date: ${usage.date}", style = MaterialTheme.typography.bodySmall)
@@ -146,6 +151,7 @@ class MainActivity : ComponentActivity() {
                                     text = UnifiedLocationCache.getCacheInfo(),
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                UsageRow("Firestore local cache", formatBytes(getFirestoreCacheSizeBytes(this@MainActivity)))
                                 HorizontalDivider()
                                 Text(
                                     text = "Est. cost: ${usage.estimatedCost()}",
@@ -154,16 +160,36 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         },
-                        confirmButton = {
-                            TextButton(onClick = { showUsageDialog = false }) { Text("Close") }
-                        },
+                        confirmButton = { },
                         dismissButton = {
-                            TextButton(
-                                onClick = {
-                                    UnifiedLocationCache.clearCache()
-                                    Toast.makeText(this@MainActivity, "Cache cleared", Toast.LENGTH_SHORT).show()
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Clear",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            UnifiedLocationCache.clearCache()
+                                            Toast.makeText(this@MainActivity, "Cache cleared", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) { Text("Cache") }
+                                    TextButton(
+                                        onClick = {
+                                            viewModel.onIntent(MainIntent.ClearFirestoreCache)
+                                        }
+                                    ) { Text("Firestore") }
                                 }
-                            ) { Text("Clear Cache") }
+                                TextButton(
+                                    onClick = { showUsageDialog = false },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Close") }
+                            }
                         }
                     )
                 }
@@ -395,12 +421,14 @@ class MainActivity : ComponentActivity() {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                         activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
                                     }
-                                }
+                                },
+                                onClearFirestoreCache = { viewModel.onIntent(MainIntent.ClearFirestoreCache) }
                             )
                             1 -> MapScreen(
                                 state         = mapState,
                                 onRefresh     = { mapViewModel.refresh() },
                                 onToggleUser  = { mapViewModel.toggleUser(it) },
+                                onSetStartDate = { mapViewModel.setStartDate(it) },
                                 onSetTimeWindow = { mapViewModel.setTimeWindowHours(it) },
                                 onExport      = { mapViewModel.exportGpx() },
                                 onExportRaw   = { mapViewModel.exportRawCsv() },
@@ -421,10 +449,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.sj.bkgtracker.data.local.AppForegroundState.isInForeground = true
         viewModel.refreshAuthState()
         viewModel.refreshPermissions()
         requestPermissionsIfNeeded()
         startTrackingIfPermitted()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.sj.bkgtracker.data.local.AppForegroundState.isInForeground = false
     }
 
     private fun requestPermissionsIfNeeded() {
@@ -462,6 +496,17 @@ class MainActivity : ComponentActivity() {
                     PackageManager.PERMISSION_GRANTED
             if (!activityGranted) {
                 activityRecognitionPermissionLauncher.launch(Manifest.permission.ACTIVITY_RECOGNITION)
+                return
+            }
+        }
+
+        // Exact alarm permission is required on Android 12/12L (API 31-32) for setExactAndAllowWhileIdle.
+        // On Android 13+ (API 33+) USE_EXACT_ALARM is a normal install-time permission.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                return
             }
         }
     }
@@ -502,6 +547,47 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "GetCredential failed: ${e.message}", e)
                 Toast.makeText(this@MainActivity, "Google sign-in failed: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    private fun getFirestoreCacheSizeBytes(context: Context): Long {
+        var size = 0L
+        firestoreCacheRoots(context).forEach { dir ->
+            if (!dir.exists()) return@forEach
+            dir.walkTopDown().forEach { file ->
+                if (file.isFile && isFirestoreCachePath(file.absolutePath)) {
+                    size += file.length()
+                }
+            }
+        }
+        return size
+    }
+
+    private fun firestoreCacheRoots(context: Context): List<File> {
+        val roots = mutableListOf<File>()
+        context.filesDir?.let { roots.add(it) }
+        context.cacheDir?.let { roots.add(it) }
+        context.getDatabasePath("_dummy_")?.parentFile?.let { roots.add(it) }
+        val dataDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) context.dataDir else context.filesDir?.parentFile
+        dataDir?.let { roots.add(it) }
+        return roots.distinct()
+    }
+
+    private fun isFirestoreCachePath(path: String): Boolean {
+        val lower = path.lowercase()
+        return lower.contains("firestore") ||
+               lower.contains("leveldb") ||
+               lower.contains("com.google.firebase.firestore") ||
+               lower.contains("firebase.firestore") ||
+               (lower.endsWith(".ldb") && lower.contains("firestore"))
+    }
+
+    private fun formatBytes(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+            bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+            else -> "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
         }
     }
 

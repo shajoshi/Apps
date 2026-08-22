@@ -21,6 +21,7 @@ data class MainState(
     val backgroundLocationGranted: Boolean = false,
     val notificationPermissionGranted: Boolean = false,
     val activityRecognitionGranted: Boolean = false,
+    val exactAlarmGranted: Boolean = false,
     val gpsState: GpsStateHolder.GpsState = GpsStateHolder.GpsState.DEEP_IDLE,
     val gpsIntervalMs: Long = 0L,
     val totalCacheSize: Int = 0
@@ -36,4 +37,5 @@ sealed class MainIntent {
     object ManualSync : MainIntent()
     object ExpressSync : MainIntent()
     object StopExpressSync : MainIntent()
+    object ClearFirestoreCache : MainIntent()
 }

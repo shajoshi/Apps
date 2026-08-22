@@ -1,15 +1,22 @@
 package com.sj.bkgtracker.ui
 
+import android.app.AlarmManager
 import android.app.Application
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import com.google.firebase.firestore.FirebaseFirestore
 import androidx.lifecycle.AndroidViewModel
+import java.io.File
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
+import com.sj.bkgtracker.data.local.AppForegroundState
 import com.sj.bkgtracker.data.local.ExpressSyncManager
 import com.sj.bkgtracker.data.local.GpsStateHolder
 import com.sj.bkgtracker.data.local.SyncPrefs
@@ -24,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -68,7 +76,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.ACTIVITY_RECOGNITION) ==
                     PackageManager.PERMISSION_GRANTED
         } else true
-        _state.update { it.copy(fineLocationGranted = fine, backgroundLocationGranted = bg, notificationPermissionGranted = notif, activityRecognitionGranted = activity) }
+        val exactAlarm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = ctx.getSystemService(AlarmManager::class.java)
+            alarmManager.canScheduleExactAlarms()
+        } else true
+        _state.update {
+            it.copy(
+                fineLocationGranted = fine,
+                backgroundLocationGranted = bg,
+                notificationPermissionGranted = notif,
+                activityRecognitionGranted = activity,
+                exactAlarmGranted = exactAlarm
+            )
+        }
     }
 
     private fun observeFlows() {
@@ -115,15 +135,81 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             MainIntent.ManualSync -> manualSync()
             MainIntent.ExpressSync -> requestExpressSync()
             MainIntent.StopExpressSync -> stopExpressSync()
+            MainIntent.ClearFirestoreCache -> clearFirestoreCache()
             else -> { /* navigation intents handled in Activity */ }
         }
+    }
+
+    private fun clearFirestoreCache() {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            try {
+                Log.d(TAG, "[ClearFirestoreCache] Step 1/4: Terminating Firestore instance")
+                FirebaseFirestore.getInstance().terminate().await()
+                Log.d(TAG, "[ClearFirestoreCache] Step 2/4: Firestore terminated, clearing persistence")
+                FirebaseFirestore.getInstance().clearPersistence().await()
+                Log.d(TAG, "[ClearFirestoreCache] Step 3/4: Persistence cleared, deleting local Firestore files")
+
+                // Delete any Firestore-related local files (equivalent to app-delete-data for Firestore)
+                firestoreCacheRoots(ctx).forEach { dir ->
+                    if (!dir.exists()) {
+                        Log.d(TAG, "[ClearFirestoreCache] Skipping non-existent directory: ${dir.absolutePath}")
+                        return@forEach
+                    }
+                    Log.d(TAG, "[ClearFirestoreCache] Scanning directory: ${dir.absolutePath}")
+                    dir.walkTopDown().forEach { file ->
+                        if (isFirestoreCachePath(file.absolutePath)) {
+                            val deleted = if (file.isDirectory) file.deleteRecursively() else file.delete()
+                            if (deleted) {
+                                Log.d(TAG, "[ClearFirestoreCache] Deleted: ${file.absolutePath}")
+                            } else {
+                                Log.w(TAG, "[ClearFirestoreCache] Failed to delete: ${file.absolutePath}")
+                            }
+                        }
+                    }
+                }
+
+                Log.d(TAG, "[ClearFirestoreCache] Step 4/4: Restarting app")
+                showToastIfForeground(ctx, "Cache cleared — restarting app")
+                restartApp(ctx)
+            } catch (e: Exception) {
+                Log.e(TAG, "[ClearFirestoreCache] Failed to clear Firestore cache", e)
+                showToastIfForeground(ctx, "Failed to clear cache: ${e.message}")
+            }
+        }
+    }
+
+    private fun restartApp(context: Context) {
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        Runtime.getRuntime().exit(0)
+    }
+
+    private fun firestoreCacheRoots(context: Context): List<File> {
+        val roots = mutableListOf<File>()
+        context.filesDir?.let { roots.add(it) }
+        context.cacheDir?.let { roots.add(it) }
+        context.getDatabasePath("_dummy_")?.parentFile?.let { roots.add(it) }
+        val dataDir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) context.dataDir else context.filesDir?.parentFile
+        dataDir?.let { roots.add(it) }
+        return roots.distinct()
+    }
+
+    private fun isFirestoreCachePath(path: String): Boolean {
+        val lower = path.lowercase()
+        return lower.contains("firestore") ||
+               lower.contains("leveldb") ||
+               lower.contains("com.google.firebase.firestore") ||
+               lower.contains("firebase.firestore") ||
+               (lower.endsWith(".ldb") && lower.contains("firestore"))
     }
 
     fun manualSync() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             if (!isNetworkAvailable(ctx)) {
-                Toast.makeText(ctx, "No network — sync skipped", Toast.LENGTH_SHORT).show()
+                showToastIfForeground(ctx, "No network — sync skipped")
                 return@launch
             }
             val records = UnifiedLocationCache.drainUnsavedPoints(ctx)
@@ -176,7 +262,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             if (!isNetworkAvailable(ctx)) {
-                Toast.makeText(ctx, "No network — Express Sync requires internet", Toast.LENGTH_SHORT).show()
+                showToastIfForeground(ctx, "No network — Express Sync requires internet")
                 return@launch
             }
             LocationRepositoryImpl(ctx).requestExpressSync().fold(
@@ -187,7 +273,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ExpressSyncManager.activate(ctx, expiresAt, email)
                 },
                 onFailure = { e ->
-                    Toast.makeText(ctx, "Express Sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    showToastIfForeground(ctx, "Express Sync failed: ${e.message}")
                 }
             )
         }
@@ -197,7 +283,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             if (!isNetworkAvailable(ctx)) {
-                Toast.makeText(ctx, "No network — cannot stop Express Sync remotely", Toast.LENGTH_SHORT).show()
+                showToastIfForeground(ctx, "No network — cannot stop Express Sync remotely")
                 return@launch
             }
             LocationRepositoryImpl(ctx).stopExpressSync().fold(
@@ -206,7 +292,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ExpressSyncManager.stopByUser(ctx, email)
                 },
                 onFailure = { e ->
-                    Toast.makeText(ctx, "Stop Express Sync failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    showToastIfForeground(ctx, "Stop Express Sync failed: ${e.message}")
                 }
             )
         }
@@ -232,7 +318,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(isSignedIn = false, userEmail = "", isTracking = false) }
     }
 
-    private fun isNetworkAvailable(context: Application): Boolean {
+    private fun showToastIfForeground(context: Context, message: String, duration: Int = Toast.LENGTH_SHORT) {
+        if (AppForegroundState.isInForeground) {
+            Toast.makeText(context, message, duration).show()
+        } else {
+            Log.d(TAG, "Toast suppressed (background): $message")
+        }
+    }
+
+    private fun isNetworkAvailable(context: Context): Boolean {
         val cm = context.getSystemService(ConnectivityManager::class.java)
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false

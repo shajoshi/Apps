@@ -55,7 +55,8 @@ fun MainScreen(
     onRequestActivityRecognition: () -> Unit,
     onManualSync: () -> Unit = {},
     onExpressSync: () -> Unit = {},
-    onStopExpressSync: () -> Unit = {}
+    onStopExpressSync: () -> Unit = {},
+    onClearFirestoreCache: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -116,7 +117,8 @@ fun MainScreen(
                 lastSyncTime      = state.lastSyncTime,
                 lastSyncSuccess   = state.lastSyncSuccess,
                 isSyncing         = state.isSyncing,
-                onManualSync      = onManualSync
+                onManualSync      = onManualSync,
+                onClearFirestoreCache = onClearFirestoreCache
             )
         }
     }
@@ -357,7 +359,8 @@ private fun CacheSyncCard(
     lastSyncTime: Long,
     lastSyncSuccess: Boolean,
     isSyncing: Boolean = false,
-    onManualSync: () -> Unit = {}
+    onManualSync: () -> Unit = {},
+    onClearFirestoreCache: () -> Unit = {}
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -370,12 +373,20 @@ private fun CacheSyncCard(
                 if (isSyncing) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    OutlinedButton(
-                        onClick = onManualSync,
-                        enabled = unsavedSize > 0,
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Text("Save Now", style = MaterialTheme.typography.labelSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onManualSync,
+                            enabled = unsavedSize > 0,
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Save Now", style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedButton(
+                            onClick = onClearFirestoreCache,
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Clear Firestore Cache", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }

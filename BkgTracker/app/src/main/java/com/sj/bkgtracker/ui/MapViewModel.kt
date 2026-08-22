@@ -9,37 +9,55 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.sj.bkgtracker.data.local.UnifiedLocationCache
 import com.sj.bkgtracker.data.local.UsageTracker
 import com.sj.bkgtracker.domain.model.LocationRecord
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+private fun startOfDayLocalMs(year: Int, month: Int, day: Int): Long {
+    val cal = Calendar.getInstance()
+    cal.set(year, month, day, 0, 0, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    return cal.timeInMillis
+}
+
+private fun startOfTodayLocalMs(): Long {
+    val cal = Calendar.getInstance()
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    return cal.timeInMillis
+}
+
 data class TrackedUser(
     val uid: String,
     val email: String,
-    val points: List<LocationRecord>,
-    val firebasePoints: Int = 0,
-    val cachePoints: Int = 0
+    val points: List<LocationRecord>
 )
 
 data class MapState(
     val users: List<TrackedUser> = emptyList(),
     val visibleUsers: Set<String> = emptySet(),
+    val fromDateMs: Long = System.currentTimeMillis(),
+    val userDatePinned: Boolean = false,
     val timeWindowHours: Int = 1,
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -53,31 +71,36 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val TAG = "MapViewModel"
-        val TIME_OPTIONS = listOf(1, 6, 24, 72)
-        
-        // Dynamic query limits based on time window
-        private fun getQueryLimit(timeWindowHours: Int): Int {
-            return when (timeWindowHours) {
-                1 -> 240    // 1 hour = 4 points/min × 60 min = 240 points
-                6 -> 1000   // 6 hours = reasonable buffer
-                24 -> 1500  // 24 hours = reasonable buffer
-                72 -> 2000  // 3 days = max limit
-                else -> 2000
-            }
-        }
+        val TIME_OPTIONS = listOf(1, 6, 24)
     }
 
-    private val db   = FirebaseFirestore.getInstance()
-    private val auth = FirebaseAuth.getInstance()
+    private val db = FirebaseFirestore.getInstance()
 
     private val _state = MutableStateFlow(MapState())
     val state: StateFlow<MapState> = _state.asStateFlow()
+
+    // Global in-memory read cache (web-dashboard-style)
+    private val cachedPoints = mutableMapOf<String, MutableList<LocationRecord>>()
+    private val cachedDocIds = mutableMapOf<String, MutableSet<String>>()
+    private var lastFetchMs: Long = 0
+    private var oldestCachedMs: Long = 0
+    private var lastFetchFromDateMs: Long = 0
+    private var lastFetchTimeWindowHours: Int = 0
 
     init {
         refresh()
     }
 
+    private fun elapsed(startMs: Long) = System.currentTimeMillis() - startMs
+
     fun refresh() {
+        if (!_state.value.userDatePinned) {
+            _state.update { it.copy(fromDateMs = System.currentTimeMillis()) }
+        }
+        doRefresh()
+    }
+
+    private fun doRefresh() {
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             if (!isNetworkAvailable(ctx)) {
@@ -87,104 +110,85 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             }
             _state.update { it.copy(isLoading = true, error = null) }
             try {
-                val since = System.currentTimeMillis() - _state.value.timeWindowHours * 3600_000L
-                var firebasePointsCount = 0
-                val users = mutableListOf<TrackedUser>()
+                val refreshStart = System.currentTimeMillis()
+                val until = _state.value.fromDateMs
+                val since = until - _state.value.timeWindowHours * 3600_000L
+                val fetchStartMs = System.currentTimeMillis()
+                val paramsChanged = _state.value.fromDateMs != lastFetchFromDateMs
+                        || _state.value.timeWindowHours != lastFetchTimeWindowHours
+                val isFullFetch = oldestCachedMs == 0L || since < oldestCachedMs || paramsChanged
+                Log.d(TAG, "Refresh start: from=${_state.value.fromDateMs}, window=${_state.value.timeWindowHours}h, until=$until, isFullFetch=$isFullFetch, lastFetchMs=$lastFetchMs, oldestCachedMs=$oldestCachedMs")
 
-                
                 // Get all users from Firebase
                 val userDocs = db.collection("locations").get().await()
                 UsageTracker.recordReads(getApplication(), userDocs.size())
+                Log.d(TAG, "User list fetched in ${elapsed(refreshStart)}ms (${userDocs.size()} users)")
 
-                for (userDoc in userDocs.documents) {
+                // If window changed/widened, discard read cache and fetch the full window fresh
+                if (isFullFetch) {
+                    cachedPoints.clear()
+                    cachedDocIds.clear()
+                }
+
+                val fetchSince = if (isFullFetch) since else lastFetchMs
+
+                // Resolve emails for all discovered users (cheap, sequential is fine)
+                val emailByUid = mutableMapOf<String, String>()
+                userDocs.documents.forEach { userDoc ->
                     val uid = userDoc.id
-                    try {
-                        var points: List<LocationRecord>
-                        var userEmail: String? = null
-
-                        // Get user email first (from cache or Firebase)
-                        userEmail = UnifiedLocationCache.getCachedEmail(uid)
-                        if (userEmail == null) {
-                            // Try to get email from user document
-                            try {
-                                val userDoc = db.collection("locations").document(uid).get().await()
-                                UsageTracker.recordReads(getApplication(), 1)
-                                userEmail = userDoc.getString("email") ?: uid
-                                if (userEmail != uid) {
-                                    UnifiedLocationCache.setEmail(uid, userEmail)
-                                }
-                            } catch (e: Exception) {
-                                userEmail = uid
+                    var userEmail = UnifiedLocationCache.getCachedEmail(uid)
+                    if (userEmail == null) {
+                        try {
+                            val userDocSingle = db.collection("locations").document(uid).get().await()
+                            UsageTracker.recordReads(getApplication(), 1)
+                            userEmail = userDocSingle.getString("email") ?: uid
+                            if (userEmail != uid) {
+                                UnifiedLocationCache.setEmail(uid, userEmail)
                             }
+                        } catch (e: Exception) {
+                            userEmail = uid
                         }
+                    }
+                    emailByUid[uid] = userEmail ?: uid
+                }
+                Log.d(TAG, "Emails resolved in ${elapsed(refreshStart)}ms")
 
-                        // Per-user source tracking
-                        var userFirebasePoints = 0
-                        var userCachePoints = 0
+                // Fetch records only for the currently selected/visible users
+                val visibleEmails = _state.value.visibleUsers
+                val uidsToFetch = userDocs.documents
+                    .filter { doc ->
+                        val email = emailByUid[doc.id] ?: doc.id
+                        visibleEmails.isEmpty() || email in visibleEmails
+                    }
+                Log.d(TAG, "Fetching records for ${uidsToFetch.size}/${userDocs.size()} selected users")
 
-                        // Check if cache covers the requested time window
-                        if (UnifiedLocationCache.cacheCoversTimeWindow(uid, since)) {
-                            // Cache covers the start of window - use cached data + incremental fetch for gap
-                            val (cachedPoints, fetchedWindow) = UnifiedLocationCache.getCachedPoints(uid, since)
-                            points = cachedPoints
-                            userCachePoints = points.size
-                            
-                            // Fetch any new points since the last fetch to fill the gap
-                            if (fetchedWindow != null) {
-                                val queryLimit = getQueryLimit(_state.value.timeWindowHours)
-                                val lastLatest = fetchedWindow.second
-                                val newPointsQuery = db.collection("locations")
-                                    .document(uid)
-                                    .collection("records")
-                                    .whereGreaterThan("timestamp", lastLatest)
-                                    .orderBy("timestamp", Query.Direction.DESCENDING)
-                                    .limit(queryLimit.toLong())
-                                
-                                try {
-                                    val newSnap = newPointsQuery.get().await()
-                                    UsageTracker.recordReads(getApplication(), newSnap.size())
-                                    if (newSnap.size() > 0) {
-                                        val newPoints = newSnap.documents.mapNotNull { d ->
-                                            val ts = d.getLong("timestamp") ?: return@mapNotNull null
-                                            LocationRecord(
-                                                latitude    = d.getDouble("lat")      ?: 0.0,
-                                                longitude   = d.getDouble("lon")      ?: 0.0,
-                                                timestampMs = ts,
-                                                accuracyM   = (d.getDouble("accuracy") ?: 0.0).toFloat(),
-                                                speedKmh    = (d.getDouble("speed")    ?: 0.0).toFloat(),
-                                                altitudeM   = d.getDouble("altitude")  ?: 0.0,
-                                                bearingDeg  = d.getDouble("bearing")?.toFloat()
-                                            )
-                                        }
-                                        userFirebasePoints = newPoints.size
-                                        userCachePoints = cachedPoints.size
-                                        // Merge and update - pass 'since' to track the window
-                                        points = (cachedPoints + newPoints).sortedBy { it.timestampMs }
-                                        UnifiedLocationCache.addPoints(uid, newPoints, since)
-                                        Log.d(TAG, "Fetched ${newPoints.size} new points for $uid since $lastLatest")
-                                    }
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "Could not fetch new points for $uid: ${e.message}")
-                                }
-                            }
-                            
-                            Log.d(TAG, "Using cached data for $uid: ${points.size} points (covers full window)")
-                        } else {
-                            // Cache doesn't cover window - fetch full time window from Firebase
-                            val queryLimit = getQueryLimit(_state.value.timeWindowHours)
+                // Fetch each user's records in parallel, matching the web dashboard query shape
+                val queryStart = System.currentTimeMillis()
+                var totalAdded = 0
+                val fetchJobs = uidsToFetch.map { userDoc ->
+                    async(Dispatchers.IO) {
+                        val uid = userDoc.id
+                        val userQueryStart = System.currentTimeMillis()
+                        try {
                             val query = db.collection("locations")
                                 .document(uid)
                                 .collection("records")
-                                .whereGreaterThanOrEqualTo("timestamp", since)
+                                .whereGreaterThanOrEqualTo("timestamp", fetchSince)
                                 .orderBy("timestamp", Query.Direction.DESCENDING)
-                                .limit(queryLimit.toLong())
 
                             val snap = query.get().await()
+                            Log.d(TAG, "User $uid query returned ${snap.size()} docs in ${elapsed(userQueryStart)}ms (fetchSince=$fetchSince)")
                             UsageTracker.recordReads(getApplication(), snap.size())
 
-                            val newPoints = snap.documents.mapNotNull { d ->
-                                val ts = d.getLong("timestamp") ?: return@mapNotNull null
-                                LocationRecord(
+                            val processStart = System.currentTimeMillis()
+                            var userAdded = 0
+                            val userList = cachedPoints.getOrPut(uid) { mutableListOf() }
+                            val userIdSet = cachedDocIds.getOrPut(uid) { mutableSetOf() }
+                            snap.documents.forEach { d ->
+                                val docId = d.id
+                                if (!isFullFetch && docId in userIdSet) return@forEach
+                                val ts = d.getLong("timestamp") ?: return@forEach
+                                val record = LocationRecord(
                                     latitude    = d.getDouble("lat")      ?: 0.0,
                                     longitude   = d.getDouble("lon")      ?: 0.0,
                                     timestampMs = ts,
@@ -193,23 +197,45 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                                     altitudeM   = d.getDouble("altitude")  ?: 0.0,
                                     bearingDeg  = d.getDouble("bearing")?.toFloat()
                                 )
+                                userList.add(record)
+                                userIdSet.add(docId)
+                                userAdded++
                             }
-
-                            points = newPoints.sortedBy { it.timestampMs }
-                            userFirebasePoints = points.size
-
-                            // Update cache with fetched data - pass 'since' to track the window
-                            UnifiedLocationCache.addPoints(uid, newPoints, since)
-                            firebasePointsCount += points.size
-                            Log.d(TAG, "Fetched from Firebase for $uid: ${points.size} points")
+                            Log.d(TAG, "User $uid processed ${snap.size()} docs in ${elapsed(processStart)}ms")
+                            userAdded
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Could not fetch records for uid $uid after ${elapsed(userQueryStart)}ms: ${e.message}")
+                            0
                         }
-
-                        // Filter by time window — always add user even if no points in window
-                        val filteredPoints = points.filter { it.timestampMs >= since }
-                        users.add(TrackedUser(uid, userEmail ?: uid, filteredPoints, userFirebasePoints, userCachePoints))
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Could not fetch records for uid $uid: ${e.message}")
                     }
+                }
+                totalAdded = fetchJobs.awaitAll().sum()
+                Log.d(TAG, "Parallel fetch done in ${elapsed(queryStart)}ms")
+
+                if (isFullFetch) {
+                    Log.d(TAG, "Fetched $totalAdded points")
+                } else {
+                    Log.d(TAG, "Added $totalAdded incremental points")
+                }
+
+                lastFetchMs = fetchStartMs
+                lastFetchFromDateMs = _state.value.fromDateMs
+                lastFetchTimeWindowHours = _state.value.timeWindowHours
+                // Full fetch used timestamp >= since with no limit, so coverage reaches back to 'since'
+                if (isFullFetch) oldestCachedMs = since
+
+                // Build display list from cache filtered by current date range
+                val users = mutableListOf<TrackedUser>()
+
+                for (userDoc in userDocs.documents) {
+                    val uid = userDoc.id
+                    val email = emailByUid[uid] ?: uid
+                    val userList = cachedPoints[uid]
+                    val filtered = userList
+                        ?.filter { it.timestampMs in since until until }
+                        ?.sortedBy { it.timestampMs }
+                        ?: emptyList()
+                    users.add(TrackedUser(uid, email, filtered))
                 }
 
                 val currentVisible = _state.value.visibleUsers
@@ -220,15 +246,16 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val totalFiltered = users.sumOf { it.points.size }
-                val cachePointsCount = users.sumOf { it.cachePoints }
-                Log.d(TAG, "Refresh complete: $totalFiltered points displayed ($firebasePointsCount from Firebase, $cachePointsCount from cache)")
-                
-                _state.update { 
+                val modeLabel = if (isFullFetch) "" else " — incremental"
+                Log.d(TAG, "Display list built in ${elapsed(refreshStart)}ms")
+                Log.d(TAG, "Refresh complete in ${elapsed(refreshStart)}ms: $totalFiltered points displayed$modeLabel")
+
+                _state.update {
                     it.copy(
-                        users = users, 
-                        visibleUsers = newVisible, 
+                        users = users,
+                        visibleUsers = newVisible,
                         isLoading = false
-                    ) 
+                    )
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load locations", e)
@@ -238,16 +265,34 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleUser(email: String) {
+        val wasVisible = _state.value.visibleUsers.contains(email)
         _state.update { s ->
             val visible = s.visibleUsers.toMutableSet()
             if (visible.contains(email)) visible.remove(email) else visible.add(email)
-            s.copy(visibleUsers = visible)
+            s.copy(
+                visibleUsers = visible,
+                userDatePinned = false,
+                fromDateMs = System.currentTimeMillis()
+            )
+        }
+        if (!wasVisible) {
+            // User was toggled on: they may not be in cache yet, so fetch their records
+            doRefresh()
         }
     }
 
+    fun setStartDate(fromDateMs: Long) {
+        _state.update { it.copy(fromDateMs = fromDateMs, userDatePinned = true) }
+        doRefresh()
+    }
+
     fun setTimeWindowHours(hours: Int) {
-        _state.update { it.copy(timeWindowHours = hours) }
-        refresh()
+        if (_state.value.userDatePinned) {
+            _state.update { it.copy(timeWindowHours = hours) }
+        } else {
+            _state.update { it.copy(fromDateMs = System.currentTimeMillis(), timeWindowHours = hours) }
+        }
+        doRefresh()
     }
 
     private fun isNetworkAvailable(context: Application): Boolean {

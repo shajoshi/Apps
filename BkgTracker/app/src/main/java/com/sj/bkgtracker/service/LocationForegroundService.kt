@@ -2,6 +2,7 @@ package com.sj.bkgtracker.service
 
 import android.annotation.SuppressLint
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,6 +16,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -28,8 +30,11 @@ import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.tasks.await
 import android.location.GnssStatus
 import android.location.LocationManager
 import com.sj.bkgtracker.R
@@ -43,6 +48,7 @@ import com.sj.bkgtracker.data.repository.LocationRepositoryImpl
 import com.google.firebase.auth.FirebaseAuth
 import com.sj.bkgtracker.domain.model.LocationRecord
 import com.sj.bkgtracker.receiver.ActivityTransitionReceiver
+import com.sj.bkgtracker.receiver.HeartbeatReceiver
 import com.sj.bkgtracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +72,9 @@ class LocationForegroundService : Service() {
         private const val CHANNEL_ID = "bkg_tracker_location"
         private const val ACTION_ACTIVITY_WAKE = "com.sj.bkgtracker.ACTION_ACTIVITY_WAKE"
         private const val ACTION_ACTIVITY_END = "com.sj.bkgtracker.ACTION_ACTIVITY_END"
+        const val ACTION_HEARTBEAT = "com.sj.bkgtracker.ACTION_HEARTBEAT"
+
+        private const val HEARTBEAT_ALARM_REQUEST_CODE = 3001
         private const val EXTRA_ACTIVITY_TYPE = "extra_activity_type"
         private const val ACTIVITY_WAKE_REQUEST_CODE = 2001
 
@@ -99,6 +108,9 @@ class LocationForegroundService : Service() {
 
         /** Minimum interval between notification updates in normal mode (5 min) */
         private const val NOTIFICATION_THROTTLE_MS = 300_000L
+
+        /** Heartbeat interval: one mandatory GPS fix per hour */
+        private const val HEARTBEAT_INTERVAL_MS = 3_600_000L
 
         fun start(context: Context) {
             val intent = Intent(context, LocationForegroundService::class.java)
@@ -141,6 +153,7 @@ class LocationForegroundService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var expressSyncJob: Job? = null
     private var acquisitionTimeoutJob: Job? = null
+    private var heartbeatWakeLock: PowerManager.WakeLock? = null
     private var activityTransitionsRegistered = false
 
     /** GPS State Machine tracking */
@@ -313,6 +326,7 @@ class LocationForegroundService : Service() {
         
         TrackingStateHolder.setTracking(true)
         observeExpressMode()
+        scheduleHeartbeatAlarm()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -340,6 +354,12 @@ class LocationForegroundService : Service() {
                     enterAcquisitionMode()
                 }
             }
+        } else if (intent?.action == ACTION_HEARTBEAT) {
+            Log.d(TAG, "Heartbeat action received")
+            serviceScope.launch {
+                performHeartbeat()
+                scheduleHeartbeatAlarm()
+            }
         } else if (intent?.action == ACTION_ACTIVITY_END) {
             val activityType = intent.getIntExtra(EXTRA_ACTIVITY_TYPE, -1)
             val activityName = ActivityStateHolder.activityName(activityType)
@@ -364,6 +384,10 @@ class LocationForegroundService : Service() {
         locationManager.unregisterGnssStatusCallback(gnssStatusCallback)
         expressSyncJob?.cancel()
         acquisitionTimeoutJob?.cancel()
+        cancelHeartbeatAlarm()
+        heartbeatWakeLock?.let {
+            if (it.isHeld) it.release()
+        }
         serviceScope.cancel()
         TrackingStateHolder.setTracking(false)
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -499,6 +523,117 @@ class LocationForegroundService : Service() {
     }
 
     
+    private fun scheduleHeartbeatAlarm() {
+        try {
+            val alarmMgr = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, HeartbeatReceiver::class.java)
+            val pendingIntent = PendingIntent.getBroadcast(
+                this,
+                HEARTBEAT_ALARM_REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            alarmMgr.cancel(pendingIntent)
+
+            val triggerAt = nextTopOfHourMs()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmMgr.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            } else {
+                alarmMgr.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
+            Log.d(TAG, "Heartbeat alarm scheduled for ${triggerAt}ms (${triggerAt - System.currentTimeMillis()}ms from now)")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Heartbeat: cannot schedule exact alarm — permission missing", e)
+        }
+    }
+
+    private fun nextTopOfHourMs(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.HOUR_OF_DAY, 1)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    private fun cancelHeartbeatAlarm() {
+        val alarmMgr = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(this, HeartbeatReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            this,
+            HEARTBEAT_ALARM_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmMgr.cancel(pendingIntent)
+        Log.d(TAG, "Heartbeat alarm cancelled")
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun performHeartbeat() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        heartbeatWakeLock?.let { if (it.isHeld) it.release() }
+        heartbeatWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BkgTracker:HeartbeatWakeLock").apply {
+            setReferenceCounted(false)
+            acquire(120_000L)
+        }
+
+        try {
+            Log.d(TAG, "Heartbeat: requesting one-shot GPS fix")
+            var loc: android.location.Location? = null
+            try {
+                val request = CurrentLocationRequest.Builder()
+                    .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+                    .setMaxUpdateAgeMillis(60_000L)
+                    .setDurationMillis(30_000L)
+                    .build()
+                val cts = CancellationTokenSource()
+                loc = fusedLocationClient.getCurrentLocation(request, cts.token).await()
+            } catch (e: Exception) {
+                Log.w(TAG, "Heartbeat: getCurrentLocation failed: ${e.message}")
+            }
+
+            if (loc == null) {
+                Log.d(TAG, "Heartbeat: falling back to last known location")
+                loc = try {
+                    fusedLocationClient.lastLocation.await()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Heartbeat: lastLocation failed: ${e.message}")
+                    null
+                }
+            }
+
+            if (loc != null) {
+                val speedKmh = if (loc.hasSpeed()) loc.speed * 3.6f else 0f
+                val altitudeM = if (loc.hasAltitude()) loc.altitude else 0.0
+                val bearingDeg = if (loc.hasBearing()) loc.bearing else null
+                val record = com.sj.bkgtracker.domain.model.LocationRecord(
+                    latitude    = loc.latitude,
+                    longitude   = loc.longitude,
+                    timestampMs = loc.time,
+                    accuracyM   = if (loc.hasAccuracy()) loc.accuracy else 0f,
+                    speedKmh    = speedKmh,
+                    altitudeM   = altitudeM,
+                    bearingDeg  = bearingDeg
+                )
+                val userId = FirebaseAuth.getInstance().currentUser?.uid
+                if (userId != null) {
+                    UnifiedLocationCache.addPoint(this@LocationForegroundService, userId, record)
+                }
+                lastSavedLocation = loc
+                Log.d(TAG, "Heartbeat: saved ${loc.latitude}, ${loc.longitude} ±${loc.accuracy}m")
+            } else {
+                Log.w(TAG, "Heartbeat: could not obtain any location")
+            }
+
+            // Sync all pending points (heartbeat + any buffered normal points)
+            performSync()
+        } finally {
+            heartbeatWakeLock?.let { if (it.isHeld) it.release() }
+        }
+    }
+
     private fun startExpressSyncTimer() {
         expressSyncJob?.cancel()
         expressSyncJob = serviceScope.launch {
